@@ -4,7 +4,9 @@
     "slug": "brainpal",
     "version": "0.1.0",
     "scheme": "brainpal",
-    "platforms": ["ios"],
+    "platforms": [
+      "ios"
+    ],
     "ios": {
       "bundleIdentifier": "tech.brainpal.app",
       "supportsTablet": false,
@@ -21,7 +23,8 @@
         {
           "cameraPermission": "Allow BrainPal to access your camera so it can scan snacks."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "extra": {
       "WS_URL": "wss://api.zapfan.com/live"

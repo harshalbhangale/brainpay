@@ -1,6 +1,6 @@
-import { Audio } from 'expo-av'
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio'
 import { CameraView, useCameraPermissions } from 'expo-camera'
-import * as FileSystem from 'expo-file-system'
+import * as FileSystem from 'expo-file-system/legacy'
 import * as ImageManipulator from 'expo-image-manipulator'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -42,7 +42,7 @@ export default function CameraScreen() {
   })
   const audioBufRef = useRef<Map<string, Uint8Array[]>>(new Map())
   const playingDetectionIdRef = useRef<string | null>(null)
-  const soundRef = useRef<Audio.Sound | null>(null)
+  const playerRef = useRef<AudioPlayer | null>(null)
 
   const [connected, setConnected] = useState(false)
   const [detection, setDetection] = useState<Detection | null>(null)
@@ -57,10 +57,11 @@ export default function CameraScreen() {
 
   // Configure audio mode once.
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: 'duckOthers',
+      interruptionModeAndroid: 'duckOthers',
     }).catch(() => undefined)
   }, [])
 
@@ -186,15 +187,21 @@ export default function CameraScreen() {
       encoding: FileSystem.EncodingType.Base64,
     })
 
-    if (soundRef.current) {
-      try { await soundRef.current.unloadAsync() } catch { /* ignore */ }
-      soundRef.current = null
+    // Tear down any in-flight player (e.g. user pointed at a new item).
+    if (playerRef.current) {
+      try { playerRef.current.remove() } catch { /* ignore */ }
+      playerRef.current = null
     }
-    const { sound } = await Audio.Sound.createAsync({ uri: path }, { shouldPlay: true })
-    soundRef.current = sound
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (status.isLoaded && status.didJustFinish) {
-        sound.unloadAsync().catch(() => undefined)
+
+    const player = createAudioPlayer({ uri: path })
+    playerRef.current = player
+    player.play()
+
+    const sub = player.addListener('playbackStatusUpdate', (status) => {
+      if (status?.didJustFinish) {
+        sub.remove()
+        try { player.remove() } catch { /* ignore */ }
+        if (playerRef.current === player) playerRef.current = null
         FileSystem.deleteAsync(path, { idempotent: true }).catch(() => undefined)
       }
     })

@@ -11,17 +11,10 @@ import { connectLive, type LiveSocket } from '@/lib/ws'
 
 /**
  * BrainPal — Live camera prototype.
- *
- * Loop:
- *   1. CameraView renders preview.
- *   2. Every FRAME_INTERVAL_MS, take a still, shrink to 384px JPEG, send over WS.
- *   3. WS sends back JSON detection events + binary audio chunks.
- *   4. We render a coin overlay + buffer audio, play once speech.ended fires.
- *
- * No auth in prototype. Targets api.zapfan.com by default.
+ * No auth. Targets api.zapfan.com by default.
  */
 
-const FRAME_INTERVAL_MS = 700 // ~1.4 fps. Keeps Gemini cost + bandwidth sane.
+const FRAME_INTERVAL_MS = 700
 const FRAME_MAX_WIDTH = 384
 
 type Detection = {
@@ -30,7 +23,7 @@ type Detection = {
   product: string
   coinDelta: number
   emoji: string
-  anchor: [number, number] // 0..1 normalized [cx, cy]
+  anchor: [number, number]
 }
 
 export default function CameraScreen() {
@@ -47,17 +40,17 @@ export default function CameraScreen() {
   const playerRef = useRef<AudioPlayer | null>(null)
 
   const [connected, setConnected] = useState(false)
+  const [cameraReady, setCameraReady] = useState(false)
   const [detection, setDetection] = useState<Detection | null>(null)
   const [lastLine, setLastLine] = useState<string>('')
   const [framesSent, setFramesSent] = useState(0)
+  const [lastError, setLastError] = useState<string>('')
 
-  // Ask for permission on first render.
   useEffect(() => {
     if (!perm) return
     if (!perm.granted && perm.canAskAgain) requestPerm()
   }, [perm, requestPerm])
 
-  // Configure audio mode once.
   useEffect(() => {
     setAudioModeAsync({
       playsInSilentMode: true,
@@ -67,7 +60,6 @@ export default function CameraScreen() {
     }).catch(() => undefined)
   }, [])
 
-  // Open the WebSocket once we have camera perms.
   useEffect(() => {
     if (!perm?.granted) return
 
@@ -92,9 +84,10 @@ export default function CameraScreen() {
     }
   }, [perm?.granted])
 
-  // Frame capture loop.
+  // Capture loop — gated on cameraReady so we don't fire takePictureAsync
+  // before the native CameraView has finished initialising.
   useEffect(() => {
-    if (!perm?.granted) return
+    if (!perm?.granted || !cameraReady) return
     captureRef.current.cancelled = false
 
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -106,30 +99,32 @@ export default function CameraScreen() {
         try {
           const photo = await cameraRef.current.takePictureAsync({
             quality: 0.5,
-            skipProcessing: true,
             shutterSound: false,
             exif: false,
           })
-          if (photo?.uri) {
-            const shrunk = await ImageManipulator.manipulateAsync(
-              photo.uri,
-              [{ resize: { width: FRAME_MAX_WIDTH } }],
-              { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG },
-            )
-            const b64 = await FileSystem.readAsStringAsync(shrunk.uri, {
-              encoding: FileSystem.EncodingType.Base64,
-            })
-            const bytes = Uint8Array.from(Buffer.from(b64, 'base64'))
-            sockRef.current?.sendFrame(bytes)
-            setFramesSent((n) => n + 1)
-            // best-effort cleanup so we don't fill cache.
-            FileSystem.deleteAsync(photo.uri, { idempotent: true }).catch(() => undefined)
-            FileSystem.deleteAsync(shrunk.uri, { idempotent: true }).catch(() => undefined)
+          if (!photo?.uri) {
+            throw new Error('takePictureAsync returned no uri')
           }
+          const shrunk = await ImageManipulator.manipulateAsync(
+            photo.uri,
+            [{ resize: { width: FRAME_MAX_WIDTH } }],
+            { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG },
+          )
+          const b64 = await FileSystem.readAsStringAsync(shrunk.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          })
+          const bytes = Uint8Array.from(Buffer.from(b64, 'base64'))
+          sockRef.current?.sendFrame(bytes)
+          setFramesSent((n) => n + 1)
+          setLastError('')
+          FileSystem.deleteAsync(photo.uri, { idempotent: true }).catch(() => undefined)
+          FileSystem.deleteAsync(shrunk.uri, { idempotent: true }).catch(() => undefined)
         } catch (err) {
-          // surface in Metro so silent failures are visible
+          const msg = err instanceof Error ? err.message : String(err)
+          // surface in Metro AND in HUD
           // eslint-disable-next-line no-console
-          console.warn('frame capture failed:', err)
+          console.warn('frame capture failed:', msg)
+          setLastError(msg.slice(0, 80))
         } finally {
           captureRef.current.inFlight = false
         }
@@ -137,19 +132,15 @@ export default function CameraScreen() {
       timer = setTimeout(tick, FRAME_INTERVAL_MS)
     }
 
-    timer = setTimeout(tick, 800) // small warmup
+    timer = setTimeout(tick, 400)
     return () => {
       captureRef.current.cancelled = true
       if (timer) clearTimeout(timer)
     }
-  }, [perm?.granted])
+  }, [perm?.granted, cameraReady])
 
   function handleJson(msg: any) {
     switch (msg?.type) {
-      case 'session.started':
-        // Server confirmed session — nothing to do in prototype, just log.
-        console.log('[PAL] session started:', msg.sessionId)
-        break
       case 'detection.appeared':
         setDetection({
           detectionId: msg.detectionId,
@@ -195,7 +186,6 @@ export default function CameraScreen() {
       encoding: FileSystem.EncodingType.Base64,
     })
 
-    // Tear down any in-flight player (e.g. user pointed at a new item).
     if (playerRef.current) {
       try { playerRef.current.remove() } catch { /* ignore */ }
       playerRef.current = null
@@ -238,17 +228,30 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.bg}>
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+      <CameraView
+        ref={cameraRef}
+        style={StyleSheet.absoluteFill}
+        facing="back"
+        onCameraReady={() => setCameraReady(true)}
+      />
 
       {/* HUD top bar */}
       <View style={[styles.hud, { top: insets.top + tokens.spacing[3] }]}>
         <View style={[styles.pill, { backgroundColor: connected ? tokens.color.accent : tokens.color.danger }]}>
           <Text style={styles.pillText}>{connected ? 'live' : 'offline'}</Text>
         </View>
+        <View style={[styles.pill, { backgroundColor: cameraReady ? tokens.color.accent : tokens.color.surface2 }]}>
+          <Text style={styles.pillText}>{cameraReady ? 'cam ok' : 'cam wait'}</Text>
+        </View>
         <Text style={styles.framesText}>{framesSent} frames</Text>
       </View>
 
-      {/* Floating coin */}
+      {!!lastError && (
+        <View style={[styles.errBanner, { top: insets.top + tokens.spacing[3] + 36 }]}>
+          <Text style={styles.errText} numberOfLines={2}>err: {lastError}</Text>
+        </View>
+      )}
+
       {detection && overlayPos && (
         <Pressable
           onPress={() => sockRef.current?.sendInterrupt('tap')}
@@ -274,7 +277,6 @@ export default function CameraScreen() {
         </Pressable>
       )}
 
-      {/* Bottom caption */}
       <View style={[styles.caption, { bottom: insets.bottom + tokens.spacing[5] }]}>
         {detection ? (
           <Text style={styles.itemText}>
@@ -301,6 +303,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: tokens.spacing[2],
   },
   pill: {
     paddingVertical: 4,
@@ -309,6 +312,16 @@ const styles = StyleSheet.create({
   },
   pillText: { color: '#000', fontWeight: '700', fontSize: tokens.fontSize.xs, textTransform: 'uppercase' },
   framesText: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs },
+
+  errBanner: {
+    position: 'absolute',
+    left: tokens.spacing[5],
+    right: tokens.spacing[5],
+    backgroundColor: 'rgba(255, 92, 92, 0.85)',
+    padding: tokens.spacing[3],
+    borderRadius: tokens.radius.md,
+  },
+  errText: { color: '#000', fontSize: tokens.fontSize.xs, fontWeight: '600' },
 
   coin: {
     position: 'absolute',

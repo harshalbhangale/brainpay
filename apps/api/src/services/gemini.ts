@@ -90,7 +90,12 @@ export async function detectItems(jpegBytes: Uint8Array): Promise<PerceptionResu
     const parsed = PerceptionResult.parse(JSON.parse(text))
     return parsed
   } catch (err) {
-    logger.warn({ err: String(err) }, 'gemini.detect_failed')
+    const msg = String(err)
+    if (msg.includes('429') || msg.toLowerCase().includes('quota')) {
+      logger.error({ err: msg.slice(0, 300) }, 'gemini.rate_limited')
+    } else {
+      logger.warn({ err: msg.slice(0, 300) }, 'gemini.detect_failed')
+    }
     return { items: [] }
   }
 }

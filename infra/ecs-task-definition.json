@@ -24,8 +24,7 @@
         { "name": "GEMINI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:GEMINI_API_KEY::" },
         { "name": "XAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:XAI_API_KEY::" },
         { "name": "ELEVENLABS_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:ELEVENLABS_API_KEY::" },
-        { "name": "ELEVENLABS_VOICE_ID", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:ELEVENLABS_VOICE_ID::" },
-        { "name": "SENTRY_DSN_API", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:SENTRY_DSN_API::" }
+        { "name": "ELEVENLABS_VOICE_ID", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:ELEVENLABS_VOICE_ID::" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

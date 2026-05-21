@@ -25,7 +25,7 @@ const EnvSchema = z.object({
   ELEVENLABS_VOICE_ID: z.string().min(1),
 
   // Observability (optional in dev)
-  SENTRY_DSN_API: z.string().url().optional(),
+  SENTRY_DSN_API: z.string().url().optional().or(z.literal('')),
 })
 
 export type Env = z.infer<typeof EnvSchema>

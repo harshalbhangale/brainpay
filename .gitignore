@@ -1,0 +1,10 @@
+node_modules
+secrets.prod.json
+dist
+.turbo
+.env
+.env.local
+*.tsbuildinfo
+.expo
+ios
+android

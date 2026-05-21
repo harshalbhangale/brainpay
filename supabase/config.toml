@@ -1,0 +1,39 @@
+project_id = "brainpal"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "brainpal://"
+additional_redirect_urls = ["brainpal://*"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.sms]
+enable_signup = false  # OTP issuance is via our edge function (Twilio Verify)
+
+[functions]
+verify_jwt = false  # otp-start/otp-check are publicly callable
+
+[edge_runtime]
+inspector_port = 8083
+
+# Region pin reminder. Configured on the hosted project, not here:
+#   ap-southeast-2 (Sydney). Verify in Supabase dashboard before day 1.

@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "BrainPal",
+    "slug": "brainpal",
+    "version": "0.1.0",
+    "scheme": "brainpal",
+    "platforms": ["ios"],
+    "ios": {
+      "bundleIdentifier": "tech.brainpal.app",
+      "supportsTablet": false
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

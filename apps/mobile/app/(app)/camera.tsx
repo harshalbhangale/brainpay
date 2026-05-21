@@ -126,8 +126,10 @@ export default function CameraScreen() {
             FileSystem.deleteAsync(photo.uri, { idempotent: true }).catch(() => undefined)
             FileSystem.deleteAsync(shrunk.uri, { idempotent: true }).catch(() => undefined)
           }
-        } catch {
-          // keep looping; transient errors happen.
+        } catch (err) {
+          // surface in Metro so silent failures are visible
+          // eslint-disable-next-line no-console
+          console.warn('frame capture failed:', err)
         } finally {
           captureRef.current.inFlight = false
         }
@@ -275,7 +277,7 @@ export default function CameraScreen() {
             {detection.emoji} {detection.brand} {detection.product}
           </Text>
         ) : (
-          <Text style={styles.hintText}>point at a snack…</Text>
+          <Text style={styles.hintText}>point at anything…</Text>
         )}
         {!!lastLine && <Text style={styles.lineText}>“{lastLine}”</Text>}
       </View>

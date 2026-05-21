@@ -81,9 +81,9 @@ export type WsClientMessage = z.infer<typeof WsClientMessage>
 
 // ─── Gemini perception JSON schema (server-side) ──────────────────────
 export const PerceptionItem = z.object({
-  name: z.string(), // 'Coca-Cola Classic 375ml can'
-  category: z.enum(['drink', 'snack', 'dairy', 'produce', 'meal', 'other']),
-  healthScore: z.number().int().min(-20).max(20), // -20 = junk, +20 = healthy
+  name: z.string(), // 'Coca-Cola Classic 375ml can', 'Apple iPhone 15', 'banana'
+  category: z.string(), // free-form: 'drink', 'electronics', 'fruit', 'toy', etc.
+  healthScore: z.number().int().min(-20).max(20), // -20 = junk/bad buy, +20 = great buy
   confidence: z.number().min(0).max(1),
   bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
 })

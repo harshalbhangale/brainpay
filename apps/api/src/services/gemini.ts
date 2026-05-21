@@ -4,14 +4,12 @@ import { loadEnv } from '../env'
 import { logger } from '../logger'
 
 /**
- * Gemini 2.0 Flash — perception.
- * Detailed Spec § 4.3.
+ * Gemini 2.0 Flash — universal object perception.
  *
- * Returns the most prominent food/drink item in frame (max 1) with:
- *   { name, category, healthScore (-20..+20), confidence (0..1), bbox }
- *
- * healthScore is the coin delta we'll show. We let Gemini do the scoring
- * directly so we don't need a catalog table for the prototype.
+ * Detects ANY prominent object in frame (food, drinks, electronics, books,
+ * toys, clothing, household items — anything visible) and scores it on a
+ * "is this a good purchase for a kid?" axis from -20 (don't buy) to +20
+ * (great buy). PAL roasts based on the score.
  */
 
 const env = loadEnv()
@@ -28,10 +26,7 @@ const RESPONSE_SCHEMA: Schema = {
         type: SchemaType.OBJECT,
         properties: {
           name: { type: SchemaType.STRING },
-          category: {
-            type: SchemaType.STRING,
-            enum: ['drink', 'snack', 'dairy', 'produce', 'meal', 'other'],
-          },
+          category: { type: SchemaType.STRING },
           healthScore: { type: SchemaType.INTEGER },
           confidence: { type: SchemaType.NUMBER },
           bbox: {
@@ -46,21 +41,32 @@ const RESPONSE_SCHEMA: Schema = {
   required: ['items'],
 }
 
-const PROMPT = `You are a vision model that detects food and drink items on supermarket shelves.
+const PROMPT = `You are a vision model that watches what a 10–14 year old kid is about to buy.
 
-Detect AT MOST 1 item — the most prominent food, drink, or snack in the frame.
-If no food/drink is clearly visible, return {"items": []}.
+Detect AT MOST 1 prominent object in the frame. Anything: food, drinks,
+snacks, electronics, books, toys, clothing, stationery, household items —
+not just snacks. Pick the most clearly visible item.
 
-For each item:
-- name: specific product name with brand if visible (e.g. "Coca-Cola Classic 375ml can", "Coles Mixed Nuts 150g pack", "banana", "Snickers bar")
-- category: one of drink | snack | dairy | produce | meal | other
-- healthScore: integer from -20 (worst junk) to +20 (very healthy)
-    Examples: Coke=-15, energy drink=-15, Snickers=-12, chips=-10, sugary cereal=-8,
-    white bread=-3, water=+5, milk=+8, banana=+15, mixed nuts=+15, apple=+15, salad=+18.
-- confidence: 0..1 of how sure you are.
-- bbox: [x, y, width, height] normalized 0..1 from top-left.
+If no clear object is visible, return {"items": []}.
 
-Return ONLY valid JSON matching the schema. No commentary.`
+For each item return:
+- name: specific name with brand if visible.
+    Examples: "Coca-Cola Classic 375ml can", "Apple iPhone 15 Pro",
+    "yellow banana", "Lego Star Wars set", "Stabilo highlighter".
+- category: short single word — 'drink', 'snack', 'fruit', 'dairy',
+    'electronics', 'book', 'toy', 'clothing', 'stationery', 'household',
+    'meal', 'random'. Use any reasonable label; need not be from a fixed list.
+- healthScore: integer −20 to +20 = "is this a good purchase for the kid?"
+    −15 to −10  sugary drinks, energy drinks, candy, junk food
+    −10 to −5   chips, cookies, fast food, expensive luxury items
+    −5  to  0   white bread, mediocre snack, cheap plastic toy
+     0  to +5   water, basic supplies, decent pen, headphones
+    +5  to +10  nuts, yogurt, lego/games, useful tech
+    +10 to +18  fruit, vegetables, books, educational toys, art supplies
+- confidence: 0..1 of how sure you are this is the labelled object.
+- bbox: [x, y, width, height] all normalized 0..1 from top-left.
+
+Return ONLY valid JSON. No commentary.`
 
 export async function detectItems(jpegBytes: Uint8Array): Promise<PerceptionResult> {
   const model = genAI.getGenerativeModel({

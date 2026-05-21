@@ -20,10 +20,10 @@ export type SessionState = {
   reactions: number
 }
 
-const HITS_TO_APPEAR = 3
+const HITS_TO_APPEAR = 2
 const MISSES_TO_CLEAR = 5
 const COOLDOWN_MS = 30_000
-const CONFIDENCE_THRESHOLD = 0.55
+const CONFIDENCE_THRESHOLD = 0.4
 
 const sessions = new WeakMap<WebSocket, SessionState>()
 
@@ -60,15 +60,21 @@ function slugify(name: string): string {
     .slice(0, 64)
 }
 
-function emojiFor(category: PerceptionItem['category']): string {
-  switch (category) {
-    case 'drink': return '🥤'
-    case 'snack': return '🍫'
-    case 'dairy': return '🥛'
-    case 'produce': return '🍎'
-    case 'meal': return '🍱'
-    default: return '🛒'
-  }
+function emojiFor(category: string): string {
+  const c = category.toLowerCase()
+  if (c.includes('drink') || c.includes('beverage') || c.includes('soda')) return '🥤'
+  if (c.includes('snack') || c.includes('candy') || c.includes('chocolate') || c.includes('cookie')) return '🍫'
+  if (c.includes('dairy') || c.includes('milk') || c.includes('yogurt')) return '🥛'
+  if (c.includes('fruit') || c.includes('produce') || c.includes('vegetable')) return '🍎'
+  if (c.includes('meal') || c.includes('food')) return '🍱'
+  if (c.includes('electronics') || c.includes('tech') || c.includes('phone') || c.includes('laptop')) return '📱'
+  if (c.includes('book') || c.includes('magazine')) return '📖'
+  if (c.includes('toy') || c.includes('game') || c.includes('lego') || c.includes('plush')) return '🧸'
+  if (c.includes('clothing') || c.includes('clothes') || c.includes('shoe')) return '👕'
+  if (c.includes('stationery') || c.includes('pen') || c.includes('pencil')) return '✏️'
+  if (c.includes('household') || c.includes('cleaning')) return '🏠'
+  if (c.includes('sport') || c.includes('ball')) return '⚽'
+  return '🛒'
 }
 
 function splitBrandProduct(name: string): { brand: string; product: string } {
@@ -86,6 +92,16 @@ export async function onFrame(ws: WebSocket, jpegBytes: Uint8Array): Promise<voi
   state.framesSent++
   const result = await detectItems(jpegBytes)
   const top = result.items[0]
+
+  // Debug breadcrumb so CloudWatch shows what Gemini is seeing every frame.
+  logger.info(
+    {
+      sessionId: state.sessionId,
+      frame: state.framesSent,
+      top: top ? { name: top.name, category: top.category, score: top.healthScore, conf: top.confidence } : null,
+    },
+    'perception.frame',
+  )
 
   if (!top || top.confidence < CONFIDENCE_THRESHOLD) {
     bumpMiss(ws, state)

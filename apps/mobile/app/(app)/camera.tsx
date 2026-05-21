@@ -141,6 +141,10 @@ export default function CameraScreen() {
 
   function handleJson(msg: any) {
     switch (msg?.type) {
+      case 'session.started':
+        // eslint-disable-next-line no-console
+        console.log('[PAL] session started:', msg.sessionId)
+        break
       case 'detection.appeared':
         setDetection({
           detectionId: msg.detectionId,

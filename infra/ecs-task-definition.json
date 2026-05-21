@@ -19,6 +19,7 @@
       ],
       "secrets": [
         { "name": "SUPABASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:SUPABASE_URL::" },
+        { "name": "SUPABASE_API_URL", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:SUPABASE_API_URL::" },
         { "name": "SUPABASE_SERVICE_ROLE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:SUPABASE_SERVICE_ROLE_KEY::" },
         { "name": "GEMINI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:GEMINI_API_KEY::" },
         { "name": "XAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:XAI_API_KEY::" },

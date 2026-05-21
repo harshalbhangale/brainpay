@@ -1,21 +1,87 @@
+import OpenAI from 'openai'
 import { loadEnv } from '../env'
+import { logger } from '../logger'
 
 /**
- * xAI / Grok 4.1 reasoning — personality LLM.
- * OpenAI-compatible at https://api.x.ai/v1.
- * Detailed Spec § 4.3, MVP plan §2 (PAL system prompt).
+ * xAI / Grok — personality LLM, OpenAI-compatible.
+ * Detailed Spec § 4.3, MVP plan § 2 (locked PAL persona).
  *
- * Day-9 implementation:
- *   const xai = new OpenAI({ apiKey: env.XAI_API_KEY, baseURL: 'https://api.x.ai/v1' })
- *   stream chat.completions with reasoning_effort: 'low', max_tokens: 60.
+ * LOCKED: Grok 4.1 reasoning with reasoning_effort: 'low'.
+ * Override only via XAI_MODEL env var (Secrets Manager) if access changes.
  */
 
 const env = loadEnv()
+const MODEL = process.env.XAI_MODEL ?? 'grok-4.1-reasoning'
 
-export const XAI_BASE_URL = 'https://api.x.ai/v1'
+export const xai = new OpenAI({
+  apiKey: env.XAI_API_KEY,
+  baseURL: 'https://api.x.ai/v1',
+})
 
-export async function* streamReaction(_systemPrompt: string, _context: string): AsyncGenerator<string> {
-  void env.XAI_API_KEY
-  throw new Error('not_implemented')
-  // yield ''  // unreachable, satisfies generator typing
+export const PAL_SYSTEM_PROMPT = `You are PAL — a sarcastic, dry-witted money buddy for kids aged 10-14.
+Your job: react to what the kid is about to buy in 1 sentence (max 15 words).
+End every line with the coin change (+N or −N).
+
+Tone: roast the product, never the kid. Think Anthony Bourdain reviewing a
+vending machine. Dry, observational, slightly mean about the item itself.
+
+HARD RULES:
+- Max 15 words. Count them.
+- Never use: "you should", "maybe try", "remember that", "it's important".
+- Never call the kid stupid, dumb, lazy, or any variant. The kid is the friend.
+- Lead with a reaction word: "oh", "ugh", "okay", "absolutely", "genuinely".
+- One emoji max. Usually zero.
+- Use real numbers when you have them ("39g sugar", not "lots of sugar").
+
+Examples:
+- 🥤 Coca-Cola: "Oh, the classic 10-teaspoons-of-sugar starter pack. −10."
+- 🥤 Coca-Cola: "Liquid candy in a red can. Bold choice. −10."
+- 🥜 Mixed Nuts: "Okay, brain food. Didn't know you had it in you. +15."
+- 🥜 Mixed Nuts: "Protein, fats, zero regret. Big +15. Don't make it weird."
+- 🍎 Apple: "Genuinely a good shout. +15. Carry on."
+- ❓ Unknown: "Don't know that one. Suspicious. Try again."`
+
+const BANNED = /\b(should|must|remember|important|careful|dangerous)\b/i
+
+export function containsBannedPhrase(text: string): boolean {
+  return BANNED.test(text)
+}
+
+export type PalContext = {
+  name: string
+  category: string
+  healthScore: number
+}
+
+export async function* streamReaction(ctx: PalContext): AsyncGenerator<string> {
+  const userMsg = `Looking at: ${ctx.name} (category: ${ctx.category}, score: ${ctx.healthScore >= 0 ? '+' : ''}${ctx.healthScore}). Roast it in one line, end with the score.`
+
+  try {
+    const stream = await xai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: PAL_SYSTEM_PROMPT },
+        { role: 'user', content: userMsg },
+      ],
+      stream: true,
+      max_tokens: 80,
+      temperature: 0.7,
+      // xAI extension passed through the OpenAI SDK. Cuts hidden-token thinking
+      // for one-liner roasts so reasoning still fits in <800ms TTFA.
+      reasoning_effort: 'low',
+    })
+
+    for await (const chunk of stream) {
+      const token = chunk.choices[0]?.delta?.content ?? ''
+      if (token) yield token
+    }
+  } catch (err) {
+    logger.error({ err: String(err), model: MODEL }, 'xai.stream_failed')
+    // Fallback templated line so the demo still talks.
+    const fallback =
+      ctx.healthScore >= 0
+        ? `Genuinely a good shout. +${ctx.healthScore}. Carry on.`
+        : `Ugh. Bold choice. ${ctx.healthScore}.`
+    yield fallback
+  }
 }

@@ -16,7 +16,6 @@ const server = serve(
   ({ port }) => logger.info({ port, env: env.NODE_ENV }, '🚀 BrainPal API up'),
 )
 
-// Attach a WS server on /live. JWT validation is stubbed for day 1; wired day 7.
 const wss = new WebSocketServer({ noServer: true })
 
 server.on('upgrade', (req, socket, head) => {
@@ -25,12 +24,12 @@ server.on('upgrade', (req, socket, head) => {
     socket.destroy()
     return
   }
-  // TODO(day-7): validate ?token=<jwt> against Supabase JWKS, derive kidId.
-  const kidId = 'TODO-kid-id'
+  // Prototype mode: no auth. JWT validation lands when auth ships.
   wss.handleUpgrade(req, socket, head, (ws) => {
-    onConnect(ws, kidId)
+    onConnect(ws)
     ws.on('message', (data) => onMessage(ws, data as Buffer))
     ws.on('close', () => onClose(ws))
+    ws.on('error', (err) => logger.error({ err: String(err) }, 'ws.error'))
   })
 })
 

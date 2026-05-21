@@ -3,15 +3,20 @@ import { loadEnv } from '../env'
 
 /**
  * Supabase admin client (service role).
- * SERVER-ONLY. Used for admin tasks like JWT issuance from edge fns,
- * and any RLS-bypassing reads from the API.
- * Returns null if SUPABASE_SERVICE_ROLE_KEY / SUPABASE_API_URL are not set.
+ * SERVER-ONLY. Lazy-init so the API can boot without Supabase configured
+ * (current state in prototype mode).
  */
-const env = loadEnv()
 
-export const supabaseAdmin: SupabaseClient | null =
-  env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_API_URL
-    ? createClient(env.SUPABASE_API_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      })
-    : null
+let cached: SupabaseClient | null = null
+
+export function getSupabaseAdmin(): SupabaseClient {
+  if (cached) return cached
+  const env = loadEnv()
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY missing — cannot create admin client')
+  }
+  cached = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  return cached
+}

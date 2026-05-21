@@ -1,20 +1,11 @@
-import { Tabs } from 'expo-router'
-import { tokens } from '@/theme/tokens'
+import { Stack } from 'expo-router'
 
+/**
+ * Prototype layout: single fullscreen camera route.
+ * Tabs come back when we re-introduce dashboard + profile.
+ */
 export default function AppLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: { backgroundColor: tokens.color.surface, borderTopColor: tokens.color.surface2 },
-        tabBarActiveTintColor: tokens.color.accent,
-        tabBarInactiveTintColor: tokens.color.textMuted,
-      }}
-    >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="profile" options={{ title: 'You' }} />
-      <Tabs.Screen name="camera" options={{ href: null }} />
-      <Tabs.Screen name="topup" options={{ href: null }} />
-    </Tabs>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000' } }} />
   )
 }

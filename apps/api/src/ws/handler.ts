@@ -1,47 +1,49 @@
 import type { WebSocket } from 'ws'
 import { logger } from '../logger'
+import { decodeFrame } from './framing'
+import { dropSession, interrupt, newSession, onFrame } from './perception'
 
 /**
- * Per-connection live session state.
- * v1 lives in-process (ALB stickiness ON). v1.1+: move to Redis.
- *   TODO(scale): replace in-process Map with Redis when desired-count > 1.
+ * Per-connection WS handler.
+ * Auth is intentionally OFF in prototype mode — see index.ts.
  */
-export type SessionState = {
-  sessionId: string
-  kidId: string
-  current: { itemId: string; hits: number; misses: number } | null
-  active: { detectionId: string; itemId: string } | null
-  lastSpokeAt: Record<string, number> // itemId -> ms epoch
-  framesSent: number
-  detections: number
-  reactions: number
+
+export function onConnect(ws: WebSocket) {
+  const state = newSession(ws)
+  ws.send(JSON.stringify({ type: 'session.started', sessionId: state.sessionId }))
+  logger.info({ sessionId: state.sessionId }, 'ws.connected')
 }
 
-const sessions = new Map<WebSocket, SessionState>()
-
-export function onConnect(ws: WebSocket, kidId: string) {
-  const sessionId = crypto.randomUUID()
-  const state: SessionState = {
-    sessionId,
-    kidId,
-    current: null,
-    active: null,
-    lastSpokeAt: {},
-    framesSent: 0,
-    detections: 0,
-    reactions: 0,
+export function onMessage(ws: WebSocket, data: Buffer) {
+  // Binary tag dispatch.
+  if (data.length > 0 && data[0] === 0x01) {
+    const jpeg = decodeFrame(new Uint8Array(data))
+    if (jpeg) {
+      // Fire-and-forget; perception runs concurrently with next frame's arrival.
+      onFrame(ws, jpeg).catch((err) => logger.error({ err: String(err) }, 'frame.handler_failed'))
+    }
+    return
   }
-  sessions.set(ws, state)
-  ws.send(JSON.stringify({ type: 'session.started', sessionId }))
-  logger.info({ sessionId, kidId }, 'ws.connected')
-}
 
-export function onMessage(_ws: WebSocket, _data: Buffer) {
-  // TODO(day-7): decode tag → frame path; JSON → control path (interrupt, session.end).
+  // JSON control path.
+  try {
+    const msg = JSON.parse(data.toString()) as { type?: string }
+    switch (msg.type) {
+      case 'interrupt':
+        interrupt(ws)
+        break
+      case 'session.end':
+        ws.close()
+        break
+      default:
+        logger.debug({ type: msg.type }, 'ws.unknown_message')
+    }
+  } catch {
+    logger.debug('ws.non_json_message')
+  }
 }
 
 export function onClose(ws: WebSocket) {
-  const state = sessions.get(ws)
-  sessions.delete(ws)
-  if (state) logger.info({ sessionId: state.sessionId }, 'ws.closed')
+  dropSession(ws)
+  logger.info('ws.closed')
 }

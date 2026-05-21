@@ -12,19 +12,19 @@ export const WS_TAG_AUDIO = 0x02 // S→C: [0x02][uint32 seq][MP3 chunk]
 // ─── Server → Client JSON messages ────────────────────────────────────
 export const WsSessionStarted = z.object({
   type: z.literal('session.started'),
-  sessionId: z.string().uuid(),
+  sessionId: z.string(),
 })
 
 export const WsDetectionAppeared = z.object({
   type: z.literal('detection.appeared'),
   detectionId: z.string(),
-  itemId: z.string().uuid(),
+  itemId: z.string(), // slug in prototype; UUID once catalog DB is wired
   brand: z.string(),
   product: z.string(),
   coinDelta: z.number().int(),
   emoji: z.string(),
-  bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]), // [x, y, w, h] normalized 0..1
-  anchor: z.tuple([z.number(), z.number()]), // [cx, cy] normalized 0..1
+  bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  anchor: z.tuple([z.number(), z.number()]),
 })
 
 export const WsDetectionUpdated = z.object({
@@ -41,6 +41,7 @@ export const WsDetectionCleared = z.object({
 export const WsSpeechStarted = z.object({
   type: z.literal('speech.started'),
   detectionId: z.string(),
+  text: z.string().optional(), // expose the full line for debug overlay
 })
 
 export const WsSpeechEnded = z.object({
@@ -80,8 +81,9 @@ export type WsClientMessage = z.infer<typeof WsClientMessage>
 
 // ─── Gemini perception JSON schema (server-side) ──────────────────────
 export const PerceptionItem = z.object({
-  brand: z.string(),
-  product: z.string(),
+  name: z.string(), // 'Coca-Cola Classic 375ml can'
+  category: z.enum(['drink', 'snack', 'dairy', 'produce', 'meal', 'other']),
+  healthScore: z.number().int().min(-20).max(20), // -20 = junk, +20 = healthy
   confidence: z.number().min(0).max(1),
   bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
 })
@@ -89,4 +91,5 @@ export const PerceptionItem = z.object({
 export const PerceptionResult = z.object({
   items: z.array(PerceptionItem),
 })
+export type PerceptionItem = z.infer<typeof PerceptionItem>
 export type PerceptionResult = z.infer<typeof PerceptionResult>

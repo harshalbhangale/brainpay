@@ -1,19 +1,337 @@
-import { StyleSheet, Text, View } from 'react-native'
+import { Audio } from 'expo-av'
+import { CameraView, useCameraPermissions } from 'expo-camera'
+import * as FileSystem from 'expo-file-system'
+import * as ImageManipulator from 'expo-image-manipulator'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Buffer } from 'buffer'
 import { tokens } from '@/theme/tokens'
+import { connectLive, type LiveSocket } from '@/lib/ws'
 
 /**
- * Camera (the hero) — Detailed Spec § 4.
- * Vision-camera + Skia + WS pipeline lands days 6–11.
+ * BrainPal — Live camera prototype.
+ *
+ * Loop:
+ *   1. CameraView renders preview.
+ *   2. Every FRAME_INTERVAL_MS, take a still, shrink to 384px JPEG, send over WS.
+ *   3. WS sends back JSON detection events + binary audio chunks.
+ *   4. We render a coin overlay + buffer audio, play once speech.ended fires.
+ *
+ * No auth in prototype. Targets api.zapfan.com by default.
  */
-export default function Camera() {
+
+const FRAME_INTERVAL_MS = 700 // ~1.4 fps. Keeps Gemini cost + bandwidth sane.
+const FRAME_MAX_WIDTH = 384
+
+type Detection = {
+  detectionId: string
+  brand: string
+  product: string
+  coinDelta: number
+  emoji: string
+  anchor: [number, number] // 0..1 normalized [cx, cy]
+}
+
+export default function CameraScreen() {
+  const [perm, requestPerm] = useCameraPermissions()
+  const cameraRef = useRef<CameraView | null>(null)
+  const sockRef = useRef<LiveSocket | null>(null)
+  const captureRef = useRef<{ inFlight: boolean; cancelled: boolean }>({
+    inFlight: false,
+    cancelled: false,
+  })
+  const audioBufRef = useRef<Map<string, Uint8Array[]>>(new Map())
+  const playingDetectionIdRef = useRef<string | null>(null)
+  const soundRef = useRef<Audio.Sound | null>(null)
+
+  const [connected, setConnected] = useState(false)
+  const [detection, setDetection] = useState<Detection | null>(null)
+  const [lastLine, setLastLine] = useState<string>('')
+  const [framesSent, setFramesSent] = useState(0)
+
+  // Ask for permission on first render.
+  useEffect(() => {
+    if (!perm) return
+    if (!perm.granted && perm.canAskAgain) requestPerm()
+  }, [perm, requestPerm])
+
+  // Configure audio mode once.
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+    }).catch(() => undefined)
+  }, [])
+
+  // Open the WebSocket once we have camera perms.
+  useEffect(() => {
+    if (!perm?.granted) return
+
+    const sock = connectLive({
+      onOpen: () => setConnected(true),
+      onClose: () => setConnected(false),
+      onError: () => setConnected(false),
+      onJson: (msg) => handleJson(msg),
+      onAudioChunk: (_seq, mp3) => {
+        const id = playingDetectionIdRef.current
+        if (!id) return
+        const chunks = audioBufRef.current.get(id) ?? []
+        chunks.push(mp3)
+        audioBufRef.current.set(id, chunks)
+      },
+    })
+    sockRef.current = sock
+    return () => {
+      captureRef.current.cancelled = true
+      sock.close()
+      sockRef.current = null
+    }
+  }, [perm?.granted])
+
+  // Frame capture loop.
+  useEffect(() => {
+    if (!perm?.granted) return
+    captureRef.current.cancelled = false
+
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const tick = async () => {
+      if (captureRef.current.cancelled) return
+      if (!captureRef.current.inFlight && cameraRef.current && sockRef.current?.isOpen()) {
+        captureRef.current.inFlight = true
+        try {
+          const photo = await cameraRef.current.takePictureAsync({
+            quality: 0.5,
+            skipProcessing: true,
+            shutterSound: false,
+            exif: false,
+          })
+          if (photo?.uri) {
+            const shrunk = await ImageManipulator.manipulateAsync(
+              photo.uri,
+              [{ resize: { width: FRAME_MAX_WIDTH } }],
+              { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG },
+            )
+            const b64 = await FileSystem.readAsStringAsync(shrunk.uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            })
+            const bytes = Uint8Array.from(Buffer.from(b64, 'base64'))
+            sockRef.current?.sendFrame(bytes)
+            setFramesSent((n) => n + 1)
+            // best-effort cleanup so we don't fill cache.
+            FileSystem.deleteAsync(photo.uri, { idempotent: true }).catch(() => undefined)
+            FileSystem.deleteAsync(shrunk.uri, { idempotent: true }).catch(() => undefined)
+          }
+        } catch {
+          // keep looping; transient errors happen.
+        } finally {
+          captureRef.current.inFlight = false
+        }
+      }
+      timer = setTimeout(tick, FRAME_INTERVAL_MS)
+    }
+
+    timer = setTimeout(tick, 800) // small warmup
+    return () => {
+      captureRef.current.cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [perm?.granted])
+
+  function handleJson(msg: any) {
+    switch (msg?.type) {
+      case 'detection.appeared':
+        setDetection({
+          detectionId: msg.detectionId,
+          brand: msg.brand ?? '',
+          product: msg.product ?? '',
+          coinDelta: msg.coinDelta ?? 0,
+          emoji: msg.emoji ?? '🛒',
+          anchor: msg.anchor ?? [0.5, 0.5],
+        })
+        break
+      case 'detection.updated':
+        setDetection((d) => (d && d.detectionId === msg.detectionId ? { ...d, anchor: msg.anchor } : d))
+        break
+      case 'detection.cleared':
+        setDetection((d) => (d?.detectionId === msg.detectionId ? null : d))
+        break
+      case 'speech.started':
+        playingDetectionIdRef.current = msg.detectionId
+        audioBufRef.current.set(msg.detectionId, [])
+        break
+      case 'speech.ended':
+        setLastLine(msg.text ?? '')
+        playSpeech(msg.detectionId).catch(() => undefined)
+        break
+    }
+  }
+
+  async function playSpeech(detectionId: string) {
+    const chunks = audioBufRef.current.get(detectionId)
+    if (!chunks || chunks.length === 0) return
+    const total = chunks.reduce((n, c) => n + c.length, 0)
+    const buf = new Uint8Array(total)
+    let off = 0
+    for (const c of chunks) {
+      buf.set(c, off)
+      off += c.length
+    }
+    audioBufRef.current.delete(detectionId)
+    if (playingDetectionIdRef.current === detectionId) playingDetectionIdRef.current = null
+
+    const path = `${FileSystem.cacheDirectory}pal-${detectionId}.mp3`
+    await FileSystem.writeAsStringAsync(path, Buffer.from(buf).toString('base64'), {
+      encoding: FileSystem.EncodingType.Base64,
+    })
+
+    if (soundRef.current) {
+      try { await soundRef.current.unloadAsync() } catch { /* ignore */ }
+      soundRef.current = null
+    }
+    const { sound } = await Audio.Sound.createAsync({ uri: path }, { shouldPlay: true })
+    soundRef.current = sound
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => undefined)
+        FileSystem.deleteAsync(path, { idempotent: true }).catch(() => undefined)
+      }
+    })
+  }
+
+  const overlayPos = useMemo(() => {
+    if (!detection) return null
+    const [cx, cy] = detection.anchor
+    return {
+      left: `${Math.round(cx * 100)}%`,
+      top: `${Math.round(cy * 100)}%`,
+    } as { left: `${number}%`; top: `${number}%` }
+  }, [detection])
+
+  if (!perm) return <View style={styles.bg} />
+  if (!perm.granted) {
+    return (
+      <View style={[styles.bg, styles.center]}>
+        <Text style={styles.title}>Camera permission needed</Text>
+        <Pressable style={styles.btn} onPress={requestPerm}>
+          <Text style={styles.btnText}>Grant access</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Camera</Text>
+    <View style={styles.bg}>
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+
+      {/* HUD top bar */}
+      <View style={styles.hud}>
+        <View style={[styles.pill, { backgroundColor: connected ? tokens.color.accent : tokens.color.danger }]}>
+          <Text style={styles.pillText}>{connected ? 'live' : 'offline'}</Text>
+        </View>
+        <Text style={styles.framesText}>{framesSent} frames</Text>
+      </View>
+
+      {/* Floating coin */}
+      {detection && overlayPos && (
+        <Pressable
+          onPress={() => sockRef.current?.sendInterrupt('tap')}
+          style={[
+            styles.coin,
+            {
+              left: overlayPos.left,
+              top: overlayPos.top,
+              backgroundColor:
+                detection.coinDelta > 0
+                  ? tokens.color.accent
+                  : detection.coinDelta < 0
+                  ? tokens.color.danger
+                  : tokens.color.surface2,
+            },
+          ]}
+        >
+          <Text style={styles.coinDelta}>
+            {detection.coinDelta > 0 ? '+' : ''}
+            {detection.coinDelta}
+          </Text>
+          <Text style={styles.coinEmoji}>{detection.emoji}</Text>
+        </Pressable>
+      )}
+
+      {/* Bottom caption */}
+      <View style={styles.caption}>
+        {detection ? (
+          <Text style={styles.itemText}>
+            {detection.emoji} {detection.brand} {detection.product}
+          </Text>
+        ) : (
+          <Text style={styles.hintText}>point at a snack…</Text>
+        )}
+        {!!lastLine && <Text style={styles.lineText}>“{lastLine}”</Text>}
+      </View>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
-  title: { color: tokens.color.text, fontSize: tokens.fontSize.lg },
+  bg: { flex: 1, backgroundColor: '#000' },
+  center: { justifyContent: 'center', alignItems: 'center', padding: tokens.spacing[5] },
+  title: { color: tokens.color.text, fontSize: tokens.fontSize.lg, marginBottom: tokens.spacing[4] },
+
+  hud: {
+    position: 'absolute',
+    top: 60,
+    left: tokens.spacing[5],
+    right: tokens.spacing[5],
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pill: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: tokens.radius.pill,
+  },
+  pillText: { color: '#000', fontWeight: '700', fontSize: tokens.fontSize.xs, textTransform: 'uppercase' },
+  framesText: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs },
+
+  coin: {
+    position: 'absolute',
+    width: 84,
+    height: 84,
+    marginLeft: -42,
+    marginTop: -42,
+    borderRadius: 42,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  coinDelta: { color: '#000', fontSize: 22, fontWeight: '800' },
+  coinEmoji: { fontSize: 18, marginTop: -2 },
+
+  caption: {
+    position: 'absolute',
+    bottom: 40,
+    left: tokens.spacing[5],
+    right: tokens.spacing[5],
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    padding: tokens.spacing[4],
+    borderRadius: tokens.radius.lg,
+  },
+  itemText: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '700' },
+  hintText: { color: tokens.color.textMuted, fontSize: tokens.fontSize.md },
+  lineText: { color: tokens.color.text, fontSize: tokens.fontSize.sm, marginTop: 6, fontStyle: 'italic' },
+
+  btn: {
+    backgroundColor: tokens.color.accent,
+    paddingHorizontal: tokens.spacing[5],
+    paddingVertical: tokens.spacing[3],
+    borderRadius: tokens.radius.pill,
+  },
+  btnText: { color: '#000', fontWeight: '700' },
 })

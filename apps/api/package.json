@@ -14,10 +14,12 @@
   },
   "dependencies": {
     "@brainpal/shared": "workspace:*",
+    "@google/generative-ai": "0.21.0",
     "@hono/node-server": "1.13.8",
     "@supabase/supabase-js": "2.46.1",
     "drizzle-orm": "0.36.4",
     "hono": "4.7.4",
+    "openai": "4.77.0",
     "pino": "9.5.0",
     "postgres": "3.4.5",
     "ws": "8.18.0",

@@ -4,6 +4,7 @@ import * as FileSystem from 'expo-file-system/legacy'
 import * as ImageManipulator from 'expo-image-manipulator'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Buffer } from 'buffer'
 import { tokens } from '@/theme/tokens'
 import { connectLive, type LiveSocket } from '@/lib/ws'
@@ -33,6 +34,7 @@ type Detection = {
 }
 
 export default function CameraScreen() {
+  const insets = useSafeAreaInsets()
   const [perm, requestPerm] = useCameraPermissions()
   const cameraRef = useRef<CameraView | null>(null)
   const sockRef = useRef<LiveSocket | null>(null)
@@ -233,7 +235,7 @@ export default function CameraScreen() {
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
 
       {/* HUD top bar */}
-      <View style={styles.hud}>
+      <View style={[styles.hud, { top: insets.top + tokens.spacing[3] }]}>
         <View style={[styles.pill, { backgroundColor: connected ? tokens.color.accent : tokens.color.danger }]}>
           <Text style={styles.pillText}>{connected ? 'live' : 'offline'}</Text>
         </View>
@@ -267,7 +269,7 @@ export default function CameraScreen() {
       )}
 
       {/* Bottom caption */}
-      <View style={styles.caption}>
+      <View style={[styles.caption, { bottom: insets.bottom + tokens.spacing[5] }]}>
         {detection ? (
           <Text style={styles.itemText}>
             {detection.emoji} {detection.brand} {detection.product}
@@ -288,7 +290,6 @@ const styles = StyleSheet.create({
 
   hud: {
     position: 'absolute',
-    top: 60,
     left: tokens.spacing[5],
     right: tokens.spacing[5],
     flexDirection: 'row',
@@ -312,18 +313,13 @@ const styles = StyleSheet.create({
     borderRadius: 42,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
   },
   coinDelta: { color: '#000', fontSize: 22, fontWeight: '800' },
   coinEmoji: { fontSize: 18, marginTop: -2 },
 
   caption: {
     position: 'absolute',
-    bottom: 40,
     left: tokens.spacing[5],
     right: tokens.spacing[5],
     backgroundColor: 'rgba(0,0,0,0.55)',

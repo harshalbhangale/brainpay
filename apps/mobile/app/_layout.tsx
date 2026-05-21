@@ -2,10 +2,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Slot } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useState } from 'react'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 
 /**
  * Root layout: providers + status bar.
- * Auth gate (route to (auth) vs (app) based on session) lands day 2.
+ * Auth gate (route to (auth) vs (app) based on session) lands when OTP ships.
  */
 export default function RootLayout() {
   const [queryClient] = useState(() => new QueryClient({
@@ -13,9 +14,11 @@ export default function RootLayout() {
   }))
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="light" />
-      <Slot />
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="light" />
+        <Slot />
+      </QueryClientProvider>
+    </SafeAreaProvider>
   )
 }

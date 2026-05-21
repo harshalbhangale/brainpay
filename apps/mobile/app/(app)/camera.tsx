@@ -146,6 +146,10 @@ export default function CameraScreen() {
 
   function handleJson(msg: any) {
     switch (msg?.type) {
+      case 'session.started':
+        // Server confirmed session — nothing to do in prototype, just log.
+        console.log('[PAL] session started:', msg.sessionId)
+        break
       case 'detection.appeared':
         setDetection({
           detectionId: msg.detectionId,

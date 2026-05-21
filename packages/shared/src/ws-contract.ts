@@ -47,6 +47,7 @@ export const WsSpeechStarted = z.object({
 export const WsSpeechEnded = z.object({
   type: z.literal('speech.ended'),
   detectionId: z.string(),
+  text: z.string().optional(),
 })
 
 export const WsError = z.object({

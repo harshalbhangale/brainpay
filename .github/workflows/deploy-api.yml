@@ -37,10 +37,13 @@ jobs:
 
       - name: Build and push image
         run: |
-          IMAGE="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
-          docker build -t "$IMAGE" -f apps/api/Dockerfile .
-          docker push "$IMAGE"
-          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          REGISTRY="${{ steps.ecr.outputs.registry }}"
+          IMAGE_SHA="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          IMAGE_LATEST="$REGISTRY/${{ env.ECR_REPOSITORY }}:latest"
+          docker build -t "$IMAGE_SHA" -t "$IMAGE_LATEST" -f apps/api/Dockerfile .
+          docker push "$IMAGE_SHA"
+          docker push "$IMAGE_LATEST"
+          echo "IMAGE=$IMAGE_SHA" >> "$GITHUB_ENV"
 
       - name: Force new deployment
         run: |

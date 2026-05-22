@@ -12,41 +12,177 @@ import {
 } from 'drizzle-orm/pg-core'
 
 /**
- * BrainPal database schema.
- * See: Detailed Feature Build Spec § 1.4.
+ * BrainPay P0 — family-first schema.
+ * Source of truth: docs/p0-spec.md § 11.1 + supabase/migrations/0002_family_schema.sql.
  *
- * Coin convention: integer points shown to user, cents stored in DB
- *   1 coin == 1 cent internally. 100 coins == 10000 in balance_cents.
+ * Brains: integer points stored directly. 1 Brain == 1 cent (P1+).
+ *
+ * accounts.id matches auth.users.id (Supabase Auth) so JWT.sub maps directly.
  */
 
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
+// ─── accounts ─────────────────────────────────────────────────────────
+export const accounts = pgTable('accounts', {
+  id: uuid('id').primaryKey(),
   phone: text('phone').notNull().unique(), // E.164
-  displayName: text('display_name'),
-  avatarEmoji: text('avatar_emoji').default('🧒'),
+  accountType: text('account_type'), // 'parent' | 'kid' | 'extended' (null until onboarded)
+  persona: jsonb('persona').notNull().default(sql`'{}'::jsonb`),
+  cachedBalance: integer('cached_balance').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
 })
 
-export const kids = pgTable('kids', {
+// ─── families ─────────────────────────────────────────────────────────
+export const families = pgTable('families', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id')
-    .references(() => users.id, { onDelete: 'cascade' })
-    .notNull(),
-  displayName: text('display_name').notNull(),
-  age: integer('age'),
-  balanceCents: integer('balance_cents').default(10000).notNull(),
+  name: text('name').notNull(),
+  avatar: text('avatar').default('🏡'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+// ─── memberships ──────────────────────────────────────────────────────
+export const memberships = pgTable(
+  'memberships',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    familyId: uuid('family_id')
+      .references(() => families.id, { onDelete: 'cascade' })
+      .notNull(),
+    accountId: uuid('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    role: text('role').notNull(), // 'primary_parent' | 'co_parent' | 'guardian' | 'kid'
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueFamilyAccount: uniqueIndex('memberships_family_account_unique').on(t.familyId, t.accountId),
+    byFamily: index('memberships_family_idx').on(t.familyId),
+    byAccount: index('memberships_account_idx').on(t.accountId),
+  }),
+)
+
+// ─── ledger ───────────────────────────────────────────────────────────
+export const ledger = pgTable(
+  'ledger',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    familyId: uuid('family_id')
+      .references(() => families.id, { onDelete: 'cascade' })
+      .notNull(),
+    accountId: uuid('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    actorId: uuid('actor_id')
+      .references(() => accounts.id, { onDelete: 'restrict' })
+      .notNull(),
+    kind: text('kind').notNull(),
+    // 'topup' | 'scan_skip_reward' | 'purchase' | 'goal_lock' | 'goal_unlock'
+    // | 'streak_bonus' | 'adjustment' | 'cart_checkout'
+    brainsDelta: integer('brains_delta').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    byFamilyCreated: index('ledger_family_created_idx').on(t.familyId, t.createdAt),
+    byAccountCreated: index('ledger_account_created_idx').on(t.accountId, t.createdAt),
+  }),
+)
+
+// ─── goals ────────────────────────────────────────────────────────────
+export const goals = pgTable('goals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  familyId: uuid('family_id')
+    .references(() => families.id, { onDelete: 'cascade' })
+    .notNull(),
+  accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'cascade' }), // null = family goal
+  name: text('name').notNull(),
+  targetBrains: integer('target_brains').notNull(),
+  currentBrains: integer('current_brains').default(0).notNull(),
+  emoji: text('emoji').default('🎯'),
+  status: text('status').default('active').notNull(), // 'active' | 'completed' | 'abandoned'
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+})
+
+// ─── cart_items ───────────────────────────────────────────────────────
+export const cartItems = pgTable('cart_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: uuid('account_id')
+    .references(() => accounts.id, { onDelete: 'cascade' })
+    .notNull(),
+  detectionId: text('detection_id'),
+  itemName: text('item_name').notNull(),
+  itemEmoji: text('item_emoji').default('🛒'),
+  brainsDelta: integer('brains_delta').notNull(),
+  palQuote: text('pal_quote'),
+  metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true })
+    .default(sql`(now() + interval '24 hours')`)
+    .notNull(),
+})
+
+// ─── invites ──────────────────────────────────────────────────────────
+export const invites = pgTable('invites', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  familyId: uuid('family_id')
+    .references(() => families.id, { onDelete: 'cascade' })
+    .notNull(),
+  invitedBy: uuid('invited_by')
+    .references(() => accounts.id, { onDelete: 'cascade' })
+    .notNull(),
+  code: text('code').notNull().unique(),
+  token: text('token').notNull().unique(),
+  expectedRole: text('expected_role').notNull(), // 'co_parent' | 'guardian' | 'kid'
+  kidSeed: jsonb('kid_seed').notNull().default(sql`'{}'::jsonb`),
+  initialTopup: integer('initial_topup').default(0).notNull(),
+  recipientPhone: text('recipient_phone'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  status: text('status').default('pending').notNull(),
+})
+
+// ─── chat_messages ────────────────────────────────────────────────────
+export const chatMessages = pgTable(
+  'chat_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    role: text('role').notNull(), // 'user' | 'assistant' | 'system'
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    byAccountCreated: index('chat_account_created_idx').on(t.accountId, t.createdAt),
+  }),
+)
+
+// ─── inbox ────────────────────────────────────────────────────────────
+export const inbox = pgTable('inbox', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: uuid('account_id')
+    .references(() => accounts.id, { onDelete: 'cascade' })
+    .notNull(),
+  kind: text('kind').notNull(),
+  title: text('title').notNull(),
+  body: text('body'),
+  metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+  readAt: timestamp('read_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ─── items (catalog, unchanged from MVP) ──────────────────────────────
 export const items = pgTable(
   'items',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     brand: text('brand').notNull(),
     product: text('product').notNull(),
-    category: text('category'), // drink | snack | dairy | produce | other
-    coinDelta: integer('coin_delta').notNull(), // +15 or -10
+    category: text('category'),
+    coinDelta: integer('coin_delta').notNull(),
     reasonTemplate: text('reason_template').notNull(),
     emoji: text('emoji').default('🛒'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -56,30 +192,11 @@ export const items = pgTable(
   }),
 )
 
-export const ledgerEntries = pgTable(
-  'ledger_entries',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    kidId: uuid('kid_id')
-      .references(() => kids.id, { onDelete: 'cascade' })
-      .notNull(),
-    itemId: uuid('item_id').references(() => items.id),
-    kind: text('kind').notNull(), // 'purchase' | 'topup' | 'reward' | 'adjustment'
-    coinDelta: integer('coin_delta').notNull(),
-    balanceAfter: integer('balance_after').notNull(),
-    note: text('note'),
-    metadata: jsonb('metadata').default(sql`'{}'::jsonb`),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => ({
-    byKidCreated: index('ledger_kid_created_idx').on(t.kidId, t.createdAt),
-  }),
-)
-
+// ─── sessions (camera analytics, migrated from kid_id → account_id) ──
 export const sessions = pgTable('sessions', {
   id: uuid('id').primaryKey().defaultRandom(),
-  kidId: uuid('kid_id')
-    .references(() => kids.id, { onDelete: 'cascade' })
+  accountId: uuid('account_id')
+    .references(() => accounts.id, { onDelete: 'cascade' })
     .notNull(),
   startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
   endedAt: timestamp('ended_at', { withTimezone: true }),

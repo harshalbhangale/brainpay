@@ -18,10 +18,10 @@ export const OtpCheckResponse = z.object({
   user: z.object({
     id: z.string(),
     phone: z.string(),
-    displayName: z.string().nullable(),
-    avatarEmoji: z.string(),
   }),
   isNewUser: z.boolean(),
+  hasPendingInvite: z.boolean(),
+  accountType: z.enum(['parent', 'kid', 'extended']).nullable(),
 })
 
 // ─── Me ───────────────────────────────────────────────────────────────

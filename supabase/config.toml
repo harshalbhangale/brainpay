@@ -29,8 +29,11 @@ enable_signup = true
 [auth.sms]
 enable_signup = false  # OTP issuance is via our edge function (Twilio Verify)
 
-[functions]
-verify_jwt = false  # otp-start/otp-check are publicly callable
+[functions.otp-start]
+verify_jwt = false  # publicly callable — no auth before OTP
+
+[functions.otp-check]
+verify_jwt = false  # publicly callable — no auth before OTP
 
 [edge_runtime]
 inspector_port = 8083

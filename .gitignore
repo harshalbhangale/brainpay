@@ -8,3 +8,10 @@ dist
 .expo
 ios
 android
+
+# Supabase CLI cache (contains pooler URL + tokens)
+supabase/.temp/
+supabase/.branches/
+
+# OS noise
+.DS_Store

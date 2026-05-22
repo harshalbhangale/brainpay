@@ -1,18 +1,21 @@
 {
   "expo": {
-    "name": "BrainPal",
-    "slug": "brainpal",
+    "name": "BrainPay",
+    "slug": "brainpay",
     "version": "0.1.0",
-    "scheme": "brainpal",
+    "scheme": "brainpay",
     "platforms": [
       "ios"
     ],
     "ios": {
-      "bundleIdentifier": "tech.brainpal.app",
+      "bundleIdentifier": "tech.brainpay.app",
       "supportsTablet": false,
+      "associatedDomains": [
+        "applinks:brainpay.app"
+      ],
       "infoPlist": {
-        "NSCameraUsageDescription": "BrainPal uses your camera to scan snacks.",
-        "NSMicrophoneUsageDescription": "BrainPal needs the mic only if voice-in is enabled."
+        "NSCameraUsageDescription": "BrainPay uses your camera to scan products.",
+        "NSMicrophoneUsageDescription": "BrainPay needs the mic only if voice-in is enabled."
       }
     },
     "plugins": [
@@ -21,7 +24,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow BrainPal to access your camera so it can scan snacks."
+          "cameraPermission": "Allow BrainPay to access your camera so it can scan items."
         }
       ],
       "expo-audio",

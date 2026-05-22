@@ -24,7 +24,7 @@ export type SessionState = {
   reactions: number
 }
 
-const HITS_TO_APPEAR = 2
+const HITS_TO_APPEAR = 1
 const MISSES_TO_CLEAR = 5
 const COOLDOWN_MS = 30_000
 const CONFIDENCE_THRESHOLD = 0.4

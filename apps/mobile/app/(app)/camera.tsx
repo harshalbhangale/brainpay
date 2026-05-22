@@ -18,7 +18,7 @@ import { Buffer } from 'buffer'
 import { tokens } from '@/theme/tokens'
 import { connectLive, type LiveSocket } from '@/lib/ws'
 
-const FRAME_INTERVAL_MS = 1500
+const FRAME_INTERVAL_MS = 700
 const FRAME_MAX_WIDTH = 384
 const { width: SW, height: SH } = Dimensions.get('window')
 

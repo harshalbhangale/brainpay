@@ -1,6 +1,6 @@
 import type { WebSocket } from 'ws'
 import type { PerceptionItem } from '@brainpal/shared'
-import { detectItems } from '../services/gemini'
+import { detectItems } from '../services/bedrock'
 import { speakReaction } from './voice'
 import { logger } from '../logger'
 

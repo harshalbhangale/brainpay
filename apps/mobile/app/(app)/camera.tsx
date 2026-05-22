@@ -14,7 +14,7 @@ import { connectLive, type LiveSocket } from '@/lib/ws'
  * No auth. Targets api.zapfan.com by default.
  */
 
-const FRAME_INTERVAL_MS = 4500 // ~13 RPM — fits the Gemini free tier (15 RPM cap)
+const FRAME_INTERVAL_MS = 1500 // ~40 RPM, well under Bedrock service quota
 const FRAME_MAX_WIDTH = 384
 
 type Detection = {

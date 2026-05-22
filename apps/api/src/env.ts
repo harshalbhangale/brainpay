@@ -12,14 +12,17 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
   // Supabase (server-side, service role)
-  // Accepts both https:// API URLs and postgresql:// direct connection strings
   SUPABASE_URL: z.string().min(1),
-  // Optional until Supabase JS admin client is needed (auth routes, RLS bypass)
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   SUPABASE_API_URL: z.string().url().optional(),
 
-  // AI providers
-  GEMINI_API_KEY: z.string().min(1),
+  // Bedrock (perception). AWS_BEARER_TOKEN_BEDROCK is read directly by the
+  // AWS SDK at request time; we don't need to bind it to a local var.
+  BEDROCK_REGION: z.string().default('ap-southeast-2'),
+  BEDROCK_MODEL_ID: z.string().default('apac.amazon.nova-lite-v1:0'),
+
+  // Legacy AI providers (no longer required; kept optional during transition)
+  GEMINI_API_KEY: z.string().min(1).optional(),
   XAI_API_KEY: z.string().min(1),
   ELEVENLABS_API_KEY: z.string().min(1),
   ELEVENLABS_VOICE_ID: z.string().min(1),

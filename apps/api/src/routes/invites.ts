@@ -273,6 +273,20 @@ authed.post('/invites/:code/accept', async (c) => {
   })
 })
 
+// Used during onboarding right after OTP: does this phone have any
+// pending invites? Authed (the user just got their token from /auth/otp/check)
+// so we can scope the lookup to their phone safely.
+authed.get('/invites/by-phone', async (c) => {
+  const phone = c.req.query('phone')
+  if (!phone) return c.json({ error: 'invalid_input' }, 400)
+  const rows = await db
+    .select({ id: invites.id })
+    .from(invites)
+    .where(and(eq(invites.recipientPhone, phone), eq(invites.status, 'pending')))
+    .limit(5)
+  return c.json({ invites: rows })
+})
+
 invitesRoutes.route('/', authed)
 
 // Util: 8-char SMS-safe code (no 0/O/I/1 to avoid confusion).

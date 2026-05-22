@@ -1,20 +1,21 @@
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
+import * as SecureStore from 'expo-secure-store'
+import { env } from '@/lib/env'
 
 /**
- * Auth store — drives the OTP flow + holds the current session profile.
+ * Auth store — drives the OTP flow + holds the current session.
  *
- * Uses Supabase's native phone OTP provider (Twilio Verify configured in
- * Auth settings):
- *   supabase.auth.signInWithOtp({ phone })
- *   supabase.auth.verifyOtp({ phone, token, type: 'sms' })
+ * BrainPal owns the auth flow end-to-end:
+ *   POST {API}/auth/otp/start   { phone }       -> SMS via Twilio Verify
+ *   POST {API}/auth/otp/check   { phone, code } -> { token, account, isNewUser }
  *
- * Test-account bypass: configure a test phone + fixed code in the
- * Supabase dashboard (Auth → Providers → Phone → Test OTP). The native
- * verifyOtp accepts those without round-tripping Twilio.
- *
- * Sessions persist via SecureStore (configured in lib/supabase.ts).
+ * The token is a BrainPal-issued HS256 JWT (NOT Supabase Auth). We store
+ * it in SecureStore and attach it as `Authorization: Bearer ...` to every
+ * subsequent API call (apps/mobile/lib/api.ts).
  */
+
+const TOKEN_KEY = 'brainpal.auth.token'
+const ACCOUNT_KEY = 'brainpal.auth.account'
 
 export type AuthStatus =
   | 'idle'
@@ -25,6 +26,14 @@ export type AuthStatus =
   | 'error'
 
 export type AccountType = 'parent' | 'kid' | 'extended' | null
+
+export type StoredAccount = {
+  id: string
+  phone: string
+  accountType: AccountType
+  persona: Record<string, unknown> | null
+  cachedBalance: number
+}
 
 type AuthState = {
   status: AuthStatus
@@ -46,6 +55,21 @@ type AuthState = {
   hydrateFromSession: () => Promise<void>
 }
 
+const apiUrl = (path: string) => `${env.apiBaseUrl}${path}`
+
+async function jsonOrThrow(res: Response, op: string): Promise<unknown> {
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    let detail = text
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>
+      detail = (parsed.error as string | undefined) ?? text
+    } catch { /* not JSON */ }
+    throw new Error(`${op} ${res.status}: ${detail}`)
+  }
+  return res.json()
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'idle',
   phone: null,
@@ -61,19 +85,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   sendCode: async (phone) => {
     set({ status: 'sendingCode', phone, errorMessage: null })
-    const { error } = await supabase.auth.signInWithOtp({
-      phone,
-      options: {
-        // Allow creating a new auth user on first sign-in. Supabase will
-        // upsert into auth.users keyed by phone.
-        shouldCreateUser: true,
-      },
-    })
-    if (error) {
-      set({ status: 'error', errorMessage: error.message })
-      throw error
+    try {
+      const res = await fetch(apiUrl('/auth/otp/start'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      })
+      await jsonOrThrow(res, 'otp.start')
+      set({ status: 'awaitingCode' })
+    } catch (err) {
+      const msg = (err as Error).message
+      set({ status: 'error', errorMessage: msg })
+      throw err
     }
-    set({ status: 'awaitingCode' })
   },
 
   verifyCode: async (code) => {
@@ -81,53 +105,46 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!phone) throw new Error('no_phone')
     set({ status: 'verifying', errorMessage: null })
 
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone,
-      token: code,
-      type: 'sms',
-    })
-
-    if (error || !data.session || !data.user) {
-      const msg = error?.message ?? 'verify_failed'
+    let body: {
+      token: string
+      expiresAt: number
+      isNewUser: boolean
+      account: StoredAccount
+    }
+    try {
+      const res = await fetch(apiUrl('/auth/otp/check'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code }),
+      })
+      body = (await jsonOrThrow(res, 'otp.check')) as typeof body
+    } catch (err) {
+      const msg = (err as Error).message
       set({ status: 'awaitingCode', errorMessage: msg })
-      throw new Error(msg)
+      throw err
     }
 
-    // Decide onboarding routing: brand-new auth user (created_at within a
-    // few seconds of now) vs returning user. Supabase doesn't expose an
-    // `isNewUser` flag from verifyOtp, so we infer from created_at.
-    const createdAt = new Date(data.user.created_at).getTime()
-    const isNewUser = Date.now() - createdAt < 60_000
+    // Persist token + account locally.
+    await SecureStore.setItemAsync(TOKEN_KEY, body.token)
+    await SecureStore.setItemAsync(ACCOUNT_KEY, JSON.stringify(body.account))
 
-    // Look up the accounts row + any pending invite for this phone via
-    // the API (which uses the just-issued session for RLS).
-    let accountType: AccountType = null
+    // Lookup pending invite for this phone via the API. Best-effort.
     let hasPendingInvite = false
     try {
-      const { data: account } = await supabase
-        .from('accounts')
-        .select('account_type')
-        .eq('id', data.user.id)
-        .maybeSingle()
-      accountType = (account?.account_type ?? null) as AccountType
-
-      const { data: invites } = await supabase
-        .from('invites')
-        .select('id')
-        .eq('recipient_phone', phone)
-        .eq('status', 'pending')
-        .limit(1)
-      hasPendingInvite = (invites?.length ?? 0) > 0
-    } catch (lookupErr) {
-      // Non-fatal — onboarding routing will default to role-select.
-      console.warn('post_verify_lookup_failed', lookupErr)
-    }
+      const inviteRes = await fetch(apiUrl(`/invites/by-phone?phone=${encodeURIComponent(phone)}`), {
+        headers: { Authorization: `Bearer ${body.token}` },
+      })
+      if (inviteRes.ok) {
+        const data = (await inviteRes.json()) as { invites?: unknown[] }
+        hasPendingInvite = (data.invites?.length ?? 0) > 0
+      }
+    } catch { /* non-fatal */ }
 
     set({
       status: 'authenticated',
-      accountId: data.user.id,
-      accountType,
-      isNewUser,
+      accountId: body.account.id,
+      accountType: body.account.accountType,
+      isNewUser: body.isNewUser,
       hasPendingInvite,
     })
   },
@@ -139,7 +156,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
-    await supabase.auth.signOut()
+    await SecureStore.deleteItemAsync(TOKEN_KEY)
+    await SecureStore.deleteItemAsync(ACCOUNT_KEY)
+    // Best-effort hit logout endpoint. Not awaited beyond a short timeout.
+    fetch(apiUrl('/auth/logout'), { method: 'POST' }).catch(() => undefined)
     set({
       status: 'idle',
       phone: null,
@@ -152,15 +172,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   hydrateFromSession: async () => {
-    const { data } = await supabase.auth.getSession()
-    if (data.session) {
+    const token = await SecureStore.getItemAsync(TOKEN_KEY)
+    const accountRaw = await SecureStore.getItemAsync(ACCOUNT_KEY)
+    if (!token || !accountRaw) {
+      set({ status: 'idle' })
+      return
+    }
+    try {
+      const account = JSON.parse(accountRaw) as StoredAccount
       set({
         status: 'authenticated',
-        accountId: data.session.user.id,
-        phone: data.session.user.phone ? `+${data.session.user.phone}` : null,
+        accountId: account.id,
+        accountType: account.accountType,
+        phone: account.phone,
       })
-    } else {
+    } catch {
+      // Corrupt cache — drop and reset to idle.
+      await SecureStore.deleteItemAsync(TOKEN_KEY)
+      await SecureStore.deleteItemAsync(ACCOUNT_KEY)
       set({ status: 'idle' })
     }
   },
 }))
+
+/** Read the stored token (used by api.ts to attach Authorization header). */
+export async function getStoredToken(): Promise<string | null> {
+  return SecureStore.getItemAsync(TOKEN_KEY)
+}

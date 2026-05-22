@@ -298,7 +298,7 @@ function DetailSheet({
             <Text style={sheet.skipText}>Skip it  +2 🧠</Text>
           </Pressable>
           <Pressable style={[sheet.btn, sheet.buyBtn, { backgroundColor: colors.ring }]} onPress={() => { dismiss(); onBuy() }}>
-            <Text style={sheet.buyText}>Buy it  {detection.coinDelta > 0 ? '+' : ''}{detection.coinDelta} 🧠</Text>
+            <Text style={sheet.buyText}>Add to cart  {detection.coinDelta > 0 ? '+' : ''}{detection.coinDelta} 🧠</Text>
           </Pressable>
         </View>
       </Animated.View>

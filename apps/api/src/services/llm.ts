@@ -54,6 +54,59 @@ export type PalContext = {
   healthScore: number
 }
 
+export type ItemVerdict = {
+  trafficLight: 'green' | 'amber' | 'red'
+  ingredientsSummary: string
+  whyBad?: string
+  whyGood?: string
+  healthContext: string
+  estimatedPrice?: string
+}
+
+const VERDICT_SYSTEM = `You are a nutrition and product analyst for kids aged 10-14.
+Given an item name, category, and health score, return a JSON object with:
+- trafficLight: "green" (score >= 5), "amber" (-4 to 4), or "red" (score <= -5)
+- ingredientsSummary: key nutritional facts in one short line, e.g. "39g sugar, 0 protein, 330ml". For non-food items describe key specs briefly.
+- whyBad: (only if score < 0) one short sentence why it's a bad choice for a kid. Be specific with numbers.
+- whyGood: (only if score >= 0) one short sentence why it's a good choice. Be specific.
+- healthContext: one sentence putting it in context for a 10-14 year old. E.g. "That's 2x your daily sugar limit in one can."
+- estimatedPrice: price in AUD if you know it with reasonable confidence (e.g. "$3.50"), omit if unsure.
+
+Be concise. Kids read fast. No fluff.`
+
+export async function getVerdict(ctx: PalContext): Promise<ItemVerdict> {
+  try {
+    const resp = await llm.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: VERDICT_SYSTEM },
+        { role: 'user', content: `Item: ${ctx.name}\nCategory: ${ctx.category}\nHealth score: ${ctx.healthScore}` },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 200,
+      temperature: 0,
+    })
+    const raw = JSON.parse(resp.choices[0]?.message?.content ?? '{}')
+    const tl = ctx.healthScore >= 5 ? 'green' : ctx.healthScore <= -5 ? 'red' : 'amber'
+    return {
+      trafficLight: raw.trafficLight ?? tl,
+      ingredientsSummary: raw.ingredientsSummary ?? '',
+      whyBad: raw.whyBad,
+      whyGood: raw.whyGood,
+      healthContext: raw.healthContext ?? '',
+      estimatedPrice: raw.estimatedPrice,
+    }
+  } catch (err) {
+    logger.warn({ err: String(err) }, 'llm.verdict_failed')
+    const tl = ctx.healthScore >= 5 ? 'green' : ctx.healthScore <= -5 ? 'red' : 'amber'
+    return {
+      trafficLight: tl,
+      ingredientsSummary: '',
+      healthContext: '',
+    }
+  }
+}
+
 export async function* streamReaction(ctx: PalContext): AsyncGenerator<string> {
   const userMsg = `Looking at: ${ctx.name} (category: ${ctx.category}, score: ${ctx.healthScore >= 0 ? '+' : ''}${ctx.healthScore}). Roast it in one line, end with the score.`
 

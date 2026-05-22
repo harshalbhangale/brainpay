@@ -18,13 +18,22 @@ export const WsSessionStarted = z.object({
 export const WsDetectionAppeared = z.object({
   type: z.literal('detection.appeared'),
   detectionId: z.string(),
-  itemId: z.string(), // slug in prototype; UUID once catalog DB is wired
+  itemId: z.string(),
   brand: z.string(),
   product: z.string(),
   coinDelta: z.number().int(),
   emoji: z.string(),
   bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
   anchor: z.tuple([z.number(), z.number()]),
+  // Rich verdict — generated in parallel with voice, zero extra latency
+  verdict: z.object({
+    trafficLight: z.enum(['green', 'amber', 'red']),
+    ingredientsSummary: z.string(), // "39g sugar, 0 protein, 330ml"
+    whyBad: z.string().optional(),  // "High sugar spikes energy then crashes"
+    whyGood: z.string().optional(), // "Good source of protein and healthy fats"
+    healthContext: z.string(),      // "For a 12-year-old, this is 2x daily sugar limit"
+    estimatedPrice: z.string().optional(), // "$3.50" — only if Gemini knows it
+  }).optional(),
 })
 
 export const WsDetectionUpdated = z.object({

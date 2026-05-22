@@ -1,6 +1,7 @@
 import type { WebSocket } from 'ws'
 import type { PerceptionItem } from '@brainpal/shared'
 import { detectItems } from '../services/bedrock'
+import { getVerdict } from '../services/llm'
 import { speakReaction } from './voice'
 import { loadEnv } from '../env'
 import { logger } from '../logger'
@@ -135,6 +136,16 @@ export async function onFrame(ws: WebSocket, jpegBytes: Uint8Array): Promise<voi
     const [bx, by, bw, bh] = top.bbox
     const anchor: [number, number] = [bx + bw / 2, by + bh / 2]
 
+    const palCtx = { name: top.name, category: top.category, healthScore: top.healthScore }
+
+    // Fire verdict + voice in parallel — verdict enriches the detection event,
+    // voice streams audio. Neither blocks the other.
+    const [verdict] = await Promise.all([
+      getVerdict(palCtx),
+      // voice fires below after we send detection.appeared
+      Promise.resolve(),
+    ])
+
     ws.send(
       JSON.stringify({
         type: 'detection.appeared',
@@ -146,6 +157,7 @@ export async function onFrame(ws: WebSocket, jpegBytes: Uint8Array): Promise<voi
         emoji: emojiFor(top.category),
         bbox: top.bbox,
         anchor,
+        verdict,
       }),
     )
     logger.info(
@@ -160,12 +172,7 @@ export async function onFrame(ws: WebSocket, jpegBytes: Uint8Array): Promise<voi
       state.reactions += 1
       const abort = new AbortController()
       state.voiceAbort = abort
-      // Fire and forget — don't block the perception loop.
-      speakReaction(ws, detectionId, {
-        name: top.name,
-        category: top.category,
-        healthScore: top.healthScore,
-      }, abort).catch((err) =>
+      speakReaction(ws, detectionId, palCtx, abort).catch((err) =>
         logger.error({ err: String(err), detectionId }, 'voice.crashed'),
       )
     } else if (!env.VOICE_ENABLED) {

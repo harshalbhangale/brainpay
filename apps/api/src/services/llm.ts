@@ -118,7 +118,7 @@ export async function* streamReaction(ctx: PalContext): AsyncGenerator<string> {
         { role: 'user', content: userMsg },
       ],
       stream: true,
-      max_tokens: 60,
+      max_completion_tokens: 60,
       temperature: 0.7,
     })
 

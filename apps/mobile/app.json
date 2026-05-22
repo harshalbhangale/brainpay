@@ -4,9 +4,7 @@
     "slug": "brainpal",
     "version": "0.1.0",
     "scheme": "brainpal",
-    "platforms": [
-      "ios"
-    ],
+    "platforms": ["ios", "android", "web"],
     "ios": {
       "bundleIdentifier": "tech.brainpal.app",
       "supportsTablet": false,
@@ -14,6 +12,21 @@
         "NSCameraUsageDescription": "BrainPal uses your camera to scan snacks.",
         "NSMicrophoneUsageDescription": "BrainPal needs the mic only if voice-in is enabled."
       }
+    },
+    "android": {
+      "package": "tech.brainpal.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0B0F"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png",
+      "name": "BrainPal",
+      "shortName": "BrainPal",
+      "themeColor": "#0B0B0F",
+      "backgroundColor": "#0B0B0F"
     },
     "plugins": [
       "expo-router",

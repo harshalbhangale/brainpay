@@ -7,6 +7,7 @@ import {
   Animated,
   Dimensions,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -405,12 +406,21 @@ export default function CameraScreen() {
             photo.uri, [{ resize: { width: FRAME_MAX_WIDTH } }],
             { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG },
           )
-          const b64   = await FileSystem.readAsStringAsync(shrunk.uri, { encoding: FileSystem.EncodingType.Base64 })
-          const bytes = Uint8Array.from(Buffer.from(b64, 'base64'))
+          let bytes: Uint8Array
+          if (Platform.OS === 'web') {
+            // Web: shrunk.uri is a blob: URL. fetch it back to bytes.
+            const ab = await (await fetch(shrunk.uri)).arrayBuffer()
+            bytes = new Uint8Array(ab)
+          } else {
+            const b64 = await FileSystem.readAsStringAsync(shrunk.uri, { encoding: FileSystem.EncodingType.Base64 })
+            bytes = Uint8Array.from(Buffer.from(b64, 'base64'))
+          }
           sockRef.current?.sendFrame(bytes)
           setFramesSent(n => n + 1)
-          FileSystem.deleteAsync(photo.uri,  { idempotent: true }).catch(() => undefined)
-          FileSystem.deleteAsync(shrunk.uri, { idempotent: true }).catch(() => undefined)
+          if (Platform.OS !== 'web') {
+            FileSystem.deleteAsync(photo.uri,  { idempotent: true }).catch(() => undefined)
+            FileSystem.deleteAsync(shrunk.uri, { idempotent: true }).catch(() => undefined)
+          }
         } catch { /* silent */ } finally { captureRef.current.inFlight = false }
       }
       timer = setTimeout(tick, FRAME_INTERVAL_MS)
@@ -459,10 +469,23 @@ export default function CameraScreen() {
     for (const c of chunks) { buf.set(c, off); off += c.length }
     audioBufRef.current.delete(detectionId)
     if (playingRef.current === detectionId) playingRef.current = null
-    const path = `${FileSystem.cacheDirectory}pal-${detectionId}.mp3`
-    await FileSystem.writeAsStringAsync(path, Buffer.from(buf).toString('base64'), { encoding: FileSystem.EncodingType.Base64 })
+
+    // Web: blob URL. Native: cached file path.
+    let uri: string
+    let cleanup: () => void
+    if (Platform.OS === 'web') {
+      const blob = new Blob([buf], { type: 'audio/mpeg' })
+      uri = URL.createObjectURL(blob)
+      cleanup = () => URL.revokeObjectURL(uri)
+    } else {
+      const path = `${FileSystem.cacheDirectory}pal-${detectionId}.mp3`
+      await FileSystem.writeAsStringAsync(path, Buffer.from(buf).toString('base64'), { encoding: FileSystem.EncodingType.Base64 })
+      uri = path
+      cleanup = () => { FileSystem.deleteAsync(path, { idempotent: true }).catch(() => undefined) }
+    }
+
     if (playerRef.current) { try { playerRef.current.remove() } catch {} playerRef.current = null }
-    const player = createAudioPlayer({ uri: path })
+    const player = createAudioPlayer({ uri })
     playerRef.current = player
     player.play()
     const sub = player.addListener('playbackStatusUpdate', (s) => {
@@ -470,7 +493,7 @@ export default function CameraScreen() {
         sub.remove()
         try { player.remove() } catch {}
         if (playerRef.current === player) playerRef.current = null
-        FileSystem.deleteAsync(path, { idempotent: true }).catch(() => undefined)
+        cleanup()
       }
     })
   }

@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws'
-import { containsBannedPhrase, streamReaction, type PalContext } from '../services/xai'
+import { containsBannedPhrase, streamReaction, type PalContext } from '../services/llm'
 import { streamTTS } from '../services/elevenlabs'
 import { encodeAudioChunk } from './framing'
 import { logger } from '../logger'

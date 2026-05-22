@@ -28,9 +28,9 @@ const EnvSchema = z.object({
     .default('true')
     .transform((v) => v.toLowerCase() !== 'false'),
 
-  // Legacy AI providers (no longer required; kept optional during transition)
-  GEMINI_API_KEY: z.string().min(1).optional(),
-  XAI_API_KEY: z.string().min(1),
+  // Personality LLM — OpenAI by default. xAI/Grok kept optional for fallback.
+  OPENAI_API_KEY: z.string().min(1),
+  XAI_API_KEY: z.string().min(1).optional(),
   ELEVENLABS_API_KEY: z.string().min(1),
   ELEVENLABS_VOICE_ID: z.string().min(1),
 

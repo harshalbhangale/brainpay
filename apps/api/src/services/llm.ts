@@ -3,19 +3,20 @@ import { loadEnv } from '../env'
 import { logger } from '../logger'
 
 /**
- * xAI / Grok — personality LLM, OpenAI-compatible.
+ * Personality LLM — OpenAI gpt-5.4-mini by default.
  * Detailed Spec § 4.3, MVP plan § 2 (locked PAL persona).
  *
- * LOCKED: Grok 4.1 reasoning with reasoning_effort: 'low'.
- * Override only via XAI_MODEL env var (Secrets Manager) if access changes.
+ * Why gpt-5.4-mini: cheapest+fastest model that still produces witty
+ * one-liners. TTFT ~150-300ms, vs ~1-2s for reasoning models. Override
+ * via OPENAI_MODEL secret if you want a different one (gpt-5.4 for
+ * sharper roasts, gpt-5.4-nano for absolute lowest latency).
  */
 
 const env = loadEnv()
-const MODEL = process.env.XAI_MODEL ?? 'grok-4.1-reasoning'
+const MODEL = process.env.OPENAI_MODEL ?? 'gpt-5.4-mini'
 
-export const xai = new OpenAI({
-  apiKey: env.XAI_API_KEY,
-  baseURL: 'https://api.x.ai/v1',
+export const llm = new OpenAI({
+  apiKey: env.OPENAI_API_KEY,
 })
 
 export const PAL_SYSTEM_PROMPT = `You are PAL — a sarcastic, dry-witted money buddy for kids aged 10-14.
@@ -57,18 +58,15 @@ export async function* streamReaction(ctx: PalContext): AsyncGenerator<string> {
   const userMsg = `Looking at: ${ctx.name} (category: ${ctx.category}, score: ${ctx.healthScore >= 0 ? '+' : ''}${ctx.healthScore}). Roast it in one line, end with the score.`
 
   try {
-    const stream = await xai.chat.completions.create({
+    const stream = await llm.chat.completions.create({
       model: MODEL,
       messages: [
         { role: 'system', content: PAL_SYSTEM_PROMPT },
         { role: 'user', content: userMsg },
       ],
       stream: true,
-      max_tokens: 80,
+      max_tokens: 60,
       temperature: 0.7,
-      // xAI extension passed through the OpenAI SDK. Cuts hidden-token thinking
-      // for one-liner roasts so reasoning still fits in <800ms TTFA.
-      reasoning_effort: 'low',
     })
 
     for await (const chunk of stream) {
@@ -76,7 +74,7 @@ export async function* streamReaction(ctx: PalContext): AsyncGenerator<string> {
       if (token) yield token
     }
   } catch (err) {
-    logger.error({ err: String(err), model: MODEL }, 'xai.stream_failed')
+    logger.error({ err: String(err), model: MODEL }, 'llm.stream_failed')
     // Fallback templated line so the demo still talks.
     const fallback =
       ctx.healthScore >= 0

@@ -2,7 +2,10 @@ import type { WebSocket } from 'ws'
 import type { PerceptionItem } from '@brainpal/shared'
 import { detectItems } from '../services/bedrock'
 import { speakReaction } from './voice'
+import { loadEnv } from '../env'
 import { logger } from '../logger'
+
+const env = loadEnv()
 
 /**
  * Per-connection perception state.
@@ -152,7 +155,7 @@ export async function onFrame(ws: WebSocket, jpegBytes: Uint8Array): Promise<voi
 
     // Cooldown gate: don't speak again about the same item for 30s.
     const last = state.lastSpokeAt[itemId] ?? 0
-    if (Date.now() - last >= COOLDOWN_MS) {
+    if (env.VOICE_ENABLED && Date.now() - last >= COOLDOWN_MS) {
       state.lastSpokeAt[itemId] = Date.now()
       state.reactions += 1
       const abort = new AbortController()
@@ -165,6 +168,8 @@ export async function onFrame(ws: WebSocket, jpegBytes: Uint8Array): Promise<voi
       }, abort).catch((err) =>
         logger.error({ err: String(err), detectionId }, 'voice.crashed'),
       )
+    } else if (!env.VOICE_ENABLED) {
+      logger.info({ detectionId, item: top.name }, 'voice.disabled_skipped')
     }
   } else {
     // Same item, still hits-but-not-yet-appeared OR already active: just update anchor.

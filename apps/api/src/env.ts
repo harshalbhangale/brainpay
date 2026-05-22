@@ -21,6 +21,13 @@ const EnvSchema = z.object({
   BEDROCK_REGION: z.string().default('ap-southeast-2'),
   BEDROCK_MODEL_ID: z.string().default('apac.amazon.nova-lite-v1:0'),
 
+  // Voice pipeline kill-switch. When false, perception still fires detections
+  // (coin overlay still appears) but Grok + ElevenLabs are skipped entirely.
+  VOICE_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v.toLowerCase() !== 'false'),
+
   // Legacy AI providers (no longer required; kept optional during transition)
   GEMINI_API_KEY: z.string().min(1).optional(),
   XAI_API_KEY: z.string().min(1),

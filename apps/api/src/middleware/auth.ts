@@ -7,19 +7,32 @@ import { logger } from '../logger'
  * Validates Supabase JWT from `Authorization: Bearer <token>` and attaches
  * `accountId` to context for downstream handlers.
  *
- * Supabase signs JWTs with a project-specific HS256 key (legacy) or RS256
- * via JWKS. We support both: prefer JWKS when SUPABASE_JWT_JWKS_URL is set,
- * fall back to a shared secret via SUPABASE_JWT_SECRET.
- *
- * For the prototype we accept the access_token from supabase-js as-is —
- * Supabase Postgres RLS already enforces row-level scoping, so the API
- * just needs the verified `sub` (= accounts.id).
+ * Supabase projects can issue HS256 (legacy shared secret) or asymmetric
+ * (ES256/RS256 via JWKS) tokens depending on whether the project has been
+ * migrated to the new key system. We inspect the JWT header `alg` and
+ * route to the right verifier.
  */
 
 const env = loadEnv()
 
-// Use Supabase's JWKS — every project exposes one at /auth/v1/.well-known/jwks.json
-const JWKS_URL = `${env.SUPABASE_URL.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`
+// Supabase JWKS lives at the project's HTTPS API URL, not the Postgres
+// connection string. SUPABASE_URL in this codebase holds the postgres URL
+// for Drizzle; the HTTPS URL is in SUPABASE_API_URL. Fall back to
+// SUPABASE_URL only when it actually starts with https:// (older deploys
+// where SUPABASE_URL was overloaded).
+const apiUrl =
+  env.SUPABASE_API_URL ??
+  (env.SUPABASE_URL.startsWith('https://') ? env.SUPABASE_URL : null)
+
+if (!apiUrl) {
+  // Boot loud — every authed request would 401 otherwise.
+  throw new Error(
+    'auth middleware: SUPABASE_API_URL missing (must be https://...). ' +
+      'SUPABASE_URL alone is the Drizzle postgres URL and cannot serve JWKS.',
+  )
+}
+
+const JWKS_URL = `${apiUrl.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null
 
 function getJwks() {
@@ -37,19 +50,31 @@ export const requireAuth: MiddlewareHandler<{ Variables: AuthVars }> = async (c,
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null
   if (!token) return c.json({ error: 'unauthenticated' }, 401)
 
+  // Inspect the JWT header to choose the right verification path.
+  let alg: string | undefined
   try {
-    // jwtVerify with JWKS works for both HS256 (using shared secret) and
-    // RS256 (using JWKS). For HS256-signed tokens jose will fail to find a
-    // matching key in the JWKS — caller can set SUPABASE_JWT_SECRET as a
-    // fallback path. We try JWKS first.
+    const headerJson = JSON.parse(
+      Buffer.from(token.split('.')[0], 'base64url').toString(),
+    )
+    alg = headerJson.alg
+  } catch {
+    return c.json({ error: 'invalid_token' }, 401)
+  }
+
+  try {
     const jwtSecret = process.env.SUPABASE_JWT_SECRET
     let payload: Record<string, unknown>
 
-    if (jwtSecret) {
+    if (alg === 'HS256') {
+      if (!jwtSecret) {
+        logger.error({ alg }, 'auth.missing_hs256_secret')
+        return c.json({ error: 'invalid_token' }, 401)
+      }
       const enc = new TextEncoder().encode(jwtSecret)
       const verified = await jwtVerify(token, enc, { algorithms: ['HS256'] })
       payload = verified.payload as Record<string, unknown>
     } else {
+      // ES256 / RS256 — use the project's JWKS.
       const verified = await jwtVerify(token, getJwks())
       payload = verified.payload as Record<string, unknown>
     }
@@ -61,7 +86,10 @@ export const requireAuth: MiddlewareHandler<{ Variables: AuthVars }> = async (c,
     c.set('phone', (payload.phone as string | undefined) ?? null)
     await next()
   } catch (err) {
-    logger.warn({ err: String(err).slice(0, 200) }, 'auth.verify_failed')
+    logger.warn(
+      { err: String(err).slice(0, 200), alg, jwksUrl: JWKS_URL },
+      'auth.verify_failed',
+    )
     return c.json({ error: 'invalid_token' }, 401)
   }
 }

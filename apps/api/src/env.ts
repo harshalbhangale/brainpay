@@ -16,6 +16,27 @@ const EnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   SUPABASE_API_URL: z.string().url().optional(),
 
+  // BrainPal-issued JWT signing secret. ≥32 chars. Required for /auth/*.
+  API_JWT_SECRET: z.string().min(32),
+
+  // Twilio Verify (server-side OTP)
+  TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
+  TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+  TWILIO_VERIFY_SERVICE_SID: z.string().min(1).optional(),
+
+  // Dev OTP bypass — when DEV_BYPASS_OTP=true, code DEV_BYPASS_CODE
+  // (default '123456') is accepted without round-tripping Twilio. Never
+  // set this on prod env.
+  DEV_BYPASS_OTP: z
+    .string()
+    .default('false')
+    .transform((v) => v.toLowerCase() === 'true'),
+  DEV_BYPASS_OTP_START: z
+    .string()
+    .default('false')
+    .transform((v) => v.toLowerCase() === 'true'),
+  DEV_BYPASS_CODE: z.string().default('123456'),
+
   // Bedrock (perception). AWS_BEARER_TOKEN_BEDROCK is read directly by the
   // AWS SDK at request time; we don't need to bind it to a local var.
   BEDROCK_REGION: z.string().default('ap-southeast-2'),

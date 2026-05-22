@@ -4,15 +4,13 @@ import { StatusBar } from 'expo-status-bar'
 import * as Linking from 'expo-linking'
 import { useEffect, useState } from 'react'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 
 /**
  * Root layout: providers + status bar + auth gate.
  *
- * Auth flow:
- *   - On mount, hydrate from existing Supabase session (SecureStore).
- *   - Subscribe to auth state changes — sign out elsewhere → bounce to (auth).
+ * Auth flow (BrainPal-issued JWT, NOT Supabase Auth):
+ *   - On mount, hydrate from SecureStore (token + cached account).
  *   - Route gating: unauthed users land in (auth), authed users in (app).
  *
  * Deep link handling for invites lives in (auth)/invite-accept; this layout
@@ -44,20 +42,6 @@ function AuthGate() {
   useEffect(() => {
     hydrate().finally(() => setHydrated(true))
   }, [hydrate])
-
-  // Listen for auth state changes (token refresh, sign out from another tab).
-  useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' || !session) {
-        useAuthStore.setState({
-          status: 'idle',
-          accountId: null,
-          accountType: null,
-        })
-      }
-    })
-    return () => sub.subscription.unsubscribe()
-  }, [])
 
   // Deep link handler: brainpay://inv/<code> → invite-accept screen
   useEffect(() => {

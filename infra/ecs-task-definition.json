@@ -24,6 +24,11 @@
         { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:OPENAI_API_KEY::" },
         { "name": "ELEVENLABS_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:ELEVENLABS_API_KEY::" },
         { "name": "ELEVENLABS_VOICE_ID", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:ELEVENLABS_VOICE_ID::" },
+        { "name": "API_JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:API_JWT_SECRET::" },
+        { "name": "TWILIO_ACCOUNT_SID", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:TWILIO_ACCOUNT_SID::" },
+        { "name": "TWILIO_AUTH_TOKEN", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:TWILIO_AUTH_TOKEN::" },
+        { "name": "TWILIO_VERIFY_SERVICE_SID", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:TWILIO_VERIFY_SERVICE_SID::" },
+        { "name": "DEV_BYPASS_OTP", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:DEV_BYPASS_OTP::" },
         { "name": "SENTRY_DSN_API", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT_ID:secret:brainpal/prod/api:SENTRY_DSN_API::" }
       ],
       "logConfiguration": {

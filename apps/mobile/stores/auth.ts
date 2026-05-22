@@ -1,17 +1,19 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
-import { env } from '@/lib/env'
 
 /**
  * Auth store — drives the OTP flow + holds the current session profile.
  *
- * The Twilio bridge lives in two Supabase Edge Functions:
- *   POST {SUPABASE_URL}/functions/v1/otp-start  { phone }
- *   POST {SUPABASE_URL}/functions/v1/otp-check  { phone, code }
+ * Uses Supabase's native phone OTP provider (Twilio Verify configured in
+ * Auth settings):
+ *   supabase.auth.signInWithOtp({ phone })
+ *   supabase.auth.verifyOtp({ phone, token, type: 'sms' })
  *
- * After otp-check returns the JWT we hand it to supabase.auth.setSession
- * so SecureStore picks it up automatically and every API call gets the
- * Authorization header for free.
+ * Test-account bypass: configure a test phone + fixed code in the
+ * Supabase dashboard (Auth → Providers → Phone → Test OTP). The native
+ * verifyOtp accepts those without round-tripping Twilio.
+ *
+ * Sessions persist via SecureStore (configured in lib/supabase.ts).
  */
 
 export type AuthStatus =
@@ -44,8 +46,6 @@ type AuthState = {
   hydrateFromSession: () => Promise<void>
 }
 
-const FN_URL = (path: string) => `${env.supabaseUrl}/functions/v1/${path}`
-
 export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'idle',
   phone: null,
@@ -61,18 +61,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   sendCode: async (phone) => {
     set({ status: 'sendingCode', phone, errorMessage: null })
-    const res = await fetch(FN_URL('otp-start'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: env.supabaseAnonKey,
+    const { error } = await supabase.auth.signInWithOtp({
+      phone,
+      options: {
+        // Allow creating a new auth user on first sign-in. Supabase will
+        // upsert into auth.users keyed by phone.
+        shouldCreateUser: true,
       },
-      body: JSON.stringify({ phone }),
     })
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      set({ status: 'error', errorMessage: body || `otp-start ${res.status}` })
-      throw new Error(`otp-start failed (${res.status})`)
+    if (error) {
+      set({ status: 'error', errorMessage: error.message })
+      throw error
     }
     set({ status: 'awaitingCode' })
   },
@@ -82,45 +81,54 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!phone) throw new Error('no_phone')
     set({ status: 'verifying', errorMessage: null })
 
-    const res = await fetch(FN_URL('otp-check'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: env.supabaseAnonKey,
-      },
-      body: JSON.stringify({ phone, code }),
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone,
+      token: code,
+      type: 'sms',
     })
 
-    if (!res.ok) {
-      set({ status: 'awaitingCode', errorMessage: 'wrong_code' })
-      throw new Error(`otp-check failed (${res.status})`)
+    if (error || !data.session || !data.user) {
+      const msg = error?.message ?? 'verify_failed'
+      set({ status: 'awaitingCode', errorMessage: msg })
+      throw new Error(msg)
     }
 
-    const body = (await res.json()) as {
-      jwt: string
-      refreshToken: string
-      user: { id: string; phone: string }
-      isNewUser: boolean
-      hasPendingInvite: boolean
-      accountType: AccountType
-    }
+    // Decide onboarding routing: brand-new auth user (created_at within a
+    // few seconds of now) vs returning user. Supabase doesn't expose an
+    // `isNewUser` flag from verifyOtp, so we infer from created_at.
+    const createdAt = new Date(data.user.created_at).getTime()
+    const isNewUser = Date.now() - createdAt < 60_000
 
-    // Hand the tokens to supabase-js so SecureStore picks them up.
-    const { error } = await supabase.auth.setSession({
-      access_token: body.jwt,
-      refresh_token: body.refreshToken,
-    })
-    if (error) {
-      set({ status: 'error', errorMessage: error.message })
-      throw error
+    // Look up the accounts row + any pending invite for this phone via
+    // the API (which uses the just-issued session for RLS).
+    let accountType: AccountType = null
+    let hasPendingInvite = false
+    try {
+      const { data: account } = await supabase
+        .from('accounts')
+        .select('account_type')
+        .eq('id', data.user.id)
+        .maybeSingle()
+      accountType = (account?.account_type ?? null) as AccountType
+
+      const { data: invites } = await supabase
+        .from('invites')
+        .select('id')
+        .eq('recipient_phone', phone)
+        .eq('status', 'pending')
+        .limit(1)
+      hasPendingInvite = (invites?.length ?? 0) > 0
+    } catch (lookupErr) {
+      // Non-fatal — onboarding routing will default to role-select.
+      console.warn('post_verify_lookup_failed', lookupErr)
     }
 
     set({
       status: 'authenticated',
-      accountId: body.user.id,
-      accountType: body.accountType,
-      isNewUser: body.isNewUser,
-      hasPendingInvite: body.hasPendingInvite,
+      accountId: data.user.id,
+      accountType,
+      isNewUser,
+      hasPendingInvite,
     })
   },
 

@@ -3,6 +3,9 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -60,12 +63,14 @@ export function SlidingWizard({
 
   const goBack = () => {
     if (isAnimating) return
+    Keyboard.dismiss()
     if (step === 0) onBack?.()
     else onStepChange(step - 1)
   }
 
   const goNext = () => {
     if (!canContinue || isAnimating) return
+    Keyboard.dismiss()
     if (step === steps.length - 1) onComplete()
     else onStepChange(step + 1)
   }
@@ -73,68 +78,75 @@ export function SlidingWizard({
   const isLast = step === steps.length - 1
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* Top bar: back arrow + progress dots */}
-      <View style={styles.topBar}>
-        <Pressable hitSlop={16} onPress={goBack} style={styles.backBtn}>
-          {(step > 0 || onBack) && <Text style={styles.backChevron}>‹</Text>}
-        </Pressable>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={[styles.root, { paddingTop: insets.top }]}>
+        {/* Top bar: back arrow + progress dots */}
+        <View style={styles.topBar}>
+          <Pressable hitSlop={16} onPress={goBack} style={styles.backBtn}>
+            {(step > 0 || onBack) && <Text style={styles.backChevron}>‹</Text>}
+          </Pressable>
 
-        <View style={styles.dots}>
-          {steps.map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                i === step && [styles.dotActive, { backgroundColor: accent }],
-              ]}
-            />
-          ))}
+          <View style={styles.dots}>
+            {steps.map((_, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.dot,
+                  i === step && [styles.dotActive, { backgroundColor: accent }],
+                ]}
+              />
+            ))}
+          </View>
+
+          {/* spacer to balance back arrow */}
+          <View style={styles.backBtn} />
         </View>
 
-        <View style={styles.backBtn} /> {/* spacer to balance back arrow */}
-      </View>
+        {/* Sliding content */}
+        <View style={styles.viewport}>
+          <Animated.View
+            style={[
+              styles.track,
+              {
+                width: SCREEN_WIDTH * steps.length,
+                transform: [{ translateX }],
+              },
+            ]}
+          >
+            {steps.map((node, i) => (
+              <View key={i} style={[styles.slide, { width: SCREEN_WIDTH }]}>
+                {node}
+              </View>
+            ))}
+          </Animated.View>
+        </View>
 
-      {/* Sliding content */}
-      <View style={styles.viewport}>
-        <Animated.View
-          style={[
-            styles.track,
-            {
-              width: SCREEN_WIDTH * steps.length,
-              transform: [{ translateX }],
-            },
-          ]}
-        >
-          {steps.map((node, i) => (
-            <View key={i} style={[styles.slide, { width: SCREEN_WIDTH }]}>
-              {node}
-            </View>
-          ))}
-        </Animated.View>
+        {/* Continue button */}
+        <View style={[styles.bottom, { paddingBottom: insets.bottom + tokens.spacing[3] }]}>
+          <Pressable
+            onPress={goNext}
+            disabled={!canContinue}
+            style={[
+              styles.cta,
+              { backgroundColor: accent },
+              !canContinue && styles.ctaDisabled,
+            ]}
+          >
+            <Text style={[styles.ctaText, !canContinue && styles.ctaTextDisabled]}>
+              {isLast ? continueLabel ?? 'Done' : 'Continue'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
-
-      {/* Continue button */}
-      <View style={[styles.bottom, { paddingBottom: insets.bottom + tokens.spacing[3] }]}>
-        <Pressable
-          onPress={goNext}
-          disabled={!canContinue}
-          style={[
-            styles.cta,
-            { backgroundColor: accent },
-            !canContinue && styles.ctaDisabled,
-          ]}
-        >
-          <Text style={[styles.ctaText, !canContinue && styles.ctaTextDisabled]}>
-            {isLast ? continueLabel ?? 'Done' : 'Continue'}
-          </Text>
-        </Pressable>
-      </View>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: tokens.color.bg },
   root: { flex: 1, backgroundColor: tokens.color.bg },
   topBar: {
     flexDirection: 'row',

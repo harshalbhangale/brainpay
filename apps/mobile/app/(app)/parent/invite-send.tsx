@@ -2,7 +2,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useState } from 'react'
 import {
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -55,6 +59,7 @@ export default function InviteSend() {
 
   const sendSms = async () => {
     if (!phone.trim()) return
+    Keyboard.dismiss()
     setSending(true)
     try {
       await api(`/invites/${params.inviteId}/send-sms`, {
@@ -76,103 +81,119 @@ export default function InviteSend() {
   }
 
   return (
-    <View style={[s.root, { paddingTop: insets.top + tokens.spacing[3], paddingBottom: insets.bottom }]}>
-      <Pressable hitSlop={16} onPress={() => router.back()} style={s.backBtn}>
-        <Text style={s.backText}>‹ Back</Text>
-      </Pressable>
+    <KeyboardAvoidingView
+      style={s.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={[s.root, { paddingTop: insets.top + tokens.spacing[3], paddingBottom: insets.bottom }]}>
+        <Pressable hitSlop={16} onPress={() => router.back()} style={s.backBtn}>
+          <Text style={s.backText}>‹ Back</Text>
+        </Pressable>
 
-      {/* Kid header */}
-      <View style={s.header}>
-        <Text style={s.headerEmoji}>{kidAvatar}</Text>
-        <Text style={s.headerName}>{kidName}</Text>
-        <Text style={s.headerSub}>Invite ready · {params.code}</Text>
-      </View>
-
-      {mode === 'pick' && (
-        <View style={s.modeList}>
-          <Pressable style={s.modeCard} onPress={() => setMode('sms')}>
-            <Text style={s.modeEmoji}>📱</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.modeTitle}>Send by SMS</Text>
-              <Text style={s.modeDesc}>Text them a link they can tap.</Text>
-            </View>
-            <Text style={s.modeArrow}>›</Text>
-          </Pressable>
-
-          <Pressable style={s.modeCard} onPress={() => setMode('qr')}>
-            <Text style={s.modeEmoji}>📷</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.modeTitle}>Show a QR</Text>
-              <Text style={s.modeDesc}>Scan it from their phone.</Text>
-            </View>
-            <Text style={s.modeArrow}>›</Text>
-          </Pressable>
-
-          <Pressable style={[s.modeCard, s.modeCardMuted]} onPress={copyLink}>
-            <Text style={s.modeEmoji}>🔗</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.modeTitle}>Copy link</Text>
-              <Text style={s.modeDesc}>Paste it anywhere.</Text>
-            </View>
-            <Text style={s.modeArrow}>›</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {mode === 'sms' && (
-        <View style={s.smsView}>
-          <Text style={s.title}>Their phone number</Text>
-          <Text style={s.subtitle}>We'll text them the invite link.</Text>
-          <TextInput
-            style={s.input}
-            placeholder="+61 412 345 678"
-            placeholderTextColor={tokens.color.textMuted}
-            keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
-            autoFocus
-            textContentType="telephoneNumber"
-          />
-          <Pressable
-            style={[s.primary, (!phone.trim() || sending) && s.primaryDisabled]}
-            onPress={sendSms}
-            disabled={!phone.trim() || sending}
-          >
-            <Text style={s.primaryText}>{sending ? 'Sending…' : 'Send invite'}</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {mode === 'qr' && (
-        <View style={s.qrView}>
-          <View style={s.qrFrame}>
-            <QRCode value={params.qrData ?? params.code ?? ''} size={240} backgroundColor="#fff" color="#000" />
+        <ScrollView
+          style={s.flex}
+          contentContainerStyle={s.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Kid header */}
+          <View style={s.header}>
+            <Text style={s.headerEmoji}>{kidAvatar}</Text>
+            <Text style={s.headerName}>{kidName}</Text>
+            <Text style={s.headerSub}>Invite ready · {params.code}</Text>
           </View>
-          <Text style={s.qrCaption}>
-            Open BrainPay on their phone, pick "I have an invite", and scan this code.
-          </Text>
-          <Text style={s.qrCode}>or enter code: {params.code}</Text>
-        </View>
-      )}
 
-      {mode === 'sent' && (
-        <View style={s.sentView}>
-          <Text style={s.sentEmoji}>✉️</Text>
-          <Text style={s.title}>Invite sent</Text>
-          <Text style={s.subtitle}>
-            They'll get a text shortly. Their card will appear on your home as soon as they accept.
-          </Text>
-          <Pressable style={s.primary} onPress={() => router.replace('/(app)/parent')}>
-            <Text style={s.primaryText}>Back to home</Text>
-          </Pressable>
-        </View>
-      )}
-    </View>
+          {mode === 'pick' && (
+            <View style={s.modeList}>
+              <Pressable style={s.modeCard} onPress={() => setMode('sms')}>
+                <Text style={s.modeEmoji}>📱</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.modeTitle}>Send by SMS</Text>
+                  <Text style={s.modeDesc}>Text them a link they can tap.</Text>
+                </View>
+                <Text style={s.modeArrow}>›</Text>
+              </Pressable>
+
+              <Pressable style={s.modeCard} onPress={() => setMode('qr')}>
+                <Text style={s.modeEmoji}>📷</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.modeTitle}>Show a QR</Text>
+                  <Text style={s.modeDesc}>Scan it from their phone.</Text>
+                </View>
+                <Text style={s.modeArrow}>›</Text>
+              </Pressable>
+
+              <Pressable style={[s.modeCard, s.modeCardMuted]} onPress={copyLink}>
+                <Text style={s.modeEmoji}>🔗</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.modeTitle}>Copy link</Text>
+                  <Text style={s.modeDesc}>Paste it anywhere.</Text>
+                </View>
+                <Text style={s.modeArrow}>›</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {mode === 'sms' && (
+            <View style={s.smsView}>
+              <Text style={s.title}>Their phone number</Text>
+              <Text style={s.subtitle}>We'll text them the invite link.</Text>
+              <TextInput
+                style={s.input}
+                placeholder="+61 412 345 678"
+                placeholderTextColor={tokens.color.textMuted}
+                keyboardType="phone-pad"
+                value={phone}
+                onChangeText={setPhone}
+                autoFocus
+                textContentType="telephoneNumber"
+                returnKeyType="done"
+                onSubmitEditing={sendSms}
+              />
+              <Pressable
+                style={[s.primary, (!phone.trim() || sending) && s.primaryDisabled]}
+                onPress={sendSms}
+                disabled={!phone.trim() || sending}
+              >
+                <Text style={s.primaryText}>{sending ? 'Sending…' : 'Send invite'}</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {mode === 'qr' && (
+            <View style={s.qrView}>
+              <View style={s.qrFrame}>
+                <QRCode value={params.qrData ?? params.code ?? ''} size={240} backgroundColor="#fff" color="#000" />
+              </View>
+              <Text style={s.qrCaption}>
+                Open BrainPay on their phone, pick "I have an invite", and scan this code.
+              </Text>
+              <Text style={s.qrCode}>or enter code: {params.code}</Text>
+            </View>
+          )}
+
+          {mode === 'sent' && (
+            <View style={s.sentView}>
+              <Text style={s.sentEmoji}>✉️</Text>
+              <Text style={s.title}>Invite sent</Text>
+              <Text style={s.subtitle}>
+                They'll get a text shortly. Their card will appear on your home as soon as they accept.
+              </Text>
+              <Pressable style={s.primary} onPress={() => router.replace('/(app)/parent')}>
+                <Text style={s.primaryText}>Back to home</Text>
+              </Pressable>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   )
 }
 
 const s = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: tokens.color.bg },
   root: { flex: 1, backgroundColor: tokens.color.bg, paddingHorizontal: tokens.spacing[5] },
+  scrollContent: { flexGrow: 1, paddingBottom: tokens.spacing[5] },
   backBtn: { paddingVertical: tokens.spacing[2] },
   backText: { color: tokens.color.text, fontSize: tokens.fontSize.md },
   header: { alignItems: 'center', paddingVertical: tokens.spacing[5] },

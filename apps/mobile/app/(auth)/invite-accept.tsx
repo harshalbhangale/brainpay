@@ -2,7 +2,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -57,6 +61,7 @@ export default function InviteAccept() {
   }, [params.code])
 
   const fetchPreview = async (c: string) => {
+    Keyboard.dismiss()
     setLoading(true)
     setError(null)
     try {
@@ -113,85 +118,99 @@ export default function InviteAccept() {
 
   // ─── Render ──────────────────────────────────────────────────
   return (
-    <View style={[s.root, { paddingTop: insets.top + tokens.spacing[4], paddingBottom: insets.bottom }]}>
-      <Pressable hitSlop={16} onPress={() => router.back()} style={s.back}>
-        <Text style={s.backText}>‹ Back</Text>
-      </Pressable>
+    <KeyboardAvoidingView
+      style={s.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={[s.root, { paddingTop: insets.top + tokens.spacing[4], paddingBottom: insets.bottom }]}>
+        <Pressable hitSlop={16} onPress={() => router.back()} style={s.back}>
+          <Text style={s.backText}>‹ Back</Text>
+        </Pressable>
 
-      {!preview && !loading && (
-        <View style={{ flex: 1 }}>
-          <Text style={s.title}>Got an invite?</Text>
-          <Text style={s.subtitle}>Enter the 8-character code from your text.</Text>
-          <TextInput
-            style={s.codeInput}
-            placeholder="ABC12345"
-            placeholderTextColor={tokens.color.textMuted}
-            value={code}
-            onChangeText={(v) => setCode(v.toUpperCase())}
-            maxLength={8}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            autoFocus
-          />
-          {error && <Text style={s.error}>{error}</Text>}
-          <Pressable
-            style={[s.primary, code.length !== 8 && s.primaryDisabled]}
-            onPress={() => fetchPreview(code)}
-            disabled={code.length !== 8}
+        {!preview && !loading && (
+          <ScrollView
+            style={s.flex}
+            contentContainerStyle={s.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <Text style={s.primaryText}>Look up invite</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {loading && (
-        <View style={s.center}>
-          <ActivityIndicator color={tokens.color.accent} />
-        </View>
-      )}
-
-      {preview && (
-        <View style={{ flex: 1 }}>
-          <View style={s.preview}>
-            <Text style={s.familyAvatar}>{preview.family.avatar ?? '🏡'}</Text>
-            <Text style={s.familyName}>{preview.family.name}</Text>
-            <Text style={s.invited}>
-              <Text style={{ fontWeight: '800', color: tokens.color.text }}>
-                {preview.inviter.avatar} {preview.inviter.name}
-              </Text>{' '}
-              invited you
-            </Text>
-            {preview.initialTopup > 0 && (
-              <View style={s.topupBadge}>
-                <Text style={s.topupText}>{preview.initialTopup} 🧠 to start</Text>
-              </View>
-            )}
-          </View>
-
-          {error && <Text style={s.error}>{error}</Text>}
-
-          <View style={s.actions}>
+            <Text style={s.title}>Got an invite?</Text>
+            <Text style={s.subtitle}>Enter the 8-character code from your text.</Text>
+            <TextInput
+              style={s.codeInput}
+              placeholder="ABC12345"
+              placeholderTextColor={tokens.color.textMuted}
+              value={code}
+              onChangeText={(v) => setCode(v.toUpperCase())}
+              maxLength={8}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={() => code.length === 8 && fetchPreview(code)}
+            />
+            {error && <Text style={s.error}>{error}</Text>}
             <Pressable
-              style={[s.primary, accepting && s.primaryDisabled]}
-              onPress={accept}
-              disabled={accepting}
+              style={[s.primary, code.length !== 8 && s.primaryDisabled]}
+              onPress={() => fetchPreview(code)}
+              disabled={code.length !== 8}
             >
-              <Text style={s.primaryText}>
-                {accepting ? 'Joining…' : 'Accept'}
-              </Text>
+              <Text style={s.primaryText}>Look up invite</Text>
             </Pressable>
-            <Pressable onPress={() => router.replace('/(auth)/welcome')}>
-              <Text style={s.decline}>Decline</Text>
-            </Pressable>
+          </ScrollView>
+        )}
+
+        {loading && (
+          <View style={s.center}>
+            <ActivityIndicator color={tokens.color.accent} />
           </View>
-        </View>
-      )}
-    </View>
+        )}
+
+        {preview && (
+          <View style={{ flex: 1 }}>
+            <View style={s.preview}>
+              <Text style={s.familyAvatar}>{preview.family.avatar ?? '🏡'}</Text>
+              <Text style={s.familyName}>{preview.family.name}</Text>
+              <Text style={s.invited}>
+                <Text style={{ fontWeight: '800', color: tokens.color.text }}>
+                  {preview.inviter.avatar} {preview.inviter.name}
+                </Text>{' '}
+                invited you
+              </Text>
+              {preview.initialTopup > 0 && (
+                <View style={s.topupBadge}>
+                  <Text style={s.topupText}>{preview.initialTopup} 🧠 to start</Text>
+                </View>
+              )}
+            </View>
+
+            {error && <Text style={s.error}>{error}</Text>}
+
+            <View style={s.actions}>
+              <Pressable
+                style={[s.primary, accepting && s.primaryDisabled]}
+                onPress={accept}
+                disabled={accepting}
+              >
+                <Text style={s.primaryText}>
+                  {accepting ? 'Joining…' : 'Accept'}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => router.replace('/(auth)/welcome')}>
+                <Text style={s.decline}>Decline</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </View>
+    </KeyboardAvoidingView>
   )
 }
 
 const s = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: tokens.color.bg },
   root: { flex: 1, backgroundColor: tokens.color.bg, paddingHorizontal: tokens.spacing[5] },
+  scrollContent: { flexGrow: 1, paddingBottom: tokens.spacing[4] },
   back: { paddingVertical: tokens.spacing[2] },
   backText: { color: tokens.color.text, fontSize: tokens.fontSize.md },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },

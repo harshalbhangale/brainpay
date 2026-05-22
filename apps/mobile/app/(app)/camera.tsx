@@ -433,10 +433,10 @@ export default function CameraScreen() {
         })
         break
       case 'detection.updated':
-        setDetection(d => d?.detectionId === msg.detectionId ? { ...d, anchor: msg.anchor } : d)
+        setDetection(d => (d && d.detectionId === msg.detectionId ? { ...d, anchor: msg.anchor } : d))
         break
       case 'detection.cleared':
-        setDetection(d => d?.detectionId === msg.detectionId ? null : d)
+        setDetection(d => (d && d.detectionId === msg.detectionId ? null : d))
         setSheetOpen(false)
         break
       case 'speech.started':

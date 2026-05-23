@@ -30,6 +30,8 @@ export default function ParentHome() {
   const { data, isLoading } = useFamily()
   const setFamily = useFamilyStore((s) => s.setFamily)
   const setMembers = useFamilyStore((s) => s.setMembers)
+  const signOut = useAuthStore((s) => s.signOut)
+  const me = useAuthStore((s) => s.accountId)
 
   useEffect(() => {
     if (data?.family) setFamily(data.family)
@@ -51,7 +53,7 @@ export default function ParentHome() {
         <Empty
           onSetup={() => router.push('/(auth)/family-create')}
           onSignOut={async () => {
-            await useAuthStore.getState().signOut()
+            await signOut()
             router.replace('/(auth)/welcome')
           }}
         />
@@ -62,11 +64,9 @@ export default function ParentHome() {
   const family = data.family
   const kids = data.members.filter((m) => m.role === 'kid')
   const parents = data.members.filter((m) => m.role !== 'kid')
-  const me = useAuthStore.getState().accountId
   const myMember = data.members.find((m) => m.accountId === me)
   const myName = myMember?.persona?.name ?? 'You'
   const myAvatar = myMember?.persona?.avatar ?? '👤'
-  const signOut = useAuthStore((s) => s.signOut)
 
   const onProfilePress = () => {
     Alert.alert(

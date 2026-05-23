@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -47,7 +48,13 @@ export default function ParentHome() {
   if (!data?.family) {
     return (
       <View style={[s.root, { paddingTop: insets.top + tokens.spacing[5], paddingBottom: insets.bottom }]}>
-        <Empty onSetup={() => router.push('/(auth)/family-create')} />
+        <Empty
+          onSetup={() => router.push('/(auth)/family-create')}
+          onSignOut={async () => {
+            await useAuthStore.getState().signOut()
+            router.replace('/(auth)/welcome')
+          }}
+        />
       </View>
     )
   }
@@ -59,6 +66,26 @@ export default function ParentHome() {
   const myMember = data.members.find((m) => m.accountId === me)
   const myName = myMember?.persona?.name ?? 'You'
   const myAvatar = myMember?.persona?.avatar ?? '👤'
+  const signOut = useAuthStore((s) => s.signOut)
+
+  const onProfilePress = () => {
+    Alert.alert(
+      myName,
+      undefined,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign out',
+          style: 'destructive',
+          onPress: async () => {
+            await signOut()
+            router.replace('/(auth)/welcome')
+          },
+        },
+      ],
+      { cancelable: true },
+    )
+  }
 
   // Total topped-up this month — derive from member balances for now.
   const totalBalance = kids.reduce((sum, k) => sum + (k.cachedBalance ?? 0), 0)
@@ -73,7 +100,9 @@ export default function ParentHome() {
             <Text style={s.scanText}>scan</Text>
           </Pressable>
           <View style={s.meBubble}>
-            <Text style={s.meEmoji}>{myAvatar}</Text>
+            <Pressable hitSlop={8} onPress={onProfilePress}>
+              <Text style={s.meEmoji}>{myAvatar}</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -164,7 +193,7 @@ export default function ParentHome() {
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────
-function Empty({ onSetup }: { onSetup: () => void }) {
+function Empty({ onSetup, onSignOut }: { onSetup: () => void; onSignOut: () => void }) {
   return (
     <View style={s.empty}>
       <Text style={s.emptyEmoji}>🏡</Text>
@@ -172,6 +201,9 @@ function Empty({ onSetup }: { onSetup: () => void }) {
       <Text style={s.emptySub}>Set up your family to get started.</Text>
       <Pressable style={s.emptyCta} onPress={onSetup}>
         <Text style={s.emptyCtaText}>Set up family</Text>
+      </Pressable>
+      <Pressable hitSlop={12} onPress={onSignOut} style={s.emptySignOut}>
+        <Text style={s.emptySignOutText}>Sign out</Text>
       </Pressable>
     </View>
   )
@@ -232,6 +264,8 @@ const s = StyleSheet.create({
     backgroundColor: tokens.color.accent, alignItems: 'center', justifyContent: 'center',
   },
   emptyCtaText: { color: '#000', fontWeight: '800', fontSize: tokens.fontSize.md },
+  emptySignOut: { marginTop: tokens.spacing[4], paddingVertical: tokens.spacing[2] },
+  emptySignOutText: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm, fontWeight: '600' },
 
   // top bar
   topBar: {

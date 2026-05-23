@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useAuthStore } from '@/stores/auth'
 import { tokens } from '@/theme/tokens'
 
 /**
@@ -12,6 +13,12 @@ import { tokens } from '@/theme/tokens'
 export default function RoleSelect() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const signOut = useAuthStore((s) => s.signOut)
+
+  const onSignOut = async () => {
+    await signOut()
+    router.replace('/(auth)/welcome')
+  }
 
   return (
     <View style={[styles.root, { paddingTop: insets.top + tokens.spacing[5], paddingBottom: insets.bottom }]}>
@@ -38,6 +45,10 @@ export default function RoleSelect() {
             <Text style={styles.cardSub}>Joining your family</Text>
           </Pressable>
         </View>
+
+        <Pressable hitSlop={12} onPress={onSignOut} style={styles.signOut}>
+          <Text style={styles.signOutText}>Sign out</Text>
+        </Pressable>
       </View>
     </View>
   )
@@ -80,5 +91,14 @@ const styles = StyleSheet.create({
     color: tokens.color.textMuted,
     fontSize: tokens.fontSize.sm,
     marginTop: tokens.spacing[1],
+  },
+  signOut: {
+    alignSelf: 'center',
+    paddingVertical: tokens.spacing[3],
+  },
+  signOutText: {
+    color: tokens.color.textMuted,
+    fontSize: tokens.fontSize.sm,
+    fontWeight: '600',
   },
 })

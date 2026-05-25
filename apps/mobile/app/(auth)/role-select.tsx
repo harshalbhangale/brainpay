@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router'
-import { ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuthStore } from '@/stores/auth'
 import { tokens } from '@/theme/tokens'
 
 /**
- * Role selection — cinematic anime cards with full-bleed art + gradient overlay.
+ * Role selection — full anime art on top, accent gradient + label at the bottom.
  * Tapping "I'm a parent" → voice onboarding with PAL.
  * Tapping "I'm a kid" → invite-accept code entry (kids only join via invite).
  */
@@ -37,6 +37,7 @@ export default function RoleSelect() {
           title="I'm a parent"
           subtitle="Set up money for your kid"
           accent="#A855F7"
+          accentBg="rgba(168,85,247,0.12)"
           onPress={() => router.push('/(auth)/parent-onboarding')}
         />
         <RoleCard
@@ -44,6 +45,7 @@ export default function RoleSelect() {
           title="I'm a kid"
           subtitle="Got an invite from your parent?"
           accent="#3DDC84"
+          accentBg="rgba(61,220,132,0.12)"
           onPress={() => router.push('/(auth)/invite-accept')}
         />
       </View>
@@ -60,39 +62,44 @@ function RoleCard({
   title,
   subtitle,
   accent,
+  accentBg,
   onPress,
 }: {
   image: number
   title: string
   subtitle: string
   accent: string
+  accentBg: string
   onPress: () => void
 }) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [s.card, pressed && s.cardPressed, { borderColor: accent + '55' }]}
+      style={({ pressed }) => [
+        s.card,
+        pressed && s.cardPressed,
+        { borderColor: accent + '55', backgroundColor: accentBg },
+      ]}
     >
-      <ImageBackground source={image} style={s.cardImage} imageStyle={s.cardImageInner} resizeMode="cover">
-        {/* Top accent glow */}
+      {/* Image area — top portion, full image visible (contain) */}
+      <View style={s.imageWrapper}>
+        <Image source={image} style={s.image} resizeMode="contain" />
+        {/* Soft accent glow behind the character */}
         <LinearGradient
-          colors={[accent + '40', 'transparent']}
-          style={s.topGlow}
+          colors={[accent + '30', 'transparent']}
+          style={s.imageGlow}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
+          pointerEvents="none"
         />
-        {/* Bottom dark gradient for text legibility */}
-        <LinearGradient
-          colors={['transparent', 'rgba(11,11,15,0.4)', 'rgba(11,11,15,0.95)']}
-          style={s.bottomGradient}
-          locations={[0, 0.55, 1]}
-        />
-        <View style={s.cardContent}>
-          <View style={[s.accentBar, { backgroundColor: accent }]} />
-          <Text style={s.cardTitle}>{title}</Text>
-          <Text style={s.cardSubtitle}>{subtitle}</Text>
-        </View>
-      </ImageBackground>
+      </View>
+
+      {/* Footer — solid background for text */}
+      <View style={s.footer}>
+        <View style={[s.accentBar, { backgroundColor: accent }]} />
+        <Text style={s.cardTitle}>{title}</Text>
+        <Text style={s.cardSubtitle}>{subtitle}</Text>
+      </View>
     </Pressable>
   )
 }
@@ -127,52 +134,52 @@ const s = StyleSheet.create({
     flex: 1,
     borderRadius: 24,
     overflow: 'hidden',
-    backgroundColor: tokens.color.surface,
     borderWidth: 1.5,
   },
   cardPressed: {
     transform: [{ scale: 0.98 }],
+    opacity: 0.9,
   },
-  cardImage: {
+  imageWrapper: {
     flex: 1,
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
   },
-  cardImageInner: {
-    // Show the upper portion of the character (face/torso) by anchoring top
-    resizeMode: 'cover',
+  image: {
+    width: '100%',
+    height: '100%',
   },
-  topGlow: {
+  imageGlow: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: '40%',
+    height: '50%',
   },
-  bottomGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '60%',
-  },
-  cardContent: {
-    padding: tokens.spacing[5],
-    gap: 6,
+  footer: {
+    paddingHorizontal: tokens.spacing[5],
+    paddingVertical: tokens.spacing[4],
+    backgroundColor: 'rgba(11,11,15,0.85)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    gap: 4,
   },
   accentBar: {
-    width: 32,
+    width: 28,
     height: 3,
     borderRadius: 2,
     marginBottom: 4,
   },
   cardTitle: {
     color: '#fff',
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
   cardSubtitle: {
-    color: 'rgba(255,255,255,0.75)',
+    color: 'rgba(255,255,255,0.65)',
     fontSize: tokens.fontSize.sm,
     fontWeight: '500',
   },

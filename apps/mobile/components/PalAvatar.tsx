@@ -72,7 +72,7 @@ export function PalAvatar({ state, accent = '#3DDC84', size = 140 }: Props) {
     Animated.timing(glowAnim, {
       toValue: state === 'speaking' || state === 'celebrating' ? 1 : 0.5,
       duration: 400,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start()
   }, [state, glowAnim])
 

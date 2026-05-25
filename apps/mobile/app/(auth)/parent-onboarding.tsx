@@ -12,25 +12,29 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { PalAvatar, type PalState } from '@/components/PalAvatar'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/lib/api'
 import { env } from '@/lib/env'
 import { tokens } from '@/theme/tokens'
 
 /**
- * Voice onboarding — PAL speaks (via WebSocket to OpenAI Realtime API),
- * user responds by tapping/typing. PAL's audio plays through the speaker;
- * user input is tap-based for reliability (voice input is Phase 2).
+ * Voice onboarding — PAL speaks via ElevenLabs TTS, user responds by tap/type.
+ *
+ * Each step:
+ *   1. Generate the line (templated with name/etc.)
+ *   2. POST /voice/onboard/speak → MP3 bytes
+ *   3. Save to local file, play via expo-audio
+ *   4. While speaking, avatar is in 'speaking' state
+ *   5. When done, switch to 'idle' and show the input
  *
  * Steps:
- *   1. PAL greets + asks name → user types name
- *   2. PAL asks avatar → user taps emoji
- *   3. PAL asks style → user taps card
- *   4. PAL confirms → auto-saves → routes to parent home
+ *   intro → name → avatar → style → outro → save → home
  */
 
-type Step = 'connecting' | 'name' | 'avatar' | 'style' | 'confirming' | 'done' | 'error'
+type Step = 'intro' | 'name' | 'avatar' | 'style' | 'outro' | 'saving' | 'done'
 
 const AVATARS = ['👩‍🦰', '👨', '👩', '👴', '👵', '🧑'] as const
 const STYLES = [
@@ -44,138 +48,126 @@ export default function ParentOnboarding() {
   const insets = useSafeAreaInsets()
   const setAccountType = useAuthStore((s) => s.setAccountType)
 
-  const [step, setStep] = useState<Step>('connecting')
+  const [step, setStep] = useState<Step>('intro')
+  const [palState, setPalState] = useState<PalState>('idle')
   const [palText, setPalText] = useState('')
   const [name, setName] = useState('')
   const [avatar, setAvatar] = useState<string | null>(null)
   const [style, setStyle] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const wsRef = useRef<any>(null)
-  const pulseAnim = useRef(new Animated.Value(1)).current
+  const playerRef = useRef<AudioPlayer | null>(null)
+  const fadeAnim = useRef(new Animated.Value(0)).current
 
-  // Pulse animation for PAL avatar
+  // Set up audio mode on mount
   useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.06,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]),
-    )
-    pulse.start()
-    return () => pulse.stop()
-  }, [pulseAnim])
-
-  // Connect WebSocket
-  useEffect(() => {
-    const accountId = useAuthStore.getState().accountId
-    const wsUrl = env.wsUrl.replace('/live', '') + `/voice/onboard?accountId=${accountId ?? ''}`
-
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      setPalText('Connecting to PAL...')
-    }
-
-    ws.onmessage = (event) => {
-      if (typeof event.data !== 'string') return
-      try {
-        const msg = JSON.parse(event.data) as { type: string; text?: string; persona?: { name: string; avatar: string; style: string } }
-        handleMessage(msg)
-      } catch {
-        // ignore non-JSON
-      }
-    }
-
-    ws.onerror = () => {
-      setError('Could not connect to PAL. Check your network.')
-      setStep('error')
-    }
-
-    ws.onclose = () => {
-      if (step !== 'done' && step !== 'error') {
-        // If we haven't finished, allow text fallback
-      }
-    }
-
+    setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: false }).catch(() => undefined)
     return () => {
-      ws.close()
+      try {
+        playerRef.current?.remove()
+      } catch {
+        // ignore
+      }
     }
+  }, [])
+
+  // Trigger intro on mount
+  useEffect(() => {
+    speak("Hey! I'm PAL. I'll be your kid's money buddy. What should I call you?")
+      .then(() => setStep('name'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleMessage = (msg: { type: string; text?: string; persona?: { name: string; avatar: string; style: string } }) => {
-    switch (msg.type) {
-      case 'session.ready':
-        setStep('name')
-        setPalText("Hey! I'm PAL. I'll be your kid's money buddy. What should I call you?")
-        break
+  // Fade in PAL text when it changes
+  useEffect(() => {
+    fadeAnim.setValue(0)
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start()
+  }, [palText, fadeAnim])
 
-      case 'transcript.delta':
-        setPalText((prev) => prev + (msg.text ?? ''))
-        break
+  /** Fetch ElevenLabs MP3 from API and play it. Returns when audio finishes. */
+  const speak = async (text: string): Promise<void> => {
+    setPalText(text)
+    setPalState('speaking')
 
-      case 'transcript.done':
-        setPalText(msg.text ?? '')
-        break
+    try {
+      const audioUrl = `${env.apiBaseUrl}/voice/onboard/speak?text=${encodeURIComponent(text)}`
 
-      case 'persona.saved':
-        if (msg.persona) {
-          saveToDB(msg.persona)
-        }
-        break
+      // Stop and replace any existing player
+      try {
+        playerRef.current?.remove()
+      } catch {
+        // ignore
+      }
 
-      case 'session.ended':
-        setStep('done')
-        break
+      const player = createAudioPlayer({ uri: audioUrl })
+      playerRef.current = player
 
-      case 'error':
-        setError(msg.text ?? 'Something went wrong.')
-        setStep('error')
-        break
+      return new Promise<void>((resolve) => {
+        const sub = player.addListener('playbackStatusUpdate', (status) => {
+          if (status.didJustFinish) {
+            sub.remove()
+            setPalState('idle')
+            resolve()
+          }
+        })
+        // Small delay then play (gives the player time to load)
+        setTimeout(() => {
+          try {
+            player.play()
+          } catch (err) {
+            console.warn('player_play_failed', err)
+            setPalState('idle')
+            resolve()
+          }
+        }, 100)
+
+        // Safety timeout — don't hang forever if audio fails
+        setTimeout(() => {
+          sub.remove()
+          setPalState('idle')
+          resolve()
+        }, 15000)
+      })
+    } catch (err) {
+      console.warn('pal_speak_failed', err)
+      // Continue silently — the text is already on screen
+      setPalState('idle')
     }
   }
 
-  const submitName = () => {
+  // ─── Step handlers ───────────────────────────────────────────
+
+  const submitName = async () => {
     if (!name.trim()) return
     Keyboard.dismiss()
-    wsRef.current?.send(JSON.stringify({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: `My name is ${name.trim()}.` }],
-      },
-    }))
-    wsRef.current?.send(JSON.stringify({ type: 'response.create' }))
     setStep('avatar')
-    setPalText(`Nice, ${name.trim()}! Pick a face that feels like you.`)
+    await speak(`Nice, ${name.trim()}! Pick a face that feels like you.`)
   }
 
-  const submitAvatar = (emoji: string) => {
+  const submitAvatar = async (emoji: string) => {
     setAvatar(emoji)
-    wsRef.current?.send(JSON.stringify({ type: 'avatar.selected', avatar: emoji }))
     setStep('style')
-    setPalText('Last one — when your kid scans junk food, how savage should I be?')
+    await speak('Last one. When your kid scans junk food, how savage should I be?')
   }
 
-  const submitStyle = (s: string) => {
+  const submitStyle = async (s: string) => {
     setStyle(s)
-    wsRef.current?.send(JSON.stringify({ type: 'style.selected', style: s }))
-    setStep('confirming')
-    setPalText(`Got it. ${name.trim()}, ${s} vibes. Setting things up...`)
+    setStep('outro')
+
+    // Demo the style first
+    const sample = STYLES.find((x) => x.id === s)
+    if (sample) {
+      await speak(`That sounds like: ${sample.sample.replace(/"/g, '')}`)
+    }
+
+    setStep('saving')
+    await speak(`Got it. ${name.trim()}, ${s} vibes. Setting things up...`)
+
+    await saveToDB({ name: name.trim(), avatar: avatar!, style: s })
   }
 
   const saveToDB = async (persona: { name: string; avatar: string; style: string }) => {
@@ -186,30 +178,22 @@ export default function ParentOnboarding() {
       })
       setAccountType('parent')
       setStep('done')
-      setPalText(`All set! Let's build your family, ${persona.name}.`)
-      setTimeout(() => router.replace('/(app)/parent'), 2000)
+      setPalState('celebrating')
+      await speak(`All set! Let's build your family, ${persona.name}.`)
+      router.replace('/(app)/parent')
     } catch (err) {
       console.error('onboarding_save_failed', err)
-      // Save locally and proceed anyway
       setAccountType('parent')
       router.replace('/(app)/parent')
     }
   }
 
-  // If WebSocket doesn't connect within 5s, auto-save with what we have
-  useEffect(() => {
-    if (step === 'confirming' && name && avatar && style) {
-      const timeout = setTimeout(() => {
-        // If PAL hasn't called save_persona via function call, do it ourselves
-        saveToDB({ name: name.trim(), avatar, style })
-      }, 5000)
-      return () => clearTimeout(timeout)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, name, avatar, style])
-
   const fallbackToText = () => {
-    wsRef.current?.close()
+    try {
+      playerRef.current?.remove()
+    } catch {
+      // ignore
+    }
     router.replace('/(auth)/parent-persona')
   }
 
@@ -220,20 +204,20 @@ export default function ParentOnboarding() {
     >
       <View style={[s.root, { paddingTop: insets.top + tokens.spacing[5], paddingBottom: insets.bottom }]}>
         {/* PAL Avatar */}
-        <Animated.View style={[s.palBubble, { transform: [{ scale: pulseAnim }] }]}>
-          <Text style={s.palEmoji}>🤖</Text>
-        </Animated.View>
+        <View style={s.avatarSection}>
+          <PalAvatar state={palState} accent={tokens.color.accent} size={140} />
+        </View>
 
         {/* PAL speech bubble */}
         {palText ? (
-          <View style={s.speechBubble}>
+          <Animated.View style={[s.speechBubble, { opacity: fadeAnim }]}>
             <Text style={s.speechText}>{palText}</Text>
-          </View>
+          </Animated.View>
         ) : null}
 
         {/* Step-specific input */}
         <View style={s.inputArea}>
-          {step === 'name' && (
+          {step === 'name' && palState === 'idle' && (
             <View style={s.nameRow}>
               <TextInput
                 style={s.nameInput}
@@ -251,17 +235,17 @@ export default function ParentOnboarding() {
                 onPress={submitName}
                 disabled={!name.trim()}
               >
-                <Text style={s.nameBtnText}>→</Text>
+                <Text style={[s.nameBtnText, !name.trim() && s.nameBtnTextDisabled]}>→</Text>
               </Pressable>
             </View>
           )}
 
-          {step === 'avatar' && (
+          {step === 'avatar' && palState === 'idle' && (
             <View style={s.avatarGrid}>
               {AVATARS.map((emoji) => (
                 <Pressable
                   key={emoji}
-                  style={s.avatarItem}
+                  style={({ pressed }) => [s.avatarItem, pressed && s.avatarItemPressed]}
                   onPress={() => submitAvatar(emoji)}
                 >
                   <Text style={s.avatarEmoji}>{emoji}</Text>
@@ -270,12 +254,12 @@ export default function ParentOnboarding() {
             </View>
           )}
 
-          {step === 'style' && (
+          {step === 'style' && palState === 'idle' && (
             <View style={s.styleList}>
               {STYLES.map((opt) => (
                 <Pressable
                   key={opt.id}
-                  style={s.styleCard}
+                  style={({ pressed }) => [s.styleCard, pressed && s.styleCardPressed]}
                   onPress={() => submitStyle(opt.id)}
                 >
                   <Text style={s.styleEmoji}>{opt.emoji}</Text>
@@ -287,25 +271,11 @@ export default function ParentOnboarding() {
               ))}
             </View>
           )}
-
-          {step === 'confirming' && (
-            <View style={s.confirmRow}>
-              <Text style={s.confirmEmoji}>{avatar}</Text>
-              <Text style={s.confirmName}>{name.trim()}</Text>
-              <Text style={s.confirmStyle}>{style} vibes</Text>
-            </View>
-          )}
-
-          {step === 'done' && (
-            <View style={s.confirmRow}>
-              <Text style={s.doneEmoji}>✨</Text>
-            </View>
-          )}
         </View>
 
         {/* Footer */}
         <View style={s.footer}>
-          {step !== 'done' && step !== 'confirming' && (
+          {step !== 'saving' && step !== 'done' && (
             <Pressable hitSlop={12} onPress={fallbackToText}>
               <Text style={s.skipText}>Skip voice setup</Text>
             </Pressable>
@@ -324,30 +294,26 @@ const s = StyleSheet.create({
     paddingHorizontal: tokens.spacing[5],
     alignItems: 'center',
   },
-  palBubble: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: tokens.color.surface,
+  avatarSection: {
+    marginTop: tokens.spacing[4],
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: tokens.color.accent,
-    marginTop: tokens.spacing[5],
   },
-  palEmoji: { fontSize: 48 },
   speechBubble: {
     marginTop: tokens.spacing[4],
     backgroundColor: tokens.color.surface,
     borderRadius: tokens.radius.lg,
-    padding: tokens.spacing[4],
-    maxWidth: '90%',
+    paddingHorizontal: tokens.spacing[5],
+    paddingVertical: tokens.spacing[4],
+    maxWidth: '95%',
+    borderWidth: 1,
+    borderColor: tokens.color.surface2,
   },
   speechText: {
     color: tokens.color.text,
     fontSize: tokens.fontSize.md,
-    lineHeight: 22,
+    lineHeight: 24,
     textAlign: 'center',
+    fontWeight: '500',
   },
   inputArea: {
     flex: 1,
@@ -361,24 +327,25 @@ const s = StyleSheet.create({
   },
   nameInput: {
     flex: 1,
-    height: 56,
+    height: 60,
     backgroundColor: tokens.color.surface,
     borderRadius: tokens.radius.md,
-    paddingHorizontal: tokens.spacing[4],
+    paddingHorizontal: tokens.spacing[5],
     color: tokens.color.text,
     fontSize: tokens.fontSize.lg,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   nameBtn: {
-    width: 56,
-    height: 56,
+    width: 60,
+    height: 60,
     borderRadius: tokens.radius.md,
     backgroundColor: tokens.color.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   nameBtnDisabled: { backgroundColor: tokens.color.surface2 },
-  nameBtnText: { fontSize: 24, color: '#000', fontWeight: '800' },
+  nameBtnText: { fontSize: 28, color: '#000', fontWeight: '900' },
+  nameBtnTextDisabled: { color: tokens.color.textMuted },
   avatarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -386,16 +353,21 @@ const s = StyleSheet.create({
     gap: tokens.spacing[3],
   },
   avatarItem: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: tokens.color.surface,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  avatarEmoji: { fontSize: 36 },
+  avatarItemPressed: {
+    transform: [{ scale: 0.94 }],
+    borderColor: tokens.color.accent,
+    backgroundColor: tokens.color.surface2,
+  },
+  avatarEmoji: { fontSize: 40 },
   styleList: { gap: tokens.spacing[3] },
   styleCard: {
     flexDirection: 'row',
@@ -404,15 +376,16 @@ const s = StyleSheet.create({
     backgroundColor: tokens.color.surface,
     padding: tokens.spacing[4],
     borderRadius: tokens.radius.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
-  styleEmoji: { fontSize: 28 },
-  styleLabel: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '800' },
+  styleCardPressed: {
+    transform: [{ scale: 0.98 }],
+    borderColor: tokens.color.accent,
+  },
+  styleEmoji: { fontSize: 32 },
+  styleLabel: { color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '800' },
   styleSample: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm, marginTop: 2, fontStyle: 'italic' },
-  confirmRow: { alignItems: 'center', gap: tokens.spacing[2] },
-  confirmEmoji: { fontSize: 64 },
-  confirmName: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800' },
-  confirmStyle: { color: tokens.color.textMuted, fontSize: tokens.fontSize.md },
-  doneEmoji: { fontSize: 80 },
   footer: {
     paddingBottom: tokens.spacing[3],
     alignItems: 'center',

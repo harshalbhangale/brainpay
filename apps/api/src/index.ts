@@ -5,6 +5,7 @@ import { loadEnv } from './env'
 import { logger } from './logger'
 import { routes } from './routes'
 import { onClose, onConnect, onMessage } from './ws/handler'
+import { handleVoiceOnboard } from './ws/voice-onboard'
 
 const env = loadEnv()
 
@@ -20,17 +21,28 @@ const wss = new WebSocketServer({ noServer: true })
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '', 'http://localhost')
-  if (url.pathname !== '/live') {
-    socket.destroy()
+
+  if (url.pathname === '/voice/onboard') {
+    // Voice onboarding — relay to OpenAI Realtime API
+    const accountId = url.searchParams.get('accountId')
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      handleVoiceOnboard(ws, accountId)
+    })
     return
   }
-  // Prototype mode: no auth. JWT validation lands when auth ships.
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    onConnect(ws)
-    ws.on('message', (data) => onMessage(ws, data as Buffer))
-    ws.on('close', () => onClose(ws))
-    ws.on('error', (err) => logger.error({ err: String(err) }, 'ws.error'))
-  })
+
+  if (url.pathname === '/live') {
+    // Camera perception WebSocket
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      onConnect(ws)
+      ws.on('message', (data) => onMessage(ws, data as Buffer))
+      ws.on('close', () => onClose(ws))
+      ws.on('error', (err) => logger.error({ err: String(err) }, 'ws.error'))
+    })
+    return
+  }
+
+  socket.destroy()
 })
 
 export default app

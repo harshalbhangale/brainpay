@@ -1,12 +1,10 @@
 import { useRouter } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
 import {
-  Animated,
-  Easing,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,27 +12,18 @@ import {
 } from 'react-native'
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { PalAvatar, type PalState } from '@/components/PalAvatar'
+import { ChatBubble, TypingBubble } from '@/components/ChatBubble'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/lib/api'
 import { env } from '@/lib/env'
 import { tokens } from '@/theme/tokens'
 
 /**
- * Voice onboarding — PAL speaks via ElevenLabs TTS, user responds by tap/type.
- *
- * Each step:
- *   1. Generate the line (templated with name/etc.)
- *   2. POST /voice/onboard/speak → MP3 bytes
- *   3. Save to local file, play via expo-audio
- *   4. While speaking, avatar is in 'speaking' state
- *   5. When done, switch to 'idle' and show the input
- *
- * Steps:
- *   intro → name → avatar → style → outro → save → home
+ * Voice onboarding — chat-style.
+ * PAL drops messages from the left. User taps avatars / styles, types a name.
+ * User responses appear as messages on the right. ElevenLabs voice plays
+ * over each PAL message.
  */
-
-type Step = 'intro' | 'name' | 'avatar' | 'style' | 'outro' | 'saving' | 'done'
 
 const AVATARS = ['👩‍🦰', '👨', '👩', '👴', '👵', '🧑'] as const
 const STYLES = [
@@ -43,129 +32,124 @@ const STYLES = [
   { id: 'strict', emoji: '🔥', label: 'Strict', sample: '"Not a chance. Skip."' },
 ] as const
 
+type Msg =
+  | { id: string; from: 'pal'; text: string; attachment?: 'avatars' | 'styles' | 'name-input' }
+  | { id: string; from: 'user'; text: string }
+  | { id: string; from: 'typing' }
+
+let nextId = 1
+const newId = () => `m${nextId++}`
+
 export default function ParentOnboarding() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const setAccountType = useAuthStore((s) => s.setAccountType)
 
-  const [step, setStep] = useState<Step>('intro')
-  const [palState, setPalState] = useState<PalState>('idle')
-  const [palText, setPalText] = useState('')
+  const [messages, setMessages] = useState<Msg[]>([])
   const [name, setName] = useState('')
   const [avatar, setAvatar] = useState<string | null>(null)
   const [style, setStyle] = useState<string | null>(null)
+  const [step, setStep] = useState<'name' | 'avatar' | 'style' | 'saving' | 'done'>('name')
 
   const playerRef = useRef<AudioPlayer | null>(null)
-  const fadeAnim = useRef(new Animated.Value(0)).current
+  const scrollRef = useRef<ScrollView | null>(null)
 
-  // Set up audio mode on mount
+  // Audio setup
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: false }).catch(() => undefined)
     return () => {
-      try {
-        playerRef.current?.remove()
-      } catch {
-        // ignore
-      }
+      try { playerRef.current?.remove() } catch { /* ignore */ }
     }
   }, [])
 
-  // Trigger intro on mount
+  // Scroll to bottom whenever messages change
   useEffect(() => {
-    speak("Hey! I'm PAL. I'll be your kid's money buddy. What should I call you?")
-      .then(() => setStep('name'))
+    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)
+    return () => clearTimeout(t)
+  }, [messages])
+
+  // Kick off the conversation
+  useEffect(() => {
+    void start()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Fade in PAL text when it changes
-  useEffect(() => {
-    fadeAnim.setValue(0)
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start()
-  }, [palText, fadeAnim])
+  const start = async () => {
+    await palSays("Hey! I'm PAL. I'll be your kid's money buddy.", 600)
+    await palSays('What should I call you?', 400, 'name-input')
+  }
 
-  /** Fetch ElevenLabs MP3 from API and play it. Returns when audio finishes. */
-  const speak = async (text: string): Promise<void> => {
-    setPalText(text)
-    setPalState('speaking')
+  /** Add a typing bubble, play voice, then replace it with the actual message. */
+  const palSays = async (
+    text: string,
+    typingDelay = 700,
+    attachment?: 'avatars' | 'styles' | 'name-input',
+  ) => {
+    const typingId = newId()
+    setMessages((prev) => [...prev, { id: typingId, from: 'typing' }])
 
+    // Start playing voice in parallel
+    void playVoice(text)
+
+    // Wait for typing illusion
+    await new Promise((r) => setTimeout(r, typingDelay))
+
+    setMessages((prev) =>
+      prev
+        .filter((m) => m.id !== typingId)
+        .concat({ id: newId(), from: 'pal', text, attachment }),
+    )
+  }
+
+  /** Add a user message bubble. */
+  const userSays = (text: string) => {
+    setMessages((prev) => [...prev, { id: newId(), from: 'user', text }])
+  }
+
+  const playVoice = async (text: string) => {
     try {
       const audioUrl = `${env.apiBaseUrl}/voice/onboard/speak?text=${encodeURIComponent(text)}`
-
-      // Stop and replace any existing player
-      try {
-        playerRef.current?.remove()
-      } catch {
-        // ignore
-      }
-
+      try { playerRef.current?.remove() } catch { /* ignore */ }
       const player = createAudioPlayer({ uri: audioUrl })
       playerRef.current = player
-
-      return new Promise<void>((resolve) => {
-        const sub = player.addListener('playbackStatusUpdate', (status) => {
-          if (status.didJustFinish) {
-            sub.remove()
-            setPalState('idle')
-            resolve()
-          }
-        })
-        // Small delay then play (gives the player time to load)
-        setTimeout(() => {
-          try {
-            player.play()
-          } catch (err) {
-            console.warn('player_play_failed', err)
-            setPalState('idle')
-            resolve()
-          }
-        }, 100)
-
-        // Safety timeout — don't hang forever if audio fails
-        setTimeout(() => {
-          sub.remove()
-          setPalState('idle')
-          resolve()
-        }, 15000)
-      })
-    } catch (err) {
-      console.warn('pal_speak_failed', err)
-      // Continue silently — the text is already on screen
-      setPalState('idle')
+      setTimeout(() => {
+        try { player.play() } catch { /* ignore */ }
+      }, 50)
+    } catch {
+      // Silent fallback — text already shows
     }
   }
 
-  // ─── Step handlers ───────────────────────────────────────────
+  // ─── Step handlers ──────────────────────────────────────
 
   const submitName = async () => {
-    if (!name.trim()) return
-    Keyboard.dismiss()
+    const n = name.trim()
+    if (!n) return
+    userSays(n)
     setStep('avatar')
-    await speak(`Nice, ${name.trim()}! Pick a face that feels like you.`)
+    await palSays(`Nice, ${n}!`, 500)
+    await palSays('Pick a face that feels like you.', 400, 'avatars')
   }
 
   const submitAvatar = async (emoji: string) => {
     setAvatar(emoji)
+    userSays(emoji)
     setStep('style')
-    await speak('Last one. When your kid scans junk food, how savage should I be?')
+    await palSays('Last one.', 400)
+    await palSays('When your kid scans junk food, how savage should I be?', 600, 'styles')
   }
 
   const submitStyle = async (s: string) => {
     setStyle(s)
-    setStep('outro')
-
-    // Demo the style first
-    const sample = STYLES.find((x) => x.id === s)
-    if (sample) {
-      await speak(`That sounds like: ${sample.sample.replace(/"/g, '')}`)
-    }
-
+    const opt = STYLES.find((x) => x.id === s)
+    userSays(opt ? `${opt.emoji} ${opt.label}` : s)
     setStep('saving')
-    await speak(`Got it. ${name.trim()}, ${s} vibes. Setting things up...`)
+
+    if (opt) {
+      await palSays(`That sounds like: ${opt.sample.replace(/"/g, '')}`, 800)
+    }
+    await palSays(`Got it. ${name.trim()}, ${s} vibes.`, 600)
+    await palSays(`Setting things up... 🎉`, 500)
 
     await saveToDB({ name: name.trim(), avatar: avatar!, style: s })
   }
@@ -178,9 +162,8 @@ export default function ParentOnboarding() {
       })
       setAccountType('parent')
       setStep('done')
-      setPalState('celebrating')
-      await speak(`All set! Let's build your family, ${persona.name}.`)
-      router.replace('/(app)/parent')
+      await palSays(`All set! Let's build your family.`, 500)
+      setTimeout(() => router.replace('/(app)/parent'), 1500)
     } catch (err) {
       console.error('onboarding_save_failed', err)
       setAccountType('parent')
@@ -189,11 +172,7 @@ export default function ParentOnboarding() {
   }
 
   const fallbackToText = () => {
-    try {
-      playerRef.current?.remove()
-    } catch {
-      // ignore
-    }
+    try { playerRef.current?.remove() } catch { /* ignore */ }
     router.replace('/(auth)/parent-persona')
   }
 
@@ -201,85 +180,100 @@ export default function ParentOnboarding() {
     <KeyboardAvoidingView
       style={s.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
     >
-      <View style={[s.root, { paddingTop: insets.top + tokens.spacing[5], paddingBottom: insets.bottom }]}>
-        {/* PAL Avatar */}
-        <View style={s.avatarSection}>
-          <PalAvatar state={palState} accent={tokens.color.accent} size={140} />
+      <View style={[s.root, { paddingTop: insets.top + tokens.spacing[3] }]}>
+        {/* Header */}
+        <View style={s.header}>
+          <Text style={s.headerTitle}>PAL</Text>
+          <Text style={s.headerSub}>online · just now</Text>
         </View>
 
-        {/* PAL speech bubble */}
-        {palText ? (
-          <Animated.View style={[s.speechBubble, { opacity: fadeAnim }]}>
-            <Text style={s.speechText}>{palText}</Text>
-          </Animated.View>
-        ) : null}
+        {/* Chat */}
+        <ScrollView
+          ref={scrollRef}
+          style={s.chat}
+          contentContainerStyle={s.chatContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {messages.map((m) => {
+            if (m.from === 'typing') {
+              return <TypingBubble key={m.id} />
+            }
+            if (m.from === 'pal') {
+              return (
+                <ChatBubble
+                  key={m.id}
+                  from="pal"
+                  attachment={
+                    m.attachment === 'avatars' ? (
+                      <View style={s.avatarGrid}>
+                        {AVATARS.map((emoji) => (
+                          <Pressable
+                            key={emoji}
+                            style={({ pressed }) => [s.avatarItem, pressed && s.itemPressed]}
+                            onPress={() => submitAvatar(emoji)}
+                          >
+                            <Text style={s.avatarEmoji}>{emoji}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : m.attachment === 'styles' ? (
+                      <View style={s.styleList}>
+                        {STYLES.map((opt) => (
+                          <Pressable
+                            key={opt.id}
+                            style={({ pressed }) => [s.styleCard, pressed && s.itemPressed]}
+                            onPress={() => submitStyle(opt.id)}
+                          >
+                            <Text style={s.styleEmoji}>{opt.emoji}</Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.styleLabel}>{opt.label}</Text>
+                              <Text style={s.styleSample}>{opt.sample}</Text>
+                            </View>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : null
+                  }
+                >
+                  {m.text}
+                </ChatBubble>
+              )
+            }
+            return <ChatBubble key={m.id} from="user">{m.text}</ChatBubble>
+          })}
+        </ScrollView>
 
-        {/* Step-specific input */}
-        <View style={s.inputArea}>
-          {step === 'name' && palState === 'idle' && (
+        {/* Bottom bar — name input or skip */}
+        <View style={[s.bottomBar, { paddingBottom: insets.bottom + tokens.spacing[3] }]}>
+          {step === 'name' ? (
             <View style={s.nameRow}>
               <TextInput
                 style={s.nameInput}
-                placeholder="Your name"
+                placeholder="Type your name..."
                 placeholderTextColor={tokens.color.textMuted}
                 value={name}
                 onChangeText={setName}
                 autoFocus
                 maxLength={20}
-                returnKeyType="done"
+                returnKeyType="send"
                 onSubmitEditing={submitName}
               />
               <Pressable
-                style={[s.nameBtn, !name.trim() && s.nameBtnDisabled]}
+                style={[s.sendBtn, !name.trim() && s.sendBtnDisabled]}
                 onPress={submitName}
                 disabled={!name.trim()}
               >
-                <Text style={[s.nameBtnText, !name.trim() && s.nameBtnTextDisabled]}>→</Text>
+                <Text style={[s.sendBtnText, !name.trim() && s.sendBtnTextDisabled]}>↑</Text>
               </Pressable>
             </View>
-          )}
-
-          {step === 'avatar' && palState === 'idle' && (
-            <View style={s.avatarGrid}>
-              {AVATARS.map((emoji) => (
-                <Pressable
-                  key={emoji}
-                  style={({ pressed }) => [s.avatarItem, pressed && s.avatarItemPressed]}
-                  onPress={() => submitAvatar(emoji)}
-                >
-                  <Text style={s.avatarEmoji}>{emoji}</Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {step === 'style' && palState === 'idle' && (
-            <View style={s.styleList}>
-              {STYLES.map((opt) => (
-                <Pressable
-                  key={opt.id}
-                  style={({ pressed }) => [s.styleCard, pressed && s.styleCardPressed]}
-                  onPress={() => submitStyle(opt.id)}
-                >
-                  <Text style={s.styleEmoji}>{opt.emoji}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.styleLabel}>{opt.label}</Text>
-                    <Text style={s.styleSample}>{opt.sample}</Text>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </View>
-
-        {/* Footer */}
-        <View style={s.footer}>
-          {step !== 'saving' && step !== 'done' && (
+          ) : step !== 'saving' && step !== 'done' ? (
             <Pressable hitSlop={12} onPress={fallbackToText}>
               <Text style={s.skipText}>Skip voice setup</Text>
             </Pressable>
-          )}
+          ) : null}
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -288,111 +282,105 @@ export default function ParentOnboarding() {
 
 const s = StyleSheet.create({
   flex: { flex: 1, backgroundColor: tokens.color.bg },
-  root: {
-    flex: 1,
-    backgroundColor: tokens.color.bg,
+  root: { flex: 1, backgroundColor: tokens.color.bg },
+  header: {
     paddingHorizontal: tokens.spacing[5],
+    paddingBottom: tokens.spacing[3],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: tokens.color.surface2,
     alignItems: 'center',
   },
-  avatarSection: {
-    marginTop: tokens.spacing[4],
-    alignItems: 'center',
-  },
-  speechBubble: {
-    marginTop: tokens.spacing[4],
-    backgroundColor: tokens.color.surface,
-    borderRadius: tokens.radius.lg,
-    paddingHorizontal: tokens.spacing[5],
-    paddingVertical: tokens.spacing[4],
-    maxWidth: '95%',
-    borderWidth: 1,
-    borderColor: tokens.color.surface2,
-  },
-  speechText: {
+  headerTitle: {
     color: tokens.color.text,
-    fontSize: tokens.fontSize.md,
-    lineHeight: 24,
-    textAlign: 'center',
-    fontWeight: '500',
+    fontSize: tokens.fontSize.lg,
+    fontWeight: '900',
   },
-  inputArea: {
-    flex: 1,
-    justifyContent: 'center',
-    width: '100%',
-    paddingVertical: tokens.spacing[5],
+  headerSub: {
+    color: tokens.color.accent,
+    fontSize: tokens.fontSize.xs,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  chat: { flex: 1 },
+  chatContent: {
+    paddingHorizontal: tokens.spacing[4],
+    paddingTop: tokens.spacing[4],
+    paddingBottom: tokens.spacing[4],
+  },
+  bottomBar: {
+    paddingHorizontal: tokens.spacing[4],
+    paddingTop: tokens.spacing[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: tokens.color.surface2,
+    backgroundColor: tokens.color.bg,
   },
   nameRow: {
     flexDirection: 'row',
-    gap: tokens.spacing[3],
+    gap: tokens.spacing[2],
+    alignItems: 'center',
   },
   nameInput: {
     flex: 1,
-    height: 60,
+    height: 48,
     backgroundColor: tokens.color.surface,
-    borderRadius: tokens.radius.md,
-    paddingHorizontal: tokens.spacing[5],
+    borderRadius: 24,
+    paddingHorizontal: tokens.spacing[4],
     color: tokens.color.text,
-    fontSize: tokens.fontSize.lg,
-    fontWeight: '700',
+    fontSize: tokens.fontSize.md,
+    fontWeight: '500',
   },
-  nameBtn: {
-    width: 60,
-    height: 60,
-    borderRadius: tokens.radius.md,
+  sendBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: tokens.color.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nameBtnDisabled: { backgroundColor: tokens.color.surface2 },
-  nameBtnText: { fontSize: 28, color: '#000', fontWeight: '900' },
-  nameBtnTextDisabled: { color: tokens.color.textMuted },
-  avatarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: tokens.spacing[3],
-  },
-  avatarItem: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: tokens.color.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  avatarItemPressed: {
-    transform: [{ scale: 0.94 }],
-    borderColor: tokens.color.accent,
-    backgroundColor: tokens.color.surface2,
-  },
-  avatarEmoji: { fontSize: 40 },
-  styleList: { gap: tokens.spacing[3] },
-  styleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: tokens.spacing[3],
-    backgroundColor: tokens.color.surface,
-    padding: tokens.spacing[4],
-    borderRadius: tokens.radius.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  styleCardPressed: {
-    transform: [{ scale: 0.98 }],
-    borderColor: tokens.color.accent,
-  },
-  styleEmoji: { fontSize: 32 },
-  styleLabel: { color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '800' },
-  styleSample: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm, marginTop: 2, fontStyle: 'italic' },
-  footer: {
-    paddingBottom: tokens.spacing[3],
-    alignItems: 'center',
-  },
+  sendBtnDisabled: { backgroundColor: tokens.color.surface2 },
+  sendBtnText: { color: '#000', fontSize: 24, fontWeight: '900' },
+  sendBtnTextDisabled: { color: tokens.color.textMuted },
   skipText: {
     color: tokens.color.textMuted,
     fontSize: tokens.fontSize.sm,
     fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: tokens.spacing[2],
+  },
+
+  // Avatar grid attachment
+  avatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: tokens.spacing[2],
+    justifyContent: 'flex-start',
+  },
+  avatarItem: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: tokens.color.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEmoji: { fontSize: 28 },
+
+  // Style cards attachment
+  styleList: { gap: tokens.spacing[2] },
+  styleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing[3],
+    backgroundColor: tokens.color.surface2,
+    padding: tokens.spacing[3],
+    borderRadius: 14,
+  },
+  styleEmoji: { fontSize: 26 },
+  styleLabel: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '800' },
+  styleSample: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 2, fontStyle: 'italic' },
+
+  itemPressed: {
+    transform: [{ scale: 0.92 }],
+    opacity: 0.8,
   },
 })

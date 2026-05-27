@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "turbo": "^2.3.0"
+  },
+  "dependencies": {
+    "stripe": "^17.7.0"
   }
 }

@@ -5,6 +5,7 @@ import { health } from './health'
 import { invitesRoutes } from './invites'
 import { items } from './items'
 import { me } from './me'
+import { payments } from './payments'
 import { voiceOnboarding } from './voice-onboarding'
 import { wallet } from './wallet'
 
@@ -16,4 +17,5 @@ routes.route('/', family)
 routes.route('/', invitesRoutes)
 routes.route('/', wallet)
 routes.route('/', items)
+routes.route('/', payments)
 routes.route('/', voiceOnboarding)

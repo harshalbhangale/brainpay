@@ -5,7 +5,8 @@
     "version": "0.1.0",
     "scheme": "brainpay",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ],
     "ios": {
       "bundleIdentifier": "tech.brainpay.app",
@@ -18,6 +19,29 @@
         "NSMicrophoneUsageDescription": "BrainPay needs the mic only if voice-in is enabled."
       }
     },
+    "android": {
+      "package": "tech.brainpay.app",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "brainpay.app"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
     "plugins": [
       "expo-router",
       "expo-secure-store",
@@ -28,7 +52,23 @@
         }
       ],
       "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#3DDC84",
+          "sounds": [],
+          "mode": "production"
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.brainpal.pay",
+          "enableGooglePay": false
+        }
+      ]
     ],
     "extra": {
       "WS_URL": "wss://api.zapfan.com/live"

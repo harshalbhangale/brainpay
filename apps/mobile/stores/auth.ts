@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import * as SecureStore from 'expo-secure-store'
 import { env } from '@/lib/env'
+import { registerForPushNotifications } from '@/lib/push'
 
 /**
  * Auth store — drives the OTP flow + holds the current session.
@@ -147,6 +148,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isNewUser: body.isNewUser,
       hasPendingInvite,
     })
+
+    // Register for push notifications after successful login — non-blocking.
+    registerForPushNotifications().catch(() => undefined)
   },
 
   resend: async () => {

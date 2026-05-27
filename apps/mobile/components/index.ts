@@ -1,3 +1,4 @@
 // Barrel for shared mobile components.
-// BalanceCard, ActivityFeed, PrimaryCTA, Coin, etc. land days 4 / 8.
-export {}
+export { ApplePayCheckout } from './ApplePayCheckout'
+export { ChatBubble, TypingBubble } from './ChatBubble'
+export { SlidingWizard } from './SlidingWizard'

@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Camera, ChevronRight, Link, Mail, MessageSquare } from 'lucide-react-native'
 import * as Clipboard from 'expo-clipboard'
 import QRCode from 'react-native-qrcode-svg'
 import { api } from '@/lib/api'
@@ -106,30 +107,30 @@ export default function InviteSend() {
           {mode === 'pick' && (
             <View style={s.modeList}>
               <Pressable style={s.modeCard} onPress={() => setMode('sms')}>
-                <Text style={s.modeEmoji}>📱</Text>
+                <MessageSquare size={tokens.iconSize.xl} color={tokens.color.accent} strokeWidth={1.5} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.modeTitle}>Send by SMS</Text>
                   <Text style={s.modeDesc}>Text them a link they can tap.</Text>
                 </View>
-                <Text style={s.modeArrow}>›</Text>
+                <ChevronRight size={tokens.iconSize.md} color={tokens.color.textMuted} strokeWidth={1.5} />
               </Pressable>
 
               <Pressable style={s.modeCard} onPress={() => setMode('qr')}>
-                <Text style={s.modeEmoji}>📷</Text>
+                <Camera size={tokens.iconSize.xl} color={tokens.color.accent} strokeWidth={1.5} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.modeTitle}>Show a QR</Text>
                   <Text style={s.modeDesc}>Scan it from their phone.</Text>
                 </View>
-                <Text style={s.modeArrow}>›</Text>
+                <ChevronRight size={tokens.iconSize.md} color={tokens.color.textMuted} strokeWidth={1.5} />
               </Pressable>
 
               <Pressable style={[s.modeCard, s.modeCardMuted]} onPress={copyLink}>
-                <Text style={s.modeEmoji}>🔗</Text>
+                <Link size={tokens.iconSize.xl} color={tokens.color.textMuted} strokeWidth={1.5} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.modeTitle}>Copy link</Text>
                   <Text style={s.modeDesc}>Paste it anywhere.</Text>
                 </View>
-                <Text style={s.modeArrow}>›</Text>
+                <ChevronRight size={tokens.iconSize.md} color={tokens.color.textMuted} strokeWidth={1.5} />
               </Pressable>
             </View>
           )}
@@ -174,7 +175,7 @@ export default function InviteSend() {
 
           {mode === 'sent' && (
             <View style={s.sentView}>
-              <Text style={s.sentEmoji}>✉️</Text>
+              <Mail size={tokens.iconSize.hero} color={tokens.color.accent} strokeWidth={1.0} />
               <Text style={s.title}>Invite sent</Text>
               <Text style={s.subtitle}>
                 They'll get a text shortly. Their card will appear on your home as soon as they accept.
@@ -211,10 +212,8 @@ const s = StyleSheet.create({
     borderRadius: tokens.radius.lg,
   },
   modeCardMuted: { opacity: 0.85 },
-  modeEmoji: { fontSize: 32 },
   modeTitle: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '800' },
   modeDesc: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 2 },
-  modeArrow: { color: tokens.color.textMuted, fontSize: 28, fontWeight: '300' },
 
   smsView: { paddingTop: tokens.spacing[3] },
   input: {
@@ -242,8 +241,7 @@ const s = StyleSheet.create({
     marginTop: tokens.spacing[3], letterSpacing: 2, fontWeight: '700',
   },
 
-  sentView: { alignItems: 'center', paddingTop: tokens.spacing[5] },
-  sentEmoji: { fontSize: 80, marginBottom: tokens.spacing[4] },
+  sentView: { alignItems: 'center', paddingTop: tokens.spacing[5], gap: tokens.spacing[3] },
 
   primary: {
     height: 56, backgroundColor: tokens.color.accent,

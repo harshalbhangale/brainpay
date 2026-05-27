@@ -55,6 +55,11 @@ const EnvSchema = z.object({
   ELEVENLABS_API_KEY: z.string().min(1),
   ELEVENLABS_VOICE_ID: z.string().min(1),
 
+  // Stripe (payments)
+  STRIPE_SECRET_KEY: z.string().min(1),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_MERCHANT_ID: z.string().default('merchant.com.brainpal.pay'),
+
   // Observability (optional in dev)
   SENTRY_DSN_API: z.string().url().optional().or(z.literal('')),
 })

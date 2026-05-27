@@ -10,6 +10,15 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import {
+  Bot,
+  CircleArrowUp,
+  ClipboardList,
+  Home,
+  ScanLine,
+  Sparkles,
+  UserPlus,
+} from 'lucide-react-native'
 import { useFamily } from '@/hooks/useFamily'
 import { useFamilyStore, type FamilyMember } from '@/stores/family'
 import { useAuthStore } from '@/stores/auth'
@@ -96,7 +105,7 @@ export default function ParentHome() {
         {/* Top bar — quick scan + profile */}
         <View style={s.topBar}>
           <Pressable style={s.scanBtn} onPress={() => router.push('/(app)/camera')}>
-            <Text style={s.scanIcon}>⌃</Text>
+            <ScanLine size={tokens.iconSize.lg} color={tokens.color.text} strokeWidth={1.5} />
             <Text style={s.scanText}>scan</Text>
           </Pressable>
           <View style={s.meBubble}>
@@ -116,10 +125,10 @@ export default function ParentHome() {
 
         {/* Action row */}
         <View style={s.actionRow}>
-          <ActionBtn emoji="💸" label="Top up"  color="#A855F7" onPress={() => router.push('/(app)/parent/topup')} />
-          <ActionBtn emoji="🎯" label="Goals"   color="#3DDC84" onPress={() => router.push('/(app)/parent/feed')} />
-          <ActionBtn emoji="📊" label="Insights" color="#3B82F6" onPress={() => router.push('/(app)/parent/feed')} />
-          <ActionBtn emoji="✉️" label="Invite"  color="#FB923C" onPress={() => router.push('/(app)/parent/add-kid')} />
+          <ActionBtn icon={CircleArrowUp} label="Top up"   color="#A855F7" onPress={() => router.push('/(app)/parent/topup')} />
+          <ActionBtn icon={ClipboardList} label="Chores"   color="#3DDC84" onPress={() => router.push('/(app)/parent/feed')} />
+          <ActionBtn icon={Sparkles}      label="PAL Chat" color="#3B82F6" onPress={() => router.push('/(app)/parent/feed')} />
+          <ActionBtn icon={UserPlus}      label="Invite"   color="#FB923C" onPress={() => router.push('/(app)/parent/add-kid')} />
         </View>
 
         {/* Kids */}
@@ -163,7 +172,7 @@ export default function ParentHome() {
         {/* PAL daily */}
         <Text style={s.section}>PAL'S DAILY</Text>
         <View style={s.palCard}>
-          <Text style={s.palAvatar}>🤖</Text>
+          <Bot size={tokens.iconSize.xl} color={tokens.color.accent} strokeWidth={1.5} />
           <Text style={s.palLine}>
             {kids.length === 0
               ? "Add a kid and I'll start roasting their snacks. Promise."
@@ -196,7 +205,7 @@ export default function ParentHome() {
 function Empty({ onSetup, onSignOut }: { onSetup: () => void; onSignOut: () => void }) {
   return (
     <View style={s.empty}>
-      <Text style={s.emptyEmoji}>🏡</Text>
+      <Home size={tokens.iconSize.hero} color={tokens.color.textMuted} strokeWidth={1.0} />
       <Text style={s.emptyTitle}>Welcome to BrainPay</Text>
       <Text style={s.emptySub}>Set up your family to get started.</Text>
       <Pressable style={s.emptyCta} onPress={onSetup}>
@@ -210,13 +219,15 @@ function Empty({ onSetup, onSignOut }: { onSetup: () => void; onSignOut: () => v
 }
 
 // ─── Subcomponents ────────────────────────────────────────────────────
-function ActionBtn({ emoji, label, color, onPress }: {
-  emoji: string; label: string; color: string; onPress: () => void
+type LucideIcon = React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>
+
+function ActionBtn({ icon: Icon, label, color, onPress }: {
+  icon: LucideIcon; label: string; color: string; onPress: () => void
 }) {
   return (
     <Pressable style={s.actionBtn} onPress={onPress}>
-      <View style={[s.actionDot, { backgroundColor: color }]}>
-        <Text style={s.actionEmoji}>{emoji}</Text>
+      <View style={[s.actionDot, { backgroundColor: color + '22', borderWidth: 1, borderColor: color + '55' }]}>
+        <Icon size={tokens.iconSize.lg} color={color} strokeWidth={1.5} />
       </View>
       <Text style={s.actionLabel}>{label}</Text>
     </Pressable>
@@ -253,7 +264,6 @@ const s = StyleSheet.create({
 
   // empty state
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: tokens.spacing[3] },
-  emptyEmoji: { fontSize: 80 },
   emptyTitle: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800' },
   emptySub: {
     color: tokens.color.textMuted, fontSize: tokens.fontSize.md, textAlign: 'center',
@@ -273,11 +283,10 @@ const s = StyleSheet.create({
     paddingVertical: tokens.spacing[3],
   },
   scanBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: tokens.spacing[3], paddingVertical: tokens.spacing[2],
     backgroundColor: tokens.color.surface, borderRadius: tokens.radius.pill,
   },
-  scanIcon: { color: tokens.color.text, fontSize: 14, fontWeight: '900' },
   scanText: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '700' },
   meBubble: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.surface,
@@ -304,7 +313,6 @@ const s = StyleSheet.create({
   actionDot: {
     width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center',
   },
-  actionEmoji: { fontSize: 24 },
   actionLabel: { color: tokens.color.text, fontSize: tokens.fontSize.xs, fontWeight: '700' },
 
   section: {
@@ -351,7 +359,6 @@ const s = StyleSheet.create({
     backgroundColor: tokens.color.surface, padding: tokens.spacing[4],
     borderRadius: tokens.radius.lg,
   },
-  palAvatar: { fontSize: 24 },
   palLine: { flex: 1, color: tokens.color.text, fontSize: tokens.fontSize.sm, fontStyle: 'italic', lineHeight: 20 },
 
   // co-parents

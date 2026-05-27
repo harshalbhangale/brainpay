@@ -91,3 +91,29 @@ me.patch('/me', async (c) => {
     return c.json({ error: 'update_failed' }, 500)
   }
 })
+
+// ─── PATCH /me/push-token ─────────────────────────────────────────────
+// Stores the Expo push token for this account.
+// Called once on first app open after notification permission is granted.
+me.patch('/me/push-token', async (c) => {
+  const accountId = authedAccountId(c)
+  const body = await c.req.json().catch(() => ({})) as { token?: string }
+  const token = body.token?.trim()
+
+  if (!token || !token.startsWith('ExponentPushToken[')) {
+    return c.json({ error: 'invalid_push_token' }, 400)
+  }
+
+  try {
+    await db
+      .update(accounts)
+      .set({ pushToken: token })
+      .where(eq(accounts.id, accountId))
+
+    logger.info({ accountId }, 'me.push_token_stored')
+    return c.json({ ok: true })
+  } catch (err) {
+    logger.error({ err: String(err) }, 'me.push_token_failed')
+    return c.json({ error: 'update_failed' }, 500)
+  }
+})

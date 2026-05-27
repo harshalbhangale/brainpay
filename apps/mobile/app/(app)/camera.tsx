@@ -15,6 +15,7 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Buffer } from 'buffer'
+import { Bot } from 'lucide-react-native'
 import { tokens } from '@/theme/tokens'
 import { connectLive, type LiveSocket } from '@/lib/ws'
 
@@ -231,7 +232,7 @@ function DetailSheet({
           {/* PAL quote */}
           {!!palLine && (
             <View style={sheet.palRow}>
-              <Text style={sheet.palAvatar}>🤖</Text>
+              <Bot size={tokens.iconSize.md} color={tokens.color.accent} strokeWidth={1.5} />
               <Text style={sheet.palText}>"{palLine}"</Text>
             </View>
           )}
@@ -324,7 +325,6 @@ const sheet = StyleSheet.create({
   brainsLabel:  { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   palRow:       { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 12,
                    backgroundColor: tokens.color.surface2, padding: 14, borderRadius: tokens.radius.md },
-  palAvatar:    { fontSize: 20 },
   palText:      { flex: 1, color: tokens.color.text, fontSize: tokens.fontSize.sm, fontStyle: 'italic', lineHeight: 20 },
   row:          { flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginBottom: 10,
                    backgroundColor: tokens.color.surface2, padding: 14, borderRadius: tokens.radius.md },

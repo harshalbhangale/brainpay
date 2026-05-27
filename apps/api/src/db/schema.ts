@@ -27,6 +27,7 @@ export const accounts = pgTable('accounts', {
   accountType: text('account_type'), // 'parent' | 'kid' | 'extended' (null until onboarded)
   persona: jsonb('persona').notNull().default(sql`'{}'::jsonb`),
   cachedBalance: integer('cached_balance').default(0).notNull(),
+  pushToken: text('push_token'), // Expo push token — set on first login
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
 })
@@ -205,3 +206,36 @@ export const sessions = pgTable('sessions', {
   reactions: integer('reactions').default(0).notNull(),
   estimatedCostUsd: numeric('estimated_cost_usd', { precision: 10, scale: 4 }).default('0'),
 })
+
+// ─── chores ───────────────────────────────────────────────────────────
+export const chores = pgTable(
+  'chores',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    familyId: uuid('family_id')
+      .references(() => families.id, { onDelete: 'cascade' })
+      .notNull(),
+    assignedTo: uuid('assigned_to')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    createdBy: uuid('created_by')
+      .references(() => accounts.id, { onDelete: 'restrict' })
+      .notNull(),
+    title: text('title').notNull(),
+    rewardBrains: integer('reward_brains').notNull(),
+    // pending → submitted → ai_approved/ai_rejected/ai_uncertain
+    //   → parent_approved/parent_rejected → paid
+    status: text('status').notNull().default('pending'),
+    verificationPhoto: text('verification_photo'), // storage URL of submitted photo
+    aiVerdict: text('ai_verdict'),                 // 'approved' | 'rejected' | 'uncertain'
+    aiReason: text('ai_reason'),                   // PAL's reason (max 15 words)
+    parentNote: text('parent_note'),               // optional note when parent rejects
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    byFamilyCreated: index('chores_family_idx').on(t.familyId, t.createdAt),
+    byAssignedStatus: index('chores_assigned_idx').on(t.assignedTo, t.status),
+  }),
+)

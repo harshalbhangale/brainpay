@@ -4,7 +4,21 @@ import { StatusBar } from 'expo-status-bar'
 import * as Linking from 'expo-linking'
 import { useEffect, useState } from 'react'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { StripeProvider } from '@stripe/stripe-react-native'
 import { useAuthStore } from '@/stores/auth'
+import { addNotificationResponseListener } from '@/lib/push'
+
+const STRIPE_PK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
+const STRIPE_MERCHANT = process.env.EXPO_PUBLIC_STRIPE_MERCHANT_ID ?? 'merchant.com.brainpal.pay'
+
+// Screen → route map for notification deep links.
+const NOTIFICATION_ROUTES: Record<string, string> = {
+  wallet:  '/(app)/kid',
+  chores:  '/(app)/parent',
+  feed:    '/(app)/parent/feed',
+  home:    '/',
+  goals:   '/(app)/kid',
+}
 
 /**
  * Root layout: providers + status bar + auth gate.
@@ -23,10 +37,16 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <StatusBar style="light" />
-        <AuthGate />
-      </QueryClientProvider>
+      <StripeProvider
+        publishableKey={STRIPE_PK}
+        merchantIdentifier={STRIPE_MERCHANT}
+        urlScheme="brainpay"
+      >
+        <QueryClientProvider client={queryClient}>
+          <StatusBar style="light" />
+          <AuthGate />
+        </QueryClientProvider>
+      </StripeProvider>
     </SafeAreaProvider>
   )
 }
@@ -42,6 +62,15 @@ function AuthGate() {
   useEffect(() => {
     hydrate().finally(() => setHydrated(true))
   }, [hydrate])
+
+  // Notification tap → deep link routing.
+  useEffect(() => {
+    const cleanup = addNotificationResponseListener((screen) => {
+      const route = NOTIFICATION_ROUTES[screen] ?? '/'
+      router.push(route as Parameters<typeof router.push>[0])
+    })
+    return cleanup
+  }, [router])
 
   // Deep link handler: brainpay://inv/<code> → invite-accept screen
   useEffect(() => {

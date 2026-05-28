@@ -95,13 +95,14 @@ voiceAgent.post('/voice-agent/turn', async (c) => {
   const body = await c.req.json().catch(() => ({}))
   const parsed = z
     .object({
-      audioBase64: z.string().min(100),
+      audioBase64: z.string().min(1),
       role: z.enum(['parent', 'kid']),
       personaSoFar: z.record(z.unknown()).default({}),
       conversation: z
         .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }))
         .max(20)
         .default([]),
+      textOverride: z.string().optional(),
     })
     .safeParse(body)
 
@@ -109,23 +110,27 @@ voiceAgent.post('/voice-agent/turn', async (c) => {
     return c.json({ error: 'invalid_body', details: parsed.error.flatten() }, 400)
   }
 
-  const { audioBase64, role, personaSoFar, conversation } = parsed.data
+  const { audioBase64, role, personaSoFar, conversation, textOverride } = parsed.data
 
-  // ── 1. Whisper STT ────────────────────────────────────────────────
+  // ── 1. Whisper STT (skipped if textOverride is provided) ──────────
   let transcript = ''
-  try {
-    const audioBuffer = Buffer.from(audioBase64, 'base64')
-    const file = await toFile(audioBuffer, 'turn.m4a')
-    const stt = await llm.audio.transcriptions.create({
-      file,
-      model: 'whisper-1',
-      language: 'en',
-      response_format: 'text',
-    })
-    transcript = (typeof stt === 'string' ? stt : (stt as { text: string }).text ?? '').trim()
-  } catch (err) {
-    logger.warn({ err: String(err), accountId }, 'voice_agent.stt_failed')
-    return c.json({ error: 'transcription_failed' }, 500)
+  if (textOverride) {
+    transcript = textOverride.trim()
+  } else {
+    try {
+      const audioBuffer = Buffer.from(audioBase64, 'base64')
+      const file = await toFile(audioBuffer, 'turn.m4a')
+      const stt = await llm.audio.transcriptions.create({
+        file,
+        model: 'whisper-1',
+        language: 'en',
+        response_format: 'text',
+      })
+      transcript = (typeof stt === 'string' ? stt : (stt as { text: string }).text ?? '').trim()
+    } catch (err) {
+      logger.warn({ err: String(err), accountId }, 'voice_agent.stt_failed')
+      return c.json({ error: 'transcription_failed' }, 500)
+    }
   }
 
   if (!transcript) {
@@ -152,7 +157,7 @@ voiceAgent.post('/voice-agent/turn', async (c) => {
       model: 'gpt-4o-mini',
       response_format: { type: 'json_object' },
       temperature: 0.6,
-      max_tokens: 200,
+      max_tokens: 120,
       messages: [
         { role: 'system', content: system },
         { role: 'system', content: personaCtx },
@@ -242,6 +247,7 @@ async function synthesize(text: string): Promise<string> {
       voice: 'nova',
       input: text,
       response_format: 'mp3',
+      speed: 1.1,
     })
     const buffer = Buffer.from(await response.arrayBuffer())
     return buffer.toString('base64')

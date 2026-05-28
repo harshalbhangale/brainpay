@@ -39,8 +39,21 @@ export default function ParentTopup() {
   const { data: famData } = useFamily()
   const kids = famData?.members.filter((m) => m.role === 'kid') ?? []
 
-  const [step, setStep] = useState(prefilledKidId || kids.length === 1 ? 1 : 0)
-  const [kidId, setKidId] = useState<string | undefined>(prefilledKidId ?? (kids.length === 1 ? kids[0].accountId : undefined))
+  const [step, setStep] = useState(0)
+  const [kidId, setKidId] = useState<string | undefined>(prefilledKidId)
+
+  // Auto-advance to step 1 once family data loads.
+  useEffect(() => {
+    if (kids.length === 1 && !kidId) {
+      setKidId(kids[0].accountId)
+      setStep(1)
+    } else if (prefilledKidId && !kidId) {
+      setKidId(prefilledKidId)
+      setStep(1)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kids.length, prefilledKidId])
+
   const [amountDollars, setAmountDollars] = useState(10)
   const [customAmount, setCustomAmount] = useState('')
   const [note, setNote] = useState('')
@@ -144,9 +157,17 @@ export default function ParentTopup() {
         <Text style={s.successCheck}>✓</Text>
         <Text style={s.successTitle}>Sent!</Text>
         <Text style={s.successSub}>
-          ${amountDollars.toFixed(2)} → {brainsToReceive.toLocaleString()} 🧠
+          ${amountDollars.toFixed(2)} sent to {selectedKid?.persona?.name ?? 'kid'}
         </Text>
-        <Text style={s.successKid}>to {selectedKid?.persona?.name ?? 'kid'}</Text>
+      </View>
+    )
+  }
+
+  // Show spinner while family data is still loading.
+  if (!famData) {
+    return (
+      <View style={[s.root, s.center, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <ActivityIndicator color={tokens.color.accent} />
       </View>
     )
   }
@@ -203,7 +224,6 @@ export default function ParentTopup() {
 
             <View style={s.amountDisplay}>
               <Text style={[s.amountValue, { color: accent }]}>${amountDollars}</Text>
-              <Text style={s.amountConversion}>→ {brainsToReceive.toLocaleString()} 🧠</Text>
             </View>
 
             <View style={s.chipRow}>
@@ -289,8 +309,6 @@ export default function ParentTopup() {
                 to <Text style={{ color: accent, fontWeight: '700' }}>{selectedKid?.persona?.name ?? 'kid'}</Text>
               </Text>
               {note ? <Text style={s.summaryNote}>"{note}"</Text> : null}
-              <View style={s.summaryDivider} />
-              <Text style={s.summaryConvert}>= {brainsToReceive.toLocaleString()} 🧠</Text>
             </View>
 
             {paying ? (

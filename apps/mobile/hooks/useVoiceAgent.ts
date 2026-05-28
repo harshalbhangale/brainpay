@@ -273,6 +273,54 @@ export function useVoiceAgent({
     setPhase('idle')
   }, [recorder])
 
+  // ── Send a text message directly (skips STT) ──────────────────────
+  const sendText = useCallback(async (text: string) => {
+    if (completedRef.current) return
+    setPhase('thinking')
+
+    try {
+      const result = await api<{
+        transcript: string
+        reply: string
+        audioBase64: string
+        personaUpdate: Record<string, unknown>
+        done: boolean
+      }>('/voice-agent/turn', {
+        method: 'POST',
+        body: JSON.stringify({
+          audioBase64: btoa('text:' + text),
+          role,
+          personaSoFar: personaRef.current,
+          conversation: conversationRef.current.slice(-6),
+          textOverride: text,
+        }),
+      })
+
+      setTranscript(result.transcript)
+      personaRef.current = result.personaUpdate
+      setPersona(result.personaUpdate)
+
+      const userTurn: ChatTurn = { role: 'user', content: text }
+      const assistantTurn: ChatTurn = { role: 'assistant', content: result.reply }
+      conversationRef.current = [...conversationRef.current, userTurn, assistantTurn]
+      setConversation([...conversationRef.current])
+
+      setPhase('speaking')
+      await playAudio(result.audioBase64)
+
+      if (result.done) {
+        completedRef.current = true
+        setPhase('done')
+        onComplete(result.personaUpdate)
+        return
+      }
+
+      await startListening()
+    } catch {
+      setPhase('idle')
+    }
+  }, [role, onComplete, playAudio, startListening])
+
   return {
     phase,
     level,
@@ -281,5 +329,6 @@ export function useVoiceAgent({
     persona,
     start,
     stop,
+    sendText,
   }
 }

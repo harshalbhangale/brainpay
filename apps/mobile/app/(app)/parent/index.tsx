@@ -121,8 +121,8 @@ export default function ParentHome() {
         <View style={s.hero}>
           <Text style={s.heroAvatar}>{family.avatar ?? '🏡'}</Text>
           <Text style={s.heroName}>{family.name}</Text>
-          <Text style={s.heroBalance}>{totalBalance} 🧠</Text>
-          <Text style={s.heroSub}>across {kids.length} kid{kids.length === 1 ? '' : 's'}</Text>
+          <Text style={s.heroBalance}>${(totalBalance / 100).toFixed(2)}</Text>
+          <Text style={s.heroSub}>{totalBalance} pts across {kids.length} kid{kids.length === 1 ? '' : 's'}</Text>
         </View>
 
         {/* Action row */}

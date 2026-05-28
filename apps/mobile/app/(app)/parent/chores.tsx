@@ -48,6 +48,14 @@ export default function ParentChores() {
   const allChores = data?.chores ?? []
   const filtered = filterKidId ? allChores.filter((c) => c.assignedTo === filterKidId) : allChores
 
+  const openAddModal = () => {
+    if (kids.length === 1 && !newKidId) {
+      setNewKidId(kids[0].accountId)
+    }
+    setAddOpen(true)
+    setTimeout(() => inputRef.current?.focus(), 300)
+  }
+
   const awaitingApproval = filtered.filter((c) =>
     ['submitted', 'ai_approved', 'ai_uncertain', 'ai_rejected'].includes(c.status),
   )
@@ -121,10 +129,7 @@ export default function ParentChores() {
         <Pressable
           style={s.addBtn}
           hitSlop={8}
-          onPress={() => {
-            setAddOpen(true)
-            setTimeout(() => inputRef.current?.focus(), 300)
-          }}
+          onPress={openAddModal}
         >
           <Plus size={tokens.iconSize.md} color="#000" strokeWidth={2.5} />
         </Pressable>
@@ -282,7 +287,7 @@ export default function ParentChores() {
                   onPress={() => setNewReward(amt)}
                 >
                   <Text style={[s.rewardPillText, newReward === amt && { color: '#000' }]}>
-                    {amt}
+                    {amt} pts
                   </Text>
                 </Pressable>
               ))}

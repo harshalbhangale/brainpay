@@ -18,6 +18,13 @@ import { useVoiceAgent, type VoicePhase } from '@/hooks/useVoiceAgent'
 import { ChatBubble } from '@/components'
 import { tokens } from '@/theme/tokens'
 
+const AVATARS = ['👩‍🦰', '👨', '👩', '👴', '👵', '🧑']
+const STYLES = [
+  { id: 'chill', label: 'Chill', desc: 'Relaxed approach' },
+  { id: 'balanced', label: 'Balanced', desc: 'Middle ground' },
+  { id: 'strict', label: 'Strict', desc: 'High standards' },
+]
+
 /**
  * Real-time voice onboarding — like ChatGPT voice mode.
  *
@@ -59,7 +66,13 @@ export default function VoiceOnboard() {
     conversation,
     start,
     stop,
+    sendText,
   } = useVoiceAgent({ role, onComplete })
+
+  // Detect what PAL is asking about to show visual helpers.
+  const lastPalMessage = conversation.filter((m) => m.role === 'assistant').at(-1)?.content ?? ''
+  const isAskingAvatar = /avatar|pick|choose|emoji/i.test(lastPalMessage)
+  const isAskingStyle = /style|chill|balanced|strict/i.test(lastPalMessage)
 
   const scrollRef = useRef<ScrollView>(null)
   const pulse = useRef(new Animated.Value(1)).current
@@ -122,6 +135,37 @@ export default function VoiceOnboard() {
           </ChatBubble>
         ))}
       </ScrollView>
+
+      {/* Avatar picker — shown when PAL asks about avatar */}
+      {isAskingAvatar && (
+        <View style={s.pickerRow}>
+          {AVATARS.map((emoji) => (
+            <Pressable
+              key={emoji}
+              style={s.pickerBtn}
+              onPress={() => void sendText(`I pick ${emoji}`)}
+            >
+              <Text style={s.pickerEmoji}>{emoji}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      {/* Style picker — shown when PAL asks about parenting style */}
+      {isAskingStyle && (
+        <View style={s.styleRow}>
+          {STYLES.map((st) => (
+            <Pressable
+              key={st.id}
+              style={s.styleBtn}
+              onPress={() => void sendText(st.label)}
+            >
+              <Text style={s.styleBtnLabel}>{st.label}</Text>
+              <Text style={s.styleBtnDesc}>{st.desc}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       {/* PAL avatar + status */}
       <View style={s.avatarWrap}>
@@ -292,4 +336,40 @@ const s = StyleSheet.create({
 
   listenText: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '600' },
   permText: { color: tokens.color.danger, fontSize: tokens.fontSize.md, fontWeight: '600' },
+
+  pickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: tokens.spacing[2],
+    paddingHorizontal: tokens.spacing[4],
+    paddingVertical: tokens.spacing[3],
+    flexWrap: 'wrap',
+  },
+  pickerBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: tokens.color.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerEmoji: { fontSize: 28 },
+
+  styleRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: tokens.spacing[2],
+    paddingHorizontal: tokens.spacing[4],
+    paddingVertical: tokens.spacing[3],
+  },
+  styleBtn: {
+    flex: 1,
+    backgroundColor: tokens.color.surface,
+    borderRadius: tokens.radius.md,
+    padding: tokens.spacing[3],
+    alignItems: 'center',
+    gap: 4,
+  },
+  styleBtnLabel: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '800' },
+  styleBtnDesc: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, textAlign: 'center' },
 })

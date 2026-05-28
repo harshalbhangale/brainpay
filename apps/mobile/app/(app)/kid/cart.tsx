@@ -110,9 +110,9 @@ export default function KidCart() {
             )}
 
             <View style={s.summary}>
-              <Text style={s.summaryLabel}>Net Brains effect</Text>
+              <Text style={s.summaryLabel}>Net effect</Text>
               <Text style={[s.summaryValue, { color: netBrains >= 0 ? tokens.color.accent : tokens.color.danger }]}>
-                {netBrains >= 0 ? '+' : ''}{netBrains} 🧠
+                {netBrains >= 0 ? '+' : '-'}${Math.abs(netBrains / 100).toFixed(2)}
               </Text>
             </View>
           </ScrollView>

@@ -14,7 +14,6 @@ import { Camera, ClipboardList, Flame, ScanLine, ShoppingBag, Sparkles, Target, 
 import { useAuthStore } from '@/stores/auth'
 import { useFamily } from '@/hooks/useFamily'
 import { useWallet } from '@/hooks/useWallet'
-import { AnimatedNumber } from '@/components'
 import { tokens } from '@/theme/tokens'
 
 /**
@@ -88,8 +87,8 @@ export default function KidHome() {
 
         {/* Hero balance card */}
         <View style={[s.hero, { backgroundColor: accent + '15', borderColor: accent + '44' }]}>
-          <AnimatedNumber value={balance} style={[s.heroBalance, { color: accent }]} />
-          <Text style={s.heroLabel}>Brains</Text>
+          <Text style={[s.heroBalance, { color: accent }]}>${(balance / 100).toFixed(2)}</Text>
+          <Text style={s.heroLabel}>{balance} pts</Text>
         </View>
 
         {/* Action row */}

@@ -5,9 +5,7 @@ import { db } from '../db'
 import { accounts, cartItems, ledger, memberships } from '../db/schema'
 import { authedAccountId, requireAuth, type AuthVars } from '../middleware/auth'
 import { logger } from '../logger'
-import { sendPushToAccount, PushTemplates } from '../services/push'
-
-/**
+import { sendPushToAccount, PushTemplates } from '../services/push'/**
  * Wallet endpoints — Sprint 1 Part 2.
  *
  *   GET  /wallet              balance + last 50 ledger entries
@@ -261,4 +259,30 @@ wallet.post('/wallet/purchase', async (c) => {
     logger.error({ err: String(err), accountId }, 'wallet.purchase_failed')
     return c.json({ error: 'purchase_failed' }, 500)
   }
+})
+
+
+// ─── GET /cart ────────────────────────────────────────────────────────
+// Returns the caller's active cart items (not expired).
+wallet.get('/cart', async (c) => {
+  const accountId = authedAccountId(c)
+  const now = new Date()
+
+  const items = await db
+    .select()
+    .from(cartItems)
+    .where(eq(cartItems.accountId, accountId))
+    .orderBy(desc(cartItems.createdAt))
+
+  const active = items.filter((i) => new Date(i.expiresAt) > now)
+
+  return c.json({
+    items: active.map((i) => ({
+      id: i.id,
+      itemName: i.itemName,
+      itemEmoji: i.itemEmoji,
+      brainsDelta: i.brainsDelta,
+      palQuote: i.palQuote,
+    })),
+  })
 })

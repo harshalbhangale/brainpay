@@ -1,10 +1,14 @@
 import { Stack } from 'expo-router'
+import { useRealtimeWallet } from '@/hooks/useRealtimeWallet'
 
 /**
- * Prototype layout: single fullscreen camera route.
- * Tabs come back when we re-introduce dashboard + profile.
+ * Authed app layout. Subscribes to realtime updates so balance, ledger,
+ * and chore changes propagate live across screens.
  */
 export default function AppLayout() {
+  // Live updates for ledger + chores → invalidates React Query caches.
+  useRealtimeWallet()
+
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000' } }} />
   )

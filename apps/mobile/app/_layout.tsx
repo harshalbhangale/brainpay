@@ -14,10 +14,11 @@ const STRIPE_MERCHANT = process.env.EXPO_PUBLIC_STRIPE_MERCHANT_ID ?? 'merchant.
 // Screen → route map for notification deep links.
 const NOTIFICATION_ROUTES: Record<string, string> = {
   wallet:  '/(app)/kid',
-  chores:  '/(app)/parent',
-  feed:    '/(app)/parent/feed',
+  chores:  '/(app)/parent/chores',
+  feed:    '/(app)/parent',
   home:    '/',
   goals:   '/(app)/kid',
+  chat:    '/(app)/kid/chat',
 }
 
 /**

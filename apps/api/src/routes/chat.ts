@@ -9,6 +9,7 @@ import { llm } from '../services/llm'
 import { loadPalContext, contextToSystemPrompt } from '../services/pal-context'
 import { parseIntent } from '../services/pal-intent'
 import { sql } from 'drizzle-orm'
+import { toFile } from 'openai'
 
 /**
  * PAL Chat API — Sprint 1 Part 5.
@@ -275,4 +276,64 @@ chat.get('/chat/history', async (c) => {
     .limit(limit)
 
   return c.json({ messages: messages.reverse() })
+})
+
+// ─── POST /chat/transcribe ────────────────────────────────────────────
+// Transcribes an audio recording using OpenAI Whisper.
+// The mobile client records audio, sends it here, gets back text,
+// then pipes that text into POST /chat.
+//
+// Accepts: multipart/form-data with field "audio" (m4a/mp4/webm/wav, ≤ 25MB)
+//       OR JSON { audioBase64: string, mimeType?: string }
+//
+// Returns: { text: string }
+chat.post('/chat/transcribe', async (c) => {
+  const accountId = authedAccountId(c)
+
+  let audioBuffer: Buffer
+  let filename = 'recording.m4a'
+
+  const contentType = c.req.header('content-type') ?? ''
+
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await c.req.formData().catch(() => null)
+    const file = formData?.get('audio') as File | null
+    if (!file) return c.json({ error: 'audio_required' }, 400)
+    if (file.size > 25 * 1024 * 1024) return c.json({ error: 'audio_too_large' }, 413)
+    const buf = await file.arrayBuffer()
+    audioBuffer = Buffer.from(buf)
+    filename = file.name || filename
+  } else {
+    const body = await c.req.json().catch(() => ({})) as {
+      audioBase64?: string
+      mimeType?: string
+    }
+    if (!body.audioBase64) return c.json({ error: 'audio_required' }, 400)
+    audioBuffer = Buffer.from(body.audioBase64, 'base64')
+    if (body.mimeType?.includes('wav')) filename = 'recording.wav'
+    else if (body.mimeType?.includes('webm')) filename = 'recording.webm'
+    else if (body.mimeType?.includes('mp4')) filename = 'recording.mp4'
+  }
+
+  try {
+    const file = await toFile(audioBuffer, filename)
+    const transcription = await llm.audio.transcriptions.create({
+      file,
+      model: 'whisper-1',
+      language: 'en',
+      response_format: 'text',
+    })
+
+    const text = typeof transcription === 'string'
+      ? transcription.trim()
+      : (transcription as { text: string }).text?.trim() ?? ''
+
+    if (!text) return c.json({ error: 'no_speech_detected' }, 422)
+
+    logger.info({ accountId, textLength: text.length }, 'chat.transcribe')
+    return c.json({ text })
+  } catch (err) {
+    logger.error({ err: String(err), accountId }, 'chat.transcribe_failed')
+    return c.json({ error: 'transcription_failed' }, 500)
+  }
 })

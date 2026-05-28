@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { auth } from './auth'
+import { choresRoutes } from './chores'
 import { family } from './family'
 import { health } from './health'
 import { invitesRoutes } from './invites'
@@ -18,4 +19,5 @@ routes.route('/', invitesRoutes)
 routes.route('/', wallet)
 routes.route('/', items)
 routes.route('/', payments)
+routes.route('/', choresRoutes)
 routes.route('/', voiceOnboarding)

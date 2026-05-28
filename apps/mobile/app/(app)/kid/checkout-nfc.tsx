@@ -8,29 +8,26 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
   Vibration,
+  View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, CreditCard, Wifi } from 'lucide-react-native'
+import { ArrowLeft, Wifi } from 'lucide-react-native'
 import { api } from '@/lib/api'
+import { waitForNfcTap } from '@/lib/nfc'
 import { Confetti } from '@/components'
 import { tokens } from '@/theme/tokens'
 
 /**
- * NFC Checkout — kid taps physical BrainPal card on phone to pay.
+ * NFC Checkout screen.
  *
- * Sprint 1: Demo flow. Real NFC requires `react-native-nfc-manager`
- * which needs a custom dev build (not Expo Go). So this screen:
- *   - Shows the BrainPal card graphic with animated NFC pulse
- *   - "Tap card here" overlay
- *   - Tapping the card on screen triggers checkout (simulates NFC)
- *   - In a custom build with NFC, the actual card tap fires the same
- *     handler.
+ * Real NFC: requires custom dev build (eas build --profile development).
+ * Demo fallback: tap the card graphic on screen — same UX, no NFC hardware.
  *
- * Steps:
+ * Flow:
  *   1. Enter dollar amount
- *   2. Tap card → vibrate + checkout API call → confetti + success
+ *   2. Tap card (real NFC or on-screen tap)
+ *   3. Vibrate + confetti + deduct Brains
  */
 
 export default function CheckoutNfc() {
@@ -42,27 +39,67 @@ export default function CheckoutNfc() {
   const [amountDollars, setAmountDollars] = useState(0)
   const [customAmount, setCustomAmount] = useState('3.50')
   const [paying, setPaying] = useState(false)
+  const [nfcListening, setNfcListening] = useState(false)
   const [result, setResult] = useState<{ netBrainsDelta: number; balanceAfter: number } | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const pulseAnim = useRef(new Animated.Value(0)).current
+  const pulseLoop = useRef<Animated.CompositeAnimation | null>(null)
 
+  // Start NFC listening automatically when tap screen appears.
+  useEffect(() => {
+    if (step !== 'tap') return
+    startNfcOrListen()
+    return () => {
+      pulseLoop.current?.stop()
+    }
+  }, [step])
+
+  // Pulse animation.
   useEffect(() => {
     if (step === 'tap') {
-      Animated.loop(
+      pulseLoop.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1, duration: 1000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 0, duration: 0, useNativeDriver: true }),
         ]),
-      ).start()
+      )
+      pulseLoop.current.start()
     } else {
-      pulseAnim.stopAnimation()
+      pulseLoop.current?.stop()
     }
   }, [step, pulseAnim])
 
-  const onTapCard = async () => {
+  const startNfcOrListen = async () => {
+    setNfcListening(true)
+    setErrorMsg(null)
+
+    const nfcResult = await waitForNfcTap()
+
+    if (nfcResult.success) {
+      // Real NFC tap detected.
+      await processPayment()
+    } else if (nfcResult.reason === 'unsupported') {
+      // Expo Go / simulator — stay on screen, let user tap the card graphic.
+      setNfcListening(false)
+    } else if (nfcResult.reason === 'cancelled') {
+      setNfcListening(false)
+      setErrorMsg('Tap cancelled. Try again.')
+    } else if (nfcResult.reason === 'unknown_card') {
+      setNfcListening(false)
+      setErrorMsg('Unknown card. Use your BrainPal card.')
+    } else {
+      setNfcListening(false)
+      setErrorMsg('NFC error. Tap the card again.')
+    }
+  }
+
+  const processPayment = async () => {
     if (paying) return
-    Vibration.vibrate(50)
     setPaying(true)
+    setNfcListening(false)
+
+    Vibration.vibrate(50)
 
     try {
       const res = await api<{ netBrainsDelta: number; balanceAfter: number; itemCount: number }>(
@@ -78,18 +115,25 @@ export default function CheckoutNfc() {
       queryClient.invalidateQueries({ queryKey: ['wallet'] })
       queryClient.invalidateQueries({ queryKey: ['cart'] })
     } catch (err) {
-      // For demo: if cart is empty, just show success with net 0.
-      const errorMsg = String(err)
-      if (errorMsg.includes('cart_empty')) {
+      const msg = String(err)
+      if (msg.includes('cart_empty')) {
+        // Demo: no cart items — show success anyway.
         setResult({ netBrainsDelta: 0, balanceAfter: 0 })
         Vibration.vibrate([0, 100, 50, 200])
         setStep('success')
       } else {
+        setErrorMsg('Payment failed. Try again.')
         setStep('amount')
       }
     } finally {
       setPaying(false)
     }
+  }
+
+  // On-screen tap (demo fallback when NFC not available).
+  const onCardTap = async () => {
+    if (paying || nfcListening) return
+    await processPayment()
   }
 
   // ── Success ─────────────────────────────────────────────────────────
@@ -155,6 +199,8 @@ export default function CheckoutNfc() {
               </Pressable>
             ))}
           </View>
+
+          {errorMsg && <Text style={s.errorText}>{errorMsg}</Text>}
         </View>
 
         <View style={s.bottom}>
@@ -202,28 +248,35 @@ export default function CheckoutNfc() {
           ]}
         />
 
-        {/* The card — tap to simulate NFC */}
-        <Pressable onPress={onTapCard} disabled={paying}>
-          <View style={s.card}>
+        {/* The card — tap to simulate NFC when real NFC not available */}
+        <Pressable onPress={onCardTap} disabled={paying || nfcListening}>
+          <View style={[s.card, paying && { opacity: 0.7 }]}>
             <View style={s.cardTop}>
               <Text style={s.cardBrand}>◈ MoneyPal</Text>
               <Wifi size={20} color="#fff" strokeWidth={2} style={s.nfcIcon} />
             </View>
             <View style={s.cardChip} />
             <View style={s.cardBottom}>
-              <Text style={s.cardName}>JAMIE</Text>
+              <Text style={s.cardName}>BRAINPAL</Text>
               <Text style={s.cardNum}>•••• •••• •••• 4242</Text>
             </View>
           </View>
         </Pressable>
       </View>
 
-      <Text style={s.tapHint}>{paying ? 'Processing...' : 'Tap your card to pay'}</Text>
-      <Text style={s.tapDots}>● ● ●</Text>
+      <Text style={s.tapHint}>
+        {paying ? 'Processing...' : nfcListening ? 'Hold card to back of phone' : 'Tap your card to pay'}
+      </Text>
+
+      {nfcListening && (
+        <Text style={s.tapDots}>● ● ●</Text>
+      )}
+
+      {errorMsg && <Text style={s.errorText}>{errorMsg}</Text>}
 
       <View style={s.bottom}>
         <Text style={s.demoHint}>
-          Demo mode: tap the card on screen
+          {nfcListening ? `Card UID: 04F9BC82A21C90` : 'Tap card on screen if NFC unavailable'}
         </Text>
       </View>
     </View>
@@ -241,7 +294,6 @@ const s = StyleSheet.create({
     paddingVertical: tokens.spacing[3],
   },
 
-  // Amount entry
   amountWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   amountLabel: { color: tokens.color.textMuted, fontSize: tokens.fontSize.lg, marginBottom: tokens.spacing[5] },
   amountInputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
@@ -265,7 +317,13 @@ const s = StyleSheet.create({
   },
   chipText: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '700' },
 
-  // Card screen
+  errorText: {
+    color: tokens.color.danger,
+    fontSize: tokens.fontSize.sm,
+    textAlign: 'center',
+    marginTop: tokens.spacing[3],
+  },
+
   cardWrap: {
     flex: 1,
     alignItems: 'center',
@@ -287,7 +345,6 @@ const s = StyleSheet.create({
     padding: tokens.spacing[5],
     justifyContent: 'space-between',
     overflow: 'hidden',
-    // Subtle gradient effect via shadow
     shadowColor: tokens.color.purple,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.5,
@@ -316,14 +373,14 @@ const s = StyleSheet.create({
     marginVertical: tokens.spacing[3],
   },
   tapDots: {
-    color: tokens.color.textMuted,
+    color: tokens.color.purple,
     textAlign: 'center',
     letterSpacing: 4,
     marginBottom: tokens.spacing[4],
+    fontSize: tokens.fontSize.lg,
   },
   demoHint: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, textAlign: 'center' },
 
-  // Success
   successCheck: { fontSize: 100, color: tokens.color.accent, fontWeight: '900' },
   successTitle: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800', marginTop: tokens.spacing[3] },
   successAmount: { color: tokens.color.text, fontSize: 56, fontWeight: '900', marginTop: tokens.spacing[3] },

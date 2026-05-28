@@ -16,7 +16,11 @@
       ],
       "infoPlist": {
         "NSCameraUsageDescription": "BrainPay uses your camera to scan products.",
-        "NSMicrophoneUsageDescription": "BrainPay needs the mic only if voice-in is enabled."
+        "NSMicrophoneUsageDescription": "BrainPay needs the mic only if voice-in is enabled.",
+        "NFCReaderUsageDescription": "MoneyPal uses NFC to process payments with your BrainPal card."
+      },
+      "entitlements": {
+        "com.apple.developer.nfc.readersession.formats": ["TAG"]
       }
     },
     "android": {

@@ -126,8 +126,8 @@ export default function ParentHome() {
         {/* Action row */}
         <View style={s.actionRow}>
           <ActionBtn icon={CircleArrowUp} label="Top up"   color="#A855F7" onPress={() => router.push('/(app)/parent/topup')} />
-          <ActionBtn icon={ClipboardList} label="Chores"   color="#3DDC84" onPress={() => router.push('/(app)/parent/feed')} />
-          <ActionBtn icon={Sparkles}      label="PAL Chat" color="#3B82F6" onPress={() => router.push('/(app)/parent/feed')} />
+          <ActionBtn icon={ClipboardList} label="Chores"   color="#3DDC84" onPress={() => router.push('/(app)/parent/chores')} />
+          <ActionBtn icon={Sparkles}      label="PAL Chat" color="#3B82F6" onPress={() => router.push('/(app)/parent/chat')} />
           <ActionBtn icon={UserPlus}      label="Invite"   color="#FB923C" onPress={() => router.push('/(app)/parent/add-kid')} />
         </View>
 

@@ -231,37 +231,22 @@ voiceAgent.post('/voice-agent/greet', async (c) => {
   })
 })
 
-// ─── ElevenLabs TTS helper ───────────────────────────────────────────
+// ─── OpenAI TTS helper ───────────────────────────────────────────────
+// Uses OpenAI tts-1 (fast, cheap) with the "nova" voice.
+// Returns base64-encoded MP3, or empty string on failure.
 async function synthesize(text: string): Promise<string> {
-  if (!env.ELEVENLABS_API_KEY || !env.ELEVENLABS_VOICE_ID) return ''
+  if (!text.trim()) return ''
   try {
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${env.ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': env.ELEVENLABS_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'audio/mpeg',
-      },
-      body: JSON.stringify({
-        text,
-        model_id: 'eleven_flash_v2_5',
-        voice_settings: {
-          stability: 0.4,
-          similarity_boost: 0.85,
-          style: 0.6,
-          use_speaker_boost: true,
-        },
-      }),
+    const response = await llm.audio.speech.create({
+      model: 'tts-1',
+      voice: 'nova',
+      input: text,
+      response_format: 'mp3',
     })
-    if (!res.ok) {
-      logger.warn({ status: res.status }, 'voice_agent.tts_failed')
-      return ''
-    }
-    const buf = await res.arrayBuffer()
-    return Buffer.from(buf).toString('base64')
+    const buffer = Buffer.from(await response.arrayBuffer())
+    return buffer.toString('base64')
   } catch (err) {
-    logger.warn({ err: String(err) }, 'voice_agent.tts_exception')
+    logger.warn({ err: String(err) }, 'voice_agent.tts_failed')
     return ''
   }
 }

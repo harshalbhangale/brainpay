@@ -17,7 +17,9 @@ import {
   Home,
   ScanLine,
   Sparkles,
+  TrendingUp,
   UserPlus,
+  Users,
 } from 'lucide-react-native'
 import { useFamily } from '@/hooks/useFamily'
 import { useFamilyStore, type FamilyMember } from '@/stores/family'
@@ -138,12 +140,14 @@ export default function ParentHome() {
             style={s.addFirstKid}
             onPress={() => router.push('/(app)/parent/add-kid')}
           >
-            <Text style={s.addFirstKidEmoji}>👧</Text>
+            <View style={s.addFirstKidIcon}>
+              <Users size={tokens.iconSize.lg} color={tokens.color.accent} strokeWidth={1.5} />
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={s.addFirstKidTitle}>Add your first kid</Text>
-              <Text style={s.addFirstKidSub}>Send them an invite to join.</Text>
+              <Text style={s.addFirstKidSub}>Enter their phone number to get started.</Text>
             </View>
-            <Text style={s.addFirstKidPlus}>＋</Text>
+            <UserPlus size={tokens.iconSize.md} color={tokens.color.accent} strokeWidth={1.5} />
           </Pressable>
         ) : (
           <>
@@ -340,13 +344,15 @@ const s = StyleSheet.create({
   addFirstKid: {
     flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
     backgroundColor: tokens.color.surface, padding: tokens.spacing[4],
-    borderRadius: tokens.radius.lg, borderWidth: 2, borderColor: tokens.color.surface2,
-    borderStyle: 'dashed' as const,
+    borderRadius: tokens.radius.lg, borderWidth: 1.5, borderColor: tokens.color.accent + '44',
   },
-  addFirstKidEmoji: { fontSize: 32 },
+  addFirstKidIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: tokens.color.accent + '15',
+    alignItems: 'center', justifyContent: 'center',
+  },
   addFirstKidTitle: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '800' },
   addFirstKidSub: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 2 },
-  addFirstKidPlus: { color: tokens.color.accent, fontSize: 28, fontWeight: '300' },
   addAnother: {
     paddingVertical: tokens.spacing[3], alignItems: 'center',
     marginTop: tokens.spacing[2],

@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Camera, ClipboardList, Flame, ScanLine, ShoppingBag, Sparkles, Target } from 'lucide-react-native'
+import { Camera, ClipboardList, Flame, ScanLine, ShoppingBag, Sparkles, Target, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react-native'
 import { useAuthStore } from '@/stores/auth'
 import { useFamily } from '@/hooks/useFamily'
 import { useWallet } from '@/hooks/useWallet'
@@ -84,7 +84,7 @@ export default function KidHome() {
         </View>
 
         {/* Greeting */}
-        <Text style={s.greeting}>Hey {name} 👋</Text>
+        <Text style={s.greeting}>Hey {name}</Text>
 
         {/* Hero balance card */}
         <View style={[s.hero, { backgroundColor: accent + '15', borderColor: accent + '44' }]}>
@@ -162,28 +162,38 @@ function ActivityRow({ entry }: { entry: { kind: string; brainsDelta: number; me
   const color = isPositive ? tokens.color.accent : tokens.color.danger
 
   let label = ''
-  let emoji = '🪙'
+  let Icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }> = Wallet
+  let iconColor: string = tokens.color.textMuted
+
   if (entry.kind === 'topup' || entry.kind === 'topup_stripe') {
-    label = meta.note ? `Topup — ${meta.note}` : 'Topup'
-    emoji = '💸'
+    label = meta.note ? `Topup — ${meta.note}` : 'Topup received'
+    Icon = TrendingUp
+    iconColor = tokens.color.accent as string
   } else if (entry.kind === 'cart_checkout') {
     label = `Bought ${meta.itemName ?? 'item'}`
-    emoji = meta.itemEmoji ?? '🛒'
+    Icon = ShoppingBag
+    iconColor = tokens.color.orange as string
   } else if (entry.kind === 'scan_skip_reward') {
     label = `Skipped ${meta.itemName ?? 'junk'}`
-    emoji = '✋'
+    Icon = Zap
+    iconColor = tokens.color.accent as string
   } else if (entry.kind === 'chore_payout') {
     label = `Chore: ${meta.choreTitle ?? 'done'}`
-    emoji = '🧹'
+    Icon = ClipboardList
+    iconColor = tokens.color.blue as string
   } else {
     label = entry.kind.replace(/_/g, ' ')
+    Icon = isPositive ? TrendingUp : TrendingDown
+    iconColor = color as string
   }
 
   return (
     <View style={s.activityRow}>
-      <Text style={s.activityEmoji}>{emoji}</Text>
+      <View style={[s.activityIconWrap, { backgroundColor: iconColor + '18' }]}>
+        <Icon size={14} color={iconColor} strokeWidth={2} />
+      </View>
       <Text style={s.activityLabel}>{label}</Text>
-      <Text style={[s.activityDelta, { color }]}>{sign}{entry.brainsDelta} 🧠</Text>
+      <Text style={[s.activityDelta, { color }]}>{sign}{entry.brainsDelta}</Text>
     </View>
   )
 }
@@ -279,13 +289,18 @@ const s = StyleSheet.create({
   },
   emptyTodayText: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm },
 
-  activityList: { gap: 1, backgroundColor: tokens.color.surface, borderRadius: tokens.radius.md, overflow: 'hidden' },
+  activityList: { backgroundColor: tokens.color.surface, borderRadius: tokens.radius.md, overflow: 'hidden' },
   activityRow: {
     flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
     padding: tokens.spacing[4],
     backgroundColor: tokens.color.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: tokens.color.surface2,
   },
-  activityEmoji: { fontSize: 22 },
+  activityIconWrap: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
   activityLabel: { flex: 1, color: tokens.color.text, fontSize: tokens.fontSize.sm },
   activityDelta: { fontSize: tokens.fontSize.sm, fontWeight: '800' },
 })

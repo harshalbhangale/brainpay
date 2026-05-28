@@ -1,5 +1,4 @@
 import { useRouter } from 'expo-router'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   ActivityIndicator,
   Pressable,
@@ -9,25 +8,29 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Camera, Clock, CircleCheck, ShieldCheck, Upload } from 'lucide-react-native'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Loader,
+  ShieldCheck,
+  ShieldX,
+} from 'lucide-react-native'
 import { useChores, type Chore } from '@/hooks/useChores'
 import { tokens } from '@/theme/tokens'
 
-/**
- * Kid's chore list — shows pending / submitted / paid chores.
- * Tap a pending chore → opens camera verify screen.
- */
 export default function KidChores() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const { data, isLoading, refetch } = useChores()
+  const { data, isLoading } = useChores()
 
   const allChores = data?.chores ?? []
-  const pending = allChores.filter((c) => c.status === 'pending')
-  const submitted = allChores.filter((c) =>
+  const todo = allChores.filter((c) => c.status === 'pending')
+  const inReview = allChores.filter((c) =>
     ['submitted', 'ai_approved', 'ai_uncertain', 'ai_rejected'].includes(c.status),
   )
-  const paid = allChores.filter((c) => c.status === 'paid')
+  const done = allChores.filter((c) => c.status === 'paid')
 
   if (isLoading) {
     return (
@@ -39,55 +42,63 @@ export default function KidChores() {
 
   return (
     <View style={[s.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <View style={s.topBar}>
+      <View style={s.header}>
         <Pressable hitSlop={12} onPress={() => router.back()}>
           <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} strokeWidth={1.5} />
         </Pressable>
-        <Text style={s.title}>Chores</Text>
+        <Text style={s.headerTitle}>My Chores</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: tokens.spacing[8] }} showsVerticalScrollIndicator={false}>
-        {pending.length > 0 && (
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: tokens.spacing[8] }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* To do */}
+        {todo.length > 0 && (
           <>
-            <Text style={s.section}>TO DO</Text>
-            {pending.map((c) => (
+            <SectionLabel text="TO DO" color={tokens.color.orange} />
+            {todo.map((c) => (
               <Pressable
                 key={c.id}
-                style={s.choreCard}
+                style={s.todoCard}
                 onPress={() => router.push({ pathname: '/(app)/kid/chore-verify', params: { id: c.id } })}
               >
-                <Clock size={tokens.iconSize.lg} color={tokens.color.orange} strokeWidth={1.5} />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.choreTitle}>{c.title}</Text>
-                  <Text style={s.choreSub}>Tap to verify with camera</Text>
+                <View style={s.todoLeft}>
+                  <View style={s.todoIconWrap}>
+                    <Clock size={18} color={tokens.color.orange} strokeWidth={2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.choreTitle}>{c.title}</Text>
+                    <Text style={s.choreHint}>Tap to verify with camera</Text>
+                  </View>
                 </View>
-                <View style={s.rewardBadge}>
-                  <Text style={s.rewardText}>+{c.rewardBrains} 🧠</Text>
+                <View style={s.rewardTag}>
+                  <Text style={s.rewardTagText}>+{c.rewardBrains}</Text>
                 </View>
+                <ChevronRight size={tokens.iconSize.sm} color={tokens.color.textMuted} strokeWidth={1.5} />
               </Pressable>
             ))}
           </>
         )}
 
-        {submitted.length > 0 && (
+        {/* In review */}
+        {inReview.length > 0 && (
           <>
-            <Text style={s.section}>WAITING</Text>
-            {submitted.map((c) => <SubmittedRow key={c.id} chore={c} />)}
+            <SectionLabel text="IN REVIEW" color="#F59E0B" />
+            {inReview.map((c) => <ReviewRow key={c.id} chore={c} />)}
           </>
         )}
 
-        {paid.length > 0 && (
+        {/* Done */}
+        {done.length > 0 && (
           <>
-            <Text style={s.section}>PAID</Text>
-            {paid.map((c) => (
-              <View key={c.id} style={s.choreCard}>
-                <CircleCheck size={tokens.iconSize.lg} color={tokens.color.accent} strokeWidth={1.5} />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.choreTitle}>{c.title}</Text>
-                  <Text style={s.choreSub}>Paid</Text>
-                </View>
-                <Text style={[s.rewardText, { color: tokens.color.accent }]}>+{c.rewardBrains} 🧠</Text>
+            <SectionLabel text="PAID" color={tokens.color.accent} />
+            {done.map((c) => (
+              <View key={c.id} style={s.doneCard}>
+                <CheckCircle2 size={tokens.iconSize.md} color={tokens.color.accent} strokeWidth={1.5} />
+                <Text style={[s.choreTitle, { flex: 1 }]}>{c.title}</Text>
+                <Text style={s.doneReward}>+{c.rewardBrains}</Text>
               </View>
             ))}
           </>
@@ -95,9 +106,9 @@ export default function KidChores() {
 
         {allChores.length === 0 && (
           <View style={s.empty}>
-            <Clock size={tokens.iconSize.hero} color={tokens.color.textMuted} strokeWidth={1.0} />
-            <Text style={s.emptyTitle}>No chores yet</Text>
-            <Text style={s.emptySub}>Your parent will add some soon.</Text>
+            <CheckCircle2 size={tokens.iconSize.hero} color={tokens.color.surface2} strokeWidth={1.0} />
+            <Text style={s.emptyTitle}>All clear</Text>
+            <Text style={s.emptySub}>Your parent hasn't added any chores yet.</Text>
           </View>
         )}
       </ScrollView>
@@ -105,68 +116,112 @@ export default function KidChores() {
   )
 }
 
-function SubmittedRow({ chore }: { chore: Chore }) {
-  let icon = <Upload size={tokens.iconSize.lg} color={tokens.color.orange} strokeWidth={1.5} />
-  let label = 'Waiting for parent'
+function SectionLabel({ text, color }: { text: string; color: string }) {
+  return (
+    <View style={sl.row}>
+      <View style={[sl.dot, { backgroundColor: color }]} />
+      <Text style={sl.text}>{text}</Text>
+    </View>
+  )
+}
+const sl = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: tokens.spacing[5], marginBottom: tokens.spacing[3], paddingHorizontal: tokens.spacing[5] },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  text: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, fontWeight: '700', letterSpacing: 1.2 },
+})
+
+function ReviewRow({ chore }: { chore: Chore }) {
+  let Icon = <Loader size={tokens.iconSize.md} color={tokens.color.textMuted as string} strokeWidth={1.5} />
+  let statusText = 'Waiting for parent'
+  let statusColor: string = tokens.color.textMuted
+
   if (chore.status === 'ai_approved') {
-    icon = <ShieldCheck size={tokens.iconSize.lg} color={tokens.color.accent} strokeWidth={1.5} />
-    label = `AI approved — ${chore.aiReason ?? ''}`
-  } else if (chore.status === 'ai_uncertain') {
-    icon = <Upload size={tokens.iconSize.lg} color={tokens.color.orange} strokeWidth={1.5} />
-    label = 'Sent to parent'
+    Icon = <ShieldCheck size={tokens.iconSize.md} color={tokens.color.accent as string} strokeWidth={1.5} />
+    statusText = 'AI verified — waiting for parent'
+    statusColor = tokens.color.accent as string
   } else if (chore.status === 'ai_rejected') {
-    icon = <Upload size={tokens.iconSize.lg} color={tokens.color.danger} strokeWidth={1.5} />
-    label = chore.aiReason ?? 'AI rejected'
+    Icon = <ShieldX size={tokens.iconSize.md} color={tokens.color.danger as string} strokeWidth={1.5} />
+    statusText = chore.aiReason ?? 'AI rejected'
+    statusColor = tokens.color.danger as string
+  } else if (chore.status === 'ai_uncertain') {
+    Icon = <Loader size={tokens.iconSize.md} color={tokens.color.orange as string} strokeWidth={1.5} />
+    statusText = 'Sent to parent for review'
+    statusColor = tokens.color.orange as string
   }
 
   return (
-    <View style={s.choreCard}>
-      {icon}
+    <View style={s.reviewCard}>
+      {Icon}
       <View style={{ flex: 1 }}>
         <Text style={s.choreTitle}>{chore.title}</Text>
-        <Text style={s.choreSub} numberOfLines={2}>{label}</Text>
+        <Text style={[s.choreHint, { color: statusColor }]} numberOfLines={1}>{statusText}</Text>
       </View>
-      <Text style={s.rewardText}>+{chore.rewardBrains} 🧠</Text>
+      <Text style={s.reviewReward}>+{chore.rewardBrains}</Text>
     </View>
   )
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: tokens.color.bg, paddingHorizontal: tokens.spacing[5] },
+  root: { flex: 1, backgroundColor: tokens.color.bg },
   center: { justifyContent: 'center', alignItems: 'center' },
 
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: tokens.spacing[3],
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: tokens.spacing[5], paddingVertical: tokens.spacing[3],
   },
-  title: { color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '800' },
+  headerTitle: { color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '800' },
 
-  section: {
-    color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, fontWeight: '700',
-    letterSpacing: 1.2, marginTop: tokens.spacing[5], marginBottom: tokens.spacing[3],
-  },
-
-  choreCard: {
+  todoCard: {
     flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
     backgroundColor: tokens.color.surface,
-    padding: tokens.spacing[4],
     borderRadius: tokens.radius.lg,
+    padding: tokens.spacing[4],
+    marginHorizontal: tokens.spacing[5],
     marginBottom: tokens.spacing[2],
+    borderWidth: 1,
+    borderColor: tokens.color.orange + '33',
+  },
+  todoLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3] },
+  todoIconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: tokens.color.orange + '20',
+    alignItems: 'center', justifyContent: 'center',
   },
   choreTitle: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '700' },
-  choreSub: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 2 },
-
-  rewardBadge: {
-    backgroundColor: tokens.color.accent + '22',
+  choreHint: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 2 },
+  rewardTag: {
+    backgroundColor: tokens.color.accent + '20',
     paddingHorizontal: tokens.spacing[3],
-    paddingVertical: tokens.spacing[1],
+    paddingVertical: 4,
     borderRadius: tokens.radius.pill,
   },
-  rewardText: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '800' },
+  rewardTagText: { color: tokens.color.accent, fontSize: tokens.fontSize.xs, fontWeight: '800' },
 
-  empty: { alignItems: 'center', paddingVertical: tokens.spacing[8], gap: tokens.spacing[3] },
+  reviewCard: {
+    flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
+    backgroundColor: tokens.color.surface,
+    borderRadius: tokens.radius.md,
+    padding: tokens.spacing[4],
+    marginHorizontal: tokens.spacing[5],
+    marginBottom: tokens.spacing[2],
+  },
+  reviewReward: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm, fontWeight: '700' },
+
+  doneCard: {
+    flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
+    backgroundColor: tokens.color.surface,
+    borderRadius: tokens.radius.md,
+    padding: tokens.spacing[3],
+    marginHorizontal: tokens.spacing[5],
+    marginBottom: tokens.spacing[2],
+    opacity: 0.7,
+  },
+  doneReward: { color: tokens.color.accent, fontSize: tokens.fontSize.sm, fontWeight: '700' },
+
+  empty: {
+    alignItems: 'center', paddingVertical: tokens.spacing[8],
+    gap: tokens.spacing[3], paddingHorizontal: tokens.spacing[5],
+  },
   emptyTitle: { color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '800' },
-  emptySub: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm },
+  emptySub: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm, textAlign: 'center' },
 })

@@ -1,11 +1,20 @@
-import { Tabs } from 'expo-router'
-import { View, StyleSheet } from 'react-native'
-import { Camera, Home, MessageCircle, ShoppingBag } from 'lucide-react-native'
+import { Tabs, useRouter } from 'expo-router'
+import { View } from 'react-native'
+import {
+  Camera,
+  Home,
+  MessageCircle,
+  ShoppingBag,
+} from 'lucide-react-native'
 import { tokens } from '@/theme/tokens'
 
 /**
- * Kid app layout — bottom tab bar.
- * Tabs: Home | Scan (raised) | Chat | Cart
+ * Kid app layout — custom bottom tab bar.
+ *
+ * Tabs: Home | Scan (raised green) | PAL | Cart
+ *
+ * The center Scan button is raised above the bar with a glow shadow.
+ * Active tabs show a small accent dot below the icon.
  */
 export default function KidLayout() {
   return (
@@ -16,15 +25,21 @@ export default function KidLayout() {
           backgroundColor: tokens.color.surface,
           borderTopColor: tokens.color.surface2,
           borderTopWidth: 1,
-          height: 80,
-          paddingBottom: 16,
-          paddingTop: 8,
+          height: 72,
+          paddingBottom: 10,
+          paddingTop: 6,
+          elevation: 0,
         },
         tabBarActiveTintColor: tokens.color.accent,
         tabBarInactiveTintColor: tokens.color.textMuted,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '700',
+          letterSpacing: 0.3,
+          marginTop: 2,
+        },
+        tabBarItemStyle: {
+          paddingTop: 4,
         },
       }}
     >
@@ -32,43 +47,109 @@ export default function KidLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <Home size={size} color={color} strokeWidth={1.5} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={{ alignItems: 'center' }}>
+              <Home
+                size={22}
+                color={color}
+                strokeWidth={focused ? 2 : 1.5}
+              />
+              {focused && (
+                <View style={{
+                  position: 'absolute',
+                  bottom: -6,
+                  width: 4,
+                  height: 4,
+                  borderRadius: 2,
+                  backgroundColor: tokens.color.accent,
+                }} />
+              )}
+            </View>
           ),
         }}
       />
+
+      {/* Raised scan button */}
       <Tabs.Screen
-        name="camera"
+        name="camera-tab"
         options={{
-          title: 'Scan',
+          title: '',
           href: '/(app)/camera',
-          tabBarIcon: ({ focused }) => (
-            <View style={[s.scanBtn, focused && s.scanBtnActive]}>
-              <Camera size={22} color="#000" strokeWidth={2} />
+          tabBarIcon: () => (
+            <View style={{
+              width: 54,
+              height: 54,
+              borderRadius: 27,
+              backgroundColor: tokens.color.accent,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 18,
+              shadowColor: tokens.color.accent,
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
+              elevation: 10,
+            }}>
+              <Camera size={24} color="#000" strokeWidth={2} />
             </View>
           ),
           tabBarLabel: () => null,
         }}
       />
+
       <Tabs.Screen
         name="chat"
         options={{
           title: 'PAL',
-          tabBarIcon: ({ color, size }) => (
-            <MessageCircle size={size} color={color} strokeWidth={1.5} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={{ alignItems: 'center' }}>
+              <MessageCircle
+                size={22}
+                color={color}
+                strokeWidth={focused ? 2 : 1.5}
+              />
+              {focused && (
+                <View style={{
+                  position: 'absolute',
+                  bottom: -6,
+                  width: 4,
+                  height: 4,
+                  borderRadius: 2,
+                  backgroundColor: tokens.color.accent,
+                }} />
+              )}
+            </View>
           ),
         }}
       />
+
       <Tabs.Screen
         name="cart"
         options={{
           title: 'Cart',
-          tabBarIcon: ({ color, size }) => (
-            <ShoppingBag size={size} color={color} strokeWidth={1.5} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={{ alignItems: 'center' }}>
+              <ShoppingBag
+                size={22}
+                color={color}
+                strokeWidth={focused ? 2 : 1.5}
+              />
+              {focused && (
+                <View style={{
+                  position: 'absolute',
+                  bottom: -6,
+                  width: 4,
+                  height: 4,
+                  borderRadius: 2,
+                  backgroundColor: tokens.color.accent,
+                }} />
+              )}
+            </View>
           ),
         }}
       />
-      {/* Hidden screens — accessible via router.push but not in tab bar */}
+
+      {/* Hidden screens */}
       <Tabs.Screen name="chores"       options={{ href: null }} />
       <Tabs.Screen name="chore-verify" options={{ href: null }} />
       <Tabs.Screen name="checkout-nfc" options={{ href: null }} />
@@ -76,24 +157,3 @@ export default function KidLayout() {
     </Tabs>
   )
 }
-
-const s = StyleSheet.create({
-  scanBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: tokens.color.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-    shadowColor: tokens.color.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  scanBtnActive: {
-    backgroundColor: tokens.color.accent,
-    shadowOpacity: 0.6,
-  },
-})

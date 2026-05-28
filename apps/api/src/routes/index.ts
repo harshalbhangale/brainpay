@@ -8,6 +8,7 @@ import { invitesRoutes } from './invites'
 import { items } from './items'
 import { me } from './me'
 import { payments } from './payments'
+import { voiceAgent } from './voice-agent'
 import { voiceOnboarding } from './voice-onboarding'
 import { wallet } from './wallet'
 
@@ -22,4 +23,5 @@ routes.route('/', items)
 routes.route('/', payments)
 routes.route('/', choresRoutes)
 routes.route('/', chat)
+routes.route('/', voiceAgent)
 routes.route('/', voiceOnboarding)

@@ -38,7 +38,7 @@ export default function RoleSelect() {
           subtitle="Set up money for your kid"
           accent="#A855F7"
           accentBg="rgba(168,85,247,0.12)"
-          onPress={() => router.push('/(auth)/parent-onboarding')}
+          onPress={() => router.push('/(auth)/voice-onboard')}
         />
         <RoleCard
           image={kidCard}

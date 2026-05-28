@@ -129,15 +129,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStore.setItemAsync(TOKEN_KEY, body.token)
     await SecureStore.setItemAsync(ACCOUNT_KEY, JSON.stringify(body.account))
 
-    // Lookup pending invite for this phone via the API. Best-effort.
+    // Lookup pending join requests for this phone (replaces old invite check).
     let hasPendingInvite = false
     try {
-      const inviteRes = await fetch(apiUrl(`/invites/by-phone?phone=${encodeURIComponent(phone)}`), {
+      const joinRes = await fetch(apiUrl('/join-requests/pending'), {
         headers: { Authorization: `Bearer ${body.token}` },
       })
-      if (inviteRes.ok) {
-        const data = (await inviteRes.json()) as { invites?: unknown[] }
-        hasPendingInvite = (data.invites?.length ?? 0) > 0
+      if (joinRes.ok) {
+        const data = (await joinRes.json()) as { requests?: unknown[] }
+        hasPendingInvite = (data.requests?.length ?? 0) > 0
       }
     } catch { /* non-fatal */ }
 

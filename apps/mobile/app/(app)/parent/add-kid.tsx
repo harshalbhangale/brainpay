@@ -1,329 +1,314 @@
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native'
-import { SlidingWizard } from '@/components/SlidingWizard'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { ArrowLeft, CircleCheck, UserPlus } from 'lucide-react-native'
 import { api } from '@/lib/api'
 import { tokens } from '@/theme/tokens'
 
 /**
- * Add a kid — parent fills kid persona on the kid's behalf, then we
- * generate an invite. The kid will see this as pre-filled defaults during
- * their own persona wizard (Task 7) but can change anything except the
- * initial top-up.
+ * Add a kid — new flow (no invite codes, no SMS).
  *
- * Slides: name → age → color → avatar → PAL voice → initial top-up
+ * Parent enters kid's phone number.
+ * Server stores a join request.
+ * Kid sees it when they sign in and taps Accept.
  *
- * On complete: POST /invites with kidSeed → routes to invite-send screen
- * with the new invite id + token.
+ * Simple. No Twilio. No invite codes.
  */
 
-const ACCENT_PALETTE = [
-  { color: '#A855F7', name: 'Purple' },
-  { color: '#3DDC84', name: 'Green' },
-  { color: '#3B82F6', name: 'Blue' },
-  { color: '#FB923C', name: 'Orange' },
-  { color: '#EC4899', name: 'Pink' },
-  { color: '#FACC15', name: 'Yellow' },
-  { color: '#EF4444', name: 'Red' },
-  { color: '#14B8A6', name: 'Teal' },
-] as const
-
-const KID_AVATARS = ['🧒', '👦', '👧', '🧑', '👽', '🤖', '🦄', '🐱', '🐶', '🐼', '🦊', '🐸'] as const
-
-const VOICES = [
-  { id: 'sarcastic',  emoji: '🤖', name: 'Sarcastic robot',  desc: 'Dry, deadpan, pure roast.' },
-  { id: 'cool',       emoji: '😎', name: 'Cool friend',       desc: 'Like your YouTuber best mate.' },
-  { id: 'wise',       emoji: '🧙', name: 'Wise wizard',       desc: 'Old-soul advice with bite.' },
-  { id: 'hyped',      emoji: '⚡', name: 'Hyped coach',       desc: 'Cheers every good call.' },
-  { id: 'chill',      emoji: '🌴', name: 'Chill surfer',      desc: 'Laid back, gentle vibes.' },
-  { id: 'auntie',     emoji: '👵', name: 'Sassy auntie',      desc: 'Has seen it all. Tells it.' },
-] as const
-
-const TOPUP_CHIPS = [50, 100, 200, 500] as const
-
-const AGE_RANGE = Array.from({ length: 10 }, (_, i) => i + 8) // 8–17
+const COUNTRY_CODES = [
+  { flag: '🇦🇺', dial: '+61', name: 'AU' },
+  { flag: '🇺🇸', dial: '+1',  name: 'US' },
+  { flag: '🇬🇧', dial: '+44', name: 'UK' },
+  { flag: '🇮🇳', dial: '+91', name: 'IN' },
+  { flag: '🇳🇿', dial: '+64', name: 'NZ' },
+]
 
 export default function AddKid() {
   const router = useRouter()
-  const [step, setStep] = useState(0)
-  const [name, setName] = useState('')
-  const [age, setAge] = useState<number | null>(null)
-  const [color, setColor] = useState<string | null>(null)
-  const [avatar, setAvatar] = useState<string | null>(null)
-  const [voiceId, setVoiceId] = useState<string | null>(null)
-  const [topup, setTopup] = useState<number>(100)
-  const [creating, setCreating] = useState(false)
+  const insets = useSafeAreaInsets()
+  const queryClient = useQueryClient()
 
-  const canContinue =
-    (step === 0 && name.trim().length > 0) ||
-    (step === 1 && age !== null) ||
-    (step === 2 && color !== null) ||
-    (step === 3 && avatar !== null) ||
-    (step === 4 && voiceId !== null) ||
-    (step === 5 && topup > 0)
+  const [countryIdx, setCountryIdx] = useState(0)
+  const [showCountryPicker, setShowCountryPicker] = useState(false)
+  const [localPhone, setLocalPhone] = useState('')
+  const [kidName, setKidName] = useState('')
+  const [initialTopup, setInitialTopup] = useState(100)
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const accent = color ?? tokens.color.accent
+  const country = COUNTRY_CODES[countryIdx]
+  const e164 = `${country.dial}${localPhone.replace(/\D/g, '')}`
+  const phoneValid = localPhone.replace(/\D/g, '').length >= 6
 
-  const onComplete = async () => {
-    if (creating) return
-    setCreating(true)
+  const sendRequest = async () => {
+    if (!phoneValid || sending) return
+    setSending(true)
+    setError(null)
+
     try {
-      const res = await api<{
-        invite: { id: string; code: string; token: string; link: string; qrData: string }
-      }>('/invites', {
+      await api('/join-requests', {
         method: 'POST',
         body: JSON.stringify({
-          expectedRole: 'kid',
-          initialTopup: topup,
-          kidSeed: {
-            name: name.trim(),
-            age,
-            color,
-            avatar,
-            voiceId,
-          },
+          phone: e164,
+          initialTopup,
+          kidSeed: { name: kidName.trim() || undefined },
         }),
       })
-      router.replace({
-        pathname: '/(app)/parent/invite-send',
-        params: {
-          inviteId: res.invite.id,
-          code: res.invite.code,
-          link: res.invite.link,
-          qrData: res.invite.qrData,
-          kidName: name.trim(),
-          kidAvatar: avatar ?? '🧒',
-        },
-      })
+      setSent(true)
+      queryClient.invalidateQueries({ queryKey: ['family'] })
     } catch (err) {
-      console.error('add_kid_failed', err)
-      setCreating(false)
+      const msg = String(err)
+      if (msg.includes('already_in_family')) {
+        setError('This number is already in your family.')
+      } else {
+        setError('Could not send request. Check the number and try again.')
+      }
+    } finally {
+      setSending(false)
     }
   }
 
+  // ── Success state ─────────────────────────────────────────────────
+  if (sent) {
+    return (
+      <View style={[s.root, s.center, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <CircleCheck size={80} color={tokens.color.accent} strokeWidth={1.0} />
+        <Text style={s.sentTitle}>Request sent!</Text>
+        <Text style={s.sentSub}>
+          When {kidName.trim() || 'your kid'} signs in with {e164}, they'll see your request and can accept it.
+        </Text>
+        <Text style={s.sentNote}>No SMS needed — they just sign in.</Text>
+        <Pressable style={s.cta} onPress={() => router.back()}>
+          <Text style={s.ctaText}>Done</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
   return (
-    <SlidingWizard
-      step={step}
-      onStepChange={setStep}
-      canContinue={canContinue && !creating}
-      onComplete={onComplete}
-      onBack={() => router.back()}
-      continueLabel="Send invite"
-      accent={accent}
-      steps={[
-        // Slide 1 — name
-        <View key="name" style={s.slide}>
-          <Text style={s.title}>What's their name?</Text>
-          <Text style={s.subtitle}>They can change this later.</Text>
+    <KeyboardAvoidingView
+      style={s.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={[s.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        {/* Top bar */}
+        <View style={s.topBar}>
+          <Pressable hitSlop={12} onPress={() => router.back()}>
+            <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} strokeWidth={1.5} />
+          </Pressable>
+          <Text style={s.title}>Add a kid</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        <View style={s.content}>
+          {/* How it works */}
+          <View style={s.howItWorks}>
+            <UserPlus size={tokens.iconSize.lg} color={tokens.color.accent} strokeWidth={1.5} />
+            <Text style={s.howText}>
+              Enter your kid's phone number. When they sign in, they'll see your request and tap Accept.
+            </Text>
+          </View>
+
+          {/* Kid name (optional) */}
+          <Text style={s.label}>Kid's name (optional)</Text>
           <TextInput
             style={s.input}
+            value={kidName}
+            onChangeText={setKidName}
             placeholder="Jamie"
             placeholderTextColor={tokens.color.textMuted}
-            value={name}
-            onChangeText={setName}
-            autoFocus
-            maxLength={20}
             autoComplete="name"
+            maxLength={20}
           />
-        </View>,
 
-        // Slide 2 — age
-        <View key="age" style={s.slide}>
-          <Text style={s.title}>How old are they?</Text>
-          <Text style={s.subtitle}>Helps PAL talk at the right level.</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.ageRow}>
-            {AGE_RANGE.map((n) => {
-              const picked = age === n
-              return (
-                <Pressable
-                  key={n}
-                  style={[s.ageChip, picked && { backgroundColor: accent, borderColor: accent }]}
-                  onPress={() => setAge(n)}
-                >
-                  <Text style={[s.ageNum, picked && { color: '#000' }]}>{n}</Text>
-                </Pressable>
-              )
-            })}
-          </ScrollView>
-        </View>,
-
-        // Slide 3 — color
-        <View key="color" style={s.slide}>
-          <Text style={s.title}>Pick their color</Text>
-          <Text style={s.subtitle}>This follows them everywhere in the app.</Text>
-          <View style={s.colorGrid}>
-            {ACCENT_PALETTE.map((c) => {
-              const picked = color === c.color
-              return (
-                <Pressable
-                  key={c.color}
-                  style={[
-                    s.colorSwatch,
-                    { backgroundColor: c.color },
-                    picked && s.colorPicked,
-                  ]}
-                  onPress={() => setColor(c.color)}
-                >
-                  {picked && <Text style={s.colorCheck}>✓</Text>}
-                </Pressable>
-              )
-            })}
+          {/* Phone number */}
+          <Text style={s.label}>Kid's phone number</Text>
+          <View style={s.phoneRow}>
+            <Pressable
+              style={s.countryBtn}
+              onPress={() => setShowCountryPicker(!showCountryPicker)}
+            >
+              <Text style={s.countryFlag}>{country.flag}</Text>
+              <Text style={s.countryDial}>{country.dial}</Text>
+              <Text style={s.countryChev}>▾</Text>
+            </Pressable>
+            <TextInput
+              style={s.phoneInput}
+              value={localPhone}
+              onChangeText={setLocalPhone}
+              placeholder="412 345 678"
+              placeholderTextColor={tokens.color.textMuted}
+              keyboardType="phone-pad"
+              autoFocus
+              maxLength={15}
+            />
           </View>
-        </View>,
 
-        // Slide 4 — avatar
-        <View key="avatar" style={s.slide}>
-          <Text style={s.title}>Pick an avatar</Text>
-          <Text style={s.subtitle}>You can switch later.</Text>
-          <View style={s.avatarGrid}>
-            {KID_AVATARS.map((emoji) => {
-              const picked = avatar === emoji
-              return (
+          {/* Country picker */}
+          {showCountryPicker && (
+            <View style={s.countryPicker}>
+              {COUNTRY_CODES.map((c, i) => (
                 <Pressable
-                  key={emoji}
-                  style={[
-                    s.avatarBubble,
-                    picked && { borderColor: accent, backgroundColor: accent + '22' },
-                  ]}
-                  onPress={() => setAvatar(emoji)}
+                  key={c.dial}
+                  style={s.countryPickerRow}
+                  onPress={() => {
+                    setCountryIdx(i)
+                    setShowCountryPicker(false)
+                  }}
                 >
-                  <Text style={s.avatarEmoji}>{emoji}</Text>
+                  <Text style={s.countryFlag}>{c.flag}</Text>
+                  <Text style={s.countryPickerName}>{c.name}</Text>
+                  <Text style={s.countryDial}>{c.dial}</Text>
                 </Pressable>
-              )
-            })}
-          </View>
-        </View>,
+              ))}
+            </View>
+          )}
 
-        // Slide 5 — PAL voice
-        <View key="voice" style={s.slide}>
-          <Text style={s.title}>Pick a PAL voice</Text>
-          <Text style={s.subtitle}>The character your kid hears.</Text>
-          <View style={s.voiceList}>
-            {VOICES.map((v) => {
-              const picked = voiceId === v.id
-              return (
-                <Pressable
-                  key={v.id}
-                  style={[
-                    s.voiceCard,
-                    picked && { borderColor: accent, backgroundColor: tokens.color.surface2 },
-                  ]}
-                  onPress={() => setVoiceId(v.id)}
-                >
-                  <Text style={s.voiceEmoji}>{v.emoji}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.voiceName}>{v.name}</Text>
-                    <Text style={s.voiceDesc}>{v.desc}</Text>
-                  </View>
-                </Pressable>
-              )
-            })}
+          {/* Starting Brains */}
+          <Text style={s.label}>Starting Brains</Text>
+          <View style={s.chipRow}>
+            {[0, 50, 100, 200, 500].map((amt) => (
+              <Pressable
+                key={amt}
+                style={[s.chip, initialTopup === amt && { backgroundColor: tokens.color.accent }]}
+                onPress={() => setInitialTopup(amt)}
+              >
+                <Text style={[s.chipText, initialTopup === amt && { color: '#000' }]}>
+                  {amt === 0 ? 'None' : `${amt} 🧠`}
+                </Text>
+              </Pressable>
+            ))}
           </View>
-        </View>,
 
-        // Slide 6 — initial top-up
-        <View key="topup" style={s.slide}>
-          <Text style={s.title}>Starting Brains</Text>
-          <Text style={s.subtitle}>How much should they begin with?</Text>
-          <Text style={[s.bigAmount, { color: accent }]}>{topup} 🧠</Text>
-          <View style={s.chipsRow}>
-            {TOPUP_CHIPS.map((amt) => {
-              const picked = topup === amt
-              return (
-                <Pressable
-                  key={amt}
-                  style={[
-                    s.chip,
-                    picked && { backgroundColor: accent, borderColor: accent },
-                  ]}
-                  onPress={() => setTopup(amt)}
-                >
-                  <Text style={[s.chipText, picked && { color: '#000' }]}>{amt}</Text>
-                </Pressable>
-              )
-            })}
-          </View>
-        </View>,
-      ]}
-    />
+          {error && <Text style={s.error}>{error}</Text>}
+        </View>
+
+        {/* CTA */}
+        <View style={s.bottom}>
+          <Pressable
+            style={[s.cta, (!phoneValid || sending) && s.ctaDisabled]}
+            onPress={sendRequest}
+            disabled={!phoneValid || sending}
+          >
+            {sending ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <Text style={s.ctaText}>Send request</Text>
+            )}
+          </Pressable>
+          <Text style={s.hint}>
+            They'll see this when they sign in — no SMS needed
+          </Text>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
   )
 }
 
 const s = StyleSheet.create({
-  slide: { flex: 1, paddingTop: tokens.spacing[5] },
-  title: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800' },
-  subtitle: {
-    color: tokens.color.textMuted,
-    fontSize: tokens.fontSize.md,
-    marginTop: tokens.spacing[2],
+  flex: { flex: 1, backgroundColor: tokens.color.bg },
+  root: { flex: 1, backgroundColor: tokens.color.bg, paddingHorizontal: tokens.spacing[5] },
+  center: { justifyContent: 'center', alignItems: 'center', gap: tokens.spacing[3] },
+
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: tokens.spacing[3],
+  },
+  title: { color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '800' },
+
+  content: { flex: 1, paddingTop: tokens.spacing[3] },
+
+  howItWorks: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: tokens.spacing[3],
+    backgroundColor: tokens.color.accent + '15',
+    padding: tokens.spacing[4],
+    borderRadius: tokens.radius.lg,
+    borderWidth: 1, borderColor: tokens.color.accent + '33',
     marginBottom: tokens.spacing[5],
   },
+  howText: { flex: 1, color: tokens.color.text, fontSize: tokens.fontSize.sm, lineHeight: 20 },
+
+  label: {
+    color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, fontWeight: '700',
+    letterSpacing: 1.2, marginBottom: tokens.spacing[2], marginTop: tokens.spacing[4],
+  },
+
   input: {
     backgroundColor: tokens.color.surface,
-    height: 56,
-    borderRadius: tokens.radius.md,
+    height: 56, borderRadius: tokens.radius.md,
     paddingHorizontal: tokens.spacing[4],
-    color: tokens.color.text,
-    fontSize: tokens.fontSize.lg,
-    fontWeight: '600',
+    color: tokens.color.text, fontSize: tokens.fontSize.md,
   },
 
-  ageRow: { gap: tokens.spacing[3], paddingVertical: tokens.spacing[3] },
-  ageChip: {
-    width: 64, height: 64, borderRadius: 32,
+  phoneRow: { flexDirection: 'row', gap: tokens.spacing[2] },
+  countryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: tokens.color.surface,
-    borderWidth: 2, borderColor: 'transparent',
-    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: tokens.spacing[3], height: 56,
+    borderRadius: tokens.radius.md,
   },
-  ageNum: { color: tokens.color.text, fontWeight: '800', fontSize: tokens.fontSize.lg },
-
-  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing[3] },
-  colorSwatch: {
-    width: 72, height: 72, borderRadius: 36,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 4, borderColor: 'transparent',
+  countryFlag: { fontSize: 20 },
+  countryDial: { color: tokens.color.text, fontWeight: '700', fontSize: tokens.fontSize.md },
+  countryChev: { color: tokens.color.textMuted, fontSize: 12 },
+  phoneInput: {
+    flex: 1, backgroundColor: tokens.color.surface,
+    height: 56, borderRadius: tokens.radius.md,
+    paddingHorizontal: tokens.spacing[4],
+    color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '600',
   },
-  colorPicked: { borderColor: '#fff' },
-  colorCheck: { color: '#fff', fontSize: 28, fontWeight: '900' },
 
-  avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing[3] },
-  avatarBubble: {
-    width: 72, height: 72, borderRadius: 36,
+  countryPicker: {
     backgroundColor: tokens.color.surface,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 3, borderColor: 'transparent',
+    borderRadius: tokens.radius.md,
+    marginTop: tokens.spacing[2],
+    overflow: 'hidden',
   },
-  avatarEmoji: { fontSize: 36 },
-
-  voiceList: { gap: tokens.spacing[3] },
-  voiceCard: {
+  countryPickerRow: {
     flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
-    padding: tokens.spacing[4], borderRadius: tokens.radius.lg,
-    backgroundColor: tokens.color.surface,
-    borderWidth: 2, borderColor: 'transparent',
+    paddingHorizontal: tokens.spacing[4], paddingVertical: tokens.spacing[3],
   },
-  voiceEmoji: { fontSize: 32 },
-  voiceName: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '800' },
-  voiceDesc: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 2 },
+  countryPickerName: { flex: 1, color: tokens.color.text, fontSize: tokens.fontSize.md },
 
-  bigAmount: {
-    fontSize: 64, fontWeight: '900', textAlign: 'center',
-    marginVertical: tokens.spacing[5],
-  },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: tokens.spacing[3] },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing[2] },
   chip: {
-    paddingHorizontal: tokens.spacing[5], height: 48,
-    borderRadius: tokens.radius.pill,
-    backgroundColor: tokens.color.surface,
-    borderWidth: 2, borderColor: 'transparent',
+    paddingHorizontal: tokens.spacing[3], paddingVertical: tokens.spacing[2],
+    backgroundColor: tokens.color.surface, borderRadius: tokens.radius.pill,
+  },
+  chipText: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '700' },
+
+  error: { color: tokens.color.danger, fontSize: tokens.fontSize.sm, marginTop: tokens.spacing[3] },
+
+  bottom: { paddingTop: tokens.spacing[3] },
+  cta: {
+    height: 56, borderRadius: tokens.radius.pill,
+    backgroundColor: tokens.color.accent,
     alignItems: 'center', justifyContent: 'center',
   },
-  chipText: { color: tokens.color.text, fontWeight: '800', fontSize: tokens.fontSize.md },
+  ctaDisabled: { opacity: 0.5 },
+  ctaText: { color: '#000', fontWeight: '800', fontSize: tokens.fontSize.md },
+  hint: {
+    color: tokens.color.textMuted, fontSize: tokens.fontSize.xs,
+    textAlign: 'center', marginTop: tokens.spacing[2],
+  },
+
+  // Success state
+  sentTitle: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800' },
+  sentSub: {
+    color: tokens.color.text, fontSize: tokens.fontSize.md,
+    textAlign: 'center', lineHeight: 22,
+    paddingHorizontal: tokens.spacing[4],
+  },
+  sentNote: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm, textAlign: 'center' },
 })

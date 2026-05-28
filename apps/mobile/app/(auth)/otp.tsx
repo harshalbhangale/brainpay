@@ -65,9 +65,9 @@ export default function OtpScreen() {
     setError(null)
     try {
       await verifyCode(code)
-      // Routing: pending invite → invite-accept; new user → role-select; else → home (handled by root layout)
+      // Routing: pending join request → join-request screen; new user → role-select; else → home
       if (hasPendingInvite) {
-        router.replace('/(auth)/invite-accept')
+        router.replace('/(auth)/join-request')
       } else if (!accountType) {
         router.replace('/(auth)/role-select')
       } else {

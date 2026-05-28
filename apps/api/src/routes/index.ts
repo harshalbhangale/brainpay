@@ -6,6 +6,7 @@ import { family } from './family'
 import { goalsRoutes } from './goals'
 import { health } from './health'
 import { invitesRoutes } from './invites'
+import { joinRequests } from './join-requests'
 import { items } from './items'
 import { me } from './me'
 import { payments } from './payments'
@@ -19,6 +20,7 @@ routes.route('/', auth)
 routes.route('/', me)
 routes.route('/', family)
 routes.route('/', invitesRoutes)
+routes.route('/', joinRequests)
 routes.route('/', wallet)
 routes.route('/', items)
 routes.route('/', payments)

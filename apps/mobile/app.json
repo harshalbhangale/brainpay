@@ -12,15 +12,20 @@
       "bundleIdentifier": "tech.brainpay.app",
       "supportsTablet": false,
       "associatedDomains": [
+        "applinks:brainpay.app",
         "applinks:brainpay.app"
       ],
       "infoPlist": {
         "NSCameraUsageDescription": "BrainPay uses your camera to scan products.",
         "NSMicrophoneUsageDescription": "BrainPay needs the mic only if voice-in is enabled.",
-        "NFCReaderUsageDescription": "MoneyPal uses NFC to process payments with your BrainPal card."
+        "NFCReaderUsageDescription": "MoneyPal uses NFC to process payments with your BrainPal card.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
-        "com.apple.developer.nfc.readersession.formats": ["TAG"]
+        "com.apple.developer.nfc.readersession.formats": [
+          "TAG",
+          "TAG"
+        ]
       }
     },
     "android": {

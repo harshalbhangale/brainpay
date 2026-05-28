@@ -16,6 +16,18 @@
         "EXPO_PUBLIC_WS_URL": "wss://api.zapfan.com/live"
       }
     },
+    "simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Debug"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.zapfan.com",
+        "EXPO_PUBLIC_WS_URL": "wss://api.zapfan.com/live"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "ios": {

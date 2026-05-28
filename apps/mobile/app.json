@@ -23,7 +23,10 @@
       "package": "tech.brainpay.app",
       "permissions": [
         "CAMERA",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "intentFilters": [
         {
@@ -71,10 +74,15 @@
       ]
     ],
     "extra": {
-      "WS_URL": "wss://api.zapfan.com/live"
+      "WS_URL": "wss://api.zapfan.com/live",
+      "router": {},
+      "eas": {
+        "projectId": "ec4c4c7c-2b42-4a18-84e7-313f71c37c23"
+      }
     },
     "experiments": {
       "reactCompiler": true
-    }
+    },
+    "owner": "devs404testing"
   }
 }

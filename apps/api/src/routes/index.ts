@@ -3,6 +3,7 @@ import { auth } from './auth'
 import { chat } from './chat'
 import { choresRoutes } from './chores'
 import { family } from './family'
+import { goalsRoutes } from './goals'
 import { health } from './health'
 import { invitesRoutes } from './invites'
 import { items } from './items'
@@ -22,6 +23,7 @@ routes.route('/', wallet)
 routes.route('/', items)
 routes.route('/', payments)
 routes.route('/', choresRoutes)
+routes.route('/', goalsRoutes)
 routes.route('/', chat)
 routes.route('/', voiceAgent)
 routes.route('/', voiceOnboarding)

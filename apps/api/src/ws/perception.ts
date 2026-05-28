@@ -10,15 +10,33 @@ const env = loadEnv()
 
 /**
  * Per-connection perception state.
- * Detailed Spec § 4.3 hysteresis: 3 hits to appear, 5 misses to clear.
+ * Detailed Spec § 4.3 hysteresis: 1 hit to appear, 5 misses to clear.
+ * Supports multiple concurrent detections (up to MAX_CONCURRENT_DETECTIONS).
  *   TODO(scale): move to Redis when desired-count > 1.
  */
+
+const MAX_CONCURRENT_DETECTIONS = 5
+
+type CandidateItem = {
+  itemId: string
+  hits: number
+  misses: number
+  latest: PerceptionItem
+}
+
+type ActiveDetection = {
+  detectionId: string
+  itemId: string
+  voiceAbort: AbortController | null
+}
+
 export type SessionState = {
   sessionId: string
-  current: { itemId: string; hits: number; misses: number; latest: PerceptionItem } | null
-  active: { detectionId: string; itemId: string } | null
+  // Candidates being tracked (hysteresis buffer)
+  candidates: Map<string, CandidateItem>
+  // Currently active (appeared) detections
+  active: Map<string, ActiveDetection>
   lastSpokeAt: Record<string, number>
-  voiceAbort: AbortController | null
   framesSent: number
   detections: number
   reactions: number
@@ -34,10 +52,9 @@ const sessions = new WeakMap<WebSocket, SessionState>()
 export function newSession(ws: WebSocket): SessionState {
   const state: SessionState = {
     sessionId: crypto.randomUUID(),
-    current: null,
-    active: null,
+    candidates: new Map(),
+    active: new Map(),
     lastSpokeAt: {},
-    voiceAbort: null,
     framesSent: 0,
     detections: 0,
     reactions: 0,
@@ -52,7 +69,11 @@ export function getSession(ws: WebSocket): SessionState | undefined {
 
 export function dropSession(ws: WebSocket) {
   const s = sessions.get(ws)
-  if (s?.voiceAbort) s.voiceAbort.abort()
+  if (s) {
+    for (const det of s.active.values()) {
+      det.voiceAbort?.abort()
+    }
+  }
   sessions.delete(ws)
 }
 
@@ -88,126 +109,142 @@ function splitBrandProduct(name: string): { brand: string; product: string } {
   return { brand: parts[0], product: parts.slice(1).join(' ') }
 }
 
-/** Process one frame: call Gemini, run hysteresis, emit detection events, kick off voice. */
+/** Process one frame: call Gemini, run hysteresis per item, emit detection events, kick off voice. */
 export async function onFrame(ws: WebSocket, jpegBytes: Uint8Array): Promise<void> {
   const state = sessions.get(ws)
   if (!state) return
 
   state.framesSent++
   const result = await detectItems(jpegBytes)
-  const top = result.items[0]
 
   // Debug breadcrumb so CloudWatch shows what Gemini is seeing every frame.
   logger.info(
     {
       sessionId: state.sessionId,
       frame: state.framesSent,
-      top: top ? { name: top.name, category: top.category, score: top.healthScore, conf: top.confidence } : null,
+      items: result.items.map((i) => ({ name: i.name, conf: i.confidence, score: i.healthScore })),
     },
     'perception.frame',
   )
 
-  if (!top || top.confidence < CONFIDENCE_THRESHOLD) {
-    bumpMiss(ws, state)
-    return
-  }
-
-  const itemId = slugify(top.name)
-  if (state.current?.itemId === itemId) {
-    state.current.hits += 1
-    state.current.misses = 0
-    state.current.latest = top
-  } else {
-    state.current = { itemId, hits: 1, misses: 0, latest: top }
-  }
-
-  if (state.current.hits >= HITS_TO_APPEAR && state.active?.itemId !== itemId) {
-    // Clear any previously-active detection so the client overlay swaps.
-    if (state.active) {
-      ws.send(JSON.stringify({ type: 'detection.cleared', detectionId: state.active.detectionId }))
+  // Build set of item IDs seen this frame (above confidence threshold).
+  const seenItemIds = new Set<string>()
+  for (const item of result.items) {
+    if (item.confidence >= CONFIDENCE_THRESHOLD) {
+      seenItemIds.add(slugify(item.name))
     }
-    if (state.voiceAbort) state.voiceAbort.abort()
+  }
 
-    const detectionId = crypto.randomUUID()
-    state.active = { detectionId, itemId }
-    state.detections += 1
+  // ── Update candidates ──────────────────────────────────────────────
+  // Increment hits for seen items, misses for unseen.
+  for (const item of result.items) {
+    if (item.confidence < CONFIDENCE_THRESHOLD) continue
+    const itemId = slugify(item.name)
+    const existing = state.candidates.get(itemId)
+    if (existing) {
+      existing.hits += 1
+      existing.misses = 0
+      existing.latest = item
+    } else {
+      state.candidates.set(itemId, { itemId, hits: 1, misses: 0, latest: item })
+    }
+  }
 
-    const { brand, product } = splitBrandProduct(top.name)
-    const [bx, by, bw, bh] = top.bbox
-    const anchor: [number, number] = [bx + bw / 2, by + bh / 2]
+  // Bump misses for candidates not seen this frame.
+  for (const [itemId, candidate] of state.candidates) {
+    if (!seenItemIds.has(itemId)) {
+      candidate.misses += 1
+    }
+  }
 
-    const palCtx = { name: top.name, category: top.category, healthScore: top.healthScore }
+  // ── Promote candidates to active detections ────────────────────────
+  for (const [itemId, candidate] of state.candidates) {
+    if (candidate.hits >= HITS_TO_APPEAR && !state.active.has(itemId)) {
+      // Cap concurrent detections.
+      if (state.active.size >= MAX_CONCURRENT_DETECTIONS) continue
 
-    // Fire verdict + voice in parallel — verdict enriches the detection event,
-    // voice streams audio. Neither blocks the other.
-    const [verdict] = await Promise.all([
-      getVerdict(palCtx),
-      // voice fires below after we send detection.appeared
-      Promise.resolve(),
-    ])
+      const detectionId = crypto.randomUUID()
+      const top = candidate.latest
+      state.detections += 1
 
-    ws.send(
-      JSON.stringify({
-        type: 'detection.appeared',
-        detectionId,
-        itemId,
-        brand,
-        product,
-        coinDelta: top.healthScore,
-        emoji: emojiFor(top.category),
-        bbox: top.bbox,
-        anchor,
-        verdict,
-      }),
-    )
-    logger.info(
-      { sessionId: state.sessionId, detectionId, name: top.name, score: top.healthScore },
-      'detection.appeared',
-    )
+      const { brand, product } = splitBrandProduct(top.name)
+      const [bx, by, bw, bh] = top.bbox
+      const anchor: [number, number] = [bx + bw / 2, by + bh / 2]
 
-    // Cooldown gate: don't speak again about the same item for 30s.
-    const last = state.lastSpokeAt[itemId] ?? 0
-    if (env.VOICE_ENABLED && Date.now() - last >= COOLDOWN_MS) {
-      state.lastSpokeAt[itemId] = Date.now()
-      state.reactions += 1
-      const abort = new AbortController()
-      state.voiceAbort = abort
-      speakReaction(ws, detectionId, palCtx, abort).catch((err) =>
-        logger.error({ err: String(err), detectionId }, 'voice.crashed'),
+      const palCtx = { name: top.name, category: top.category, healthScore: top.healthScore }
+
+      const [verdict] = await Promise.all([
+        getVerdict(palCtx),
+        Promise.resolve(),
+      ])
+
+      ws.send(
+        JSON.stringify({
+          type: 'detection.appeared',
+          detectionId,
+          itemId,
+          brand,
+          product,
+          coinDelta: top.healthScore,
+          emoji: emojiFor(top.category),
+          bbox: top.bbox,
+          anchor,
+          verdict,
+        }),
       )
-    } else if (!env.VOICE_ENABLED) {
-      logger.info({ detectionId, item: top.name }, 'voice.disabled_skipped')
-    }
-  } else {
-    // Same item, still hits-but-not-yet-appeared OR already active: just update anchor.
-    if (state.active?.itemId === itemId) {
+      logger.info(
+        { sessionId: state.sessionId, detectionId, name: top.name, score: top.healthScore },
+        'detection.appeared',
+      )
+
+      const abort = new AbortController()
+      state.active.set(itemId, { detectionId, itemId, voiceAbort: abort })
+
+      // Cooldown gate: don't speak again about the same item for 30s.
+      const last = state.lastSpokeAt[itemId] ?? 0
+      if (env.VOICE_ENABLED && Date.now() - last >= COOLDOWN_MS) {
+        state.lastSpokeAt[itemId] = Date.now()
+        state.reactions += 1
+        speakReaction(ws, detectionId, palCtx, abort).catch((err) =>
+          logger.error({ err: String(err), detectionId }, 'voice.crashed'),
+        )
+      } else if (!env.VOICE_ENABLED) {
+        logger.info({ detectionId, item: top.name }, 'voice.disabled_skipped')
+      }
+    } else if (state.active.has(itemId)) {
+      // Already active — update anchor position.
+      const det = state.active.get(itemId)!
+      const top = candidate.latest
       const [bx, by, bw, bh] = top.bbox
       ws.send(
         JSON.stringify({
           type: 'detection.updated',
-          detectionId: state.active.detectionId,
+          detectionId: det.detectionId,
           anchor: [bx + bw / 2, by + bh / 2],
         }),
       )
     }
   }
-}
 
-function bumpMiss(ws: WebSocket, state: SessionState) {
-  if (!state.current) return
-  state.current.misses += 1
-  if (state.current.misses < MISSES_TO_CLEAR) return
-
-  if (state.active) {
-    ws.send(JSON.stringify({ type: 'detection.cleared', detectionId: state.active.detectionId }))
-    if (state.voiceAbort) state.voiceAbort.abort()
-    state.active = null
-    state.voiceAbort = null
+  // ── Clear stale detections ─────────────────────────────────────────
+  for (const [itemId, candidate] of state.candidates) {
+    if (candidate.misses >= MISSES_TO_CLEAR) {
+      const det = state.active.get(itemId)
+      if (det) {
+        ws.send(JSON.stringify({ type: 'detection.cleared', detectionId: det.detectionId }))
+        det.voiceAbort?.abort()
+        state.active.delete(itemId)
+      }
+      state.candidates.delete(itemId)
+    }
   }
-  state.current = null
 }
+
 
 export function interrupt(ws: WebSocket) {
   const state = sessions.get(ws)
-  if (state?.voiceAbort) state.voiceAbort.abort()
+  if (!state) return
+  for (const det of state.active.values()) {
+    det.voiceAbort?.abort()
+  }
 }

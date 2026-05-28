@@ -15,9 +15,13 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Buffer } from 'buffer'
-import { Bot } from 'lucide-react-native'
+import { Bot, ShoppingCart } from 'lucide-react-native'
+import { useRouter } from 'expo-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { tokens } from '@/theme/tokens'
 import { connectLive, type LiveSocket } from '@/lib/ws'
+import { api } from '@/lib/api'
+import { useCartStore } from '@/stores/cart'
 
 const FRAME_INTERVAL_MS = 700
 const FRAME_MAX_WIDTH = 384
@@ -67,7 +71,6 @@ function FogWake({ onDone }: { onDone: () => void }) {
       pointerEvents="none"
       style={[StyleSheet.absoluteFill, { opacity, transform: [{ scale }], zIndex: 50 }]}
     >
-      {/* layered radial-ish fog using nested Views */}
       <View style={fog.outer} />
       <View style={fog.mid} />
       <View style={fog.inner} />
@@ -145,7 +148,6 @@ function CoinBadge({
       <RippleRing key={rippleKey} color={colors.ring} />
       <Animated.View style={{ transform: [{ scale }] }}>
         <Pressable onPress={onPress} style={[coin.wrap, { borderColor: colors.ring }]}>
-          {/* traffic light ring */}
           <View style={[coin.ring, { borderColor: colors.ring }]} />
           <Text style={[coin.delta, { color: colors.text }]}>
             {detection.coinDelta > 0 ? '+' : ''}{detection.coinDelta}
@@ -208,10 +210,7 @@ function DetailSheet({
     <Modal transparent animationType="none" onRequestClose={dismiss}>
       <Pressable style={sheet.backdrop} onPress={dismiss} />
       <Animated.View style={[sheet.container, { paddingBottom: insets.bottom + 16, transform: [{ translateY: slideY }] }]}>
-        {/* handle */}
         <View style={sheet.handle} />
-
-        {/* header */}
         <View style={[sheet.header, { backgroundColor: colors.bg }]}>
           <Text style={sheet.headerEmoji}>{detection.emoji}</Text>
           <View style={{ flex: 1 }}>
@@ -229,15 +228,12 @@ function DetailSheet({
         </View>
 
         <ScrollView style={{ maxHeight: SH * 0.45 }} showsVerticalScrollIndicator={false}>
-          {/* PAL quote */}
           {!!palLine && (
             <View style={sheet.palRow}>
               <Bot size={tokens.iconSize.md} color={tokens.color.accent} strokeWidth={1.5} />
               <Text style={sheet.palText}>"{palLine}"</Text>
             </View>
           )}
-
-          {/* price if known */}
           {v?.estimatedPrice && (
             <View style={sheet.row}>
               <Text style={sheet.rowIcon}>💰</Text>
@@ -247,8 +243,6 @@ function DetailSheet({
               </View>
             </View>
           )}
-
-          {/* ingredients */}
           {v?.ingredientsSummary ? (
             <View style={sheet.row}>
               <Text style={sheet.rowIcon}>🔬</Text>
@@ -258,8 +252,6 @@ function DetailSheet({
               </View>
             </View>
           ) : null}
-
-          {/* why bad */}
           {v?.whyBad && (
             <View style={[sheet.row, sheet.rowBad]}>
               <Text style={sheet.rowIcon}>⚠️</Text>
@@ -269,8 +261,6 @@ function DetailSheet({
               </View>
             </View>
           )}
-
-          {/* why good */}
           {v?.whyGood && (
             <View style={[sheet.row, sheet.rowGood]}>
               <Text style={sheet.rowIcon}>✅</Text>
@@ -280,8 +270,6 @@ function DetailSheet({
               </View>
             </View>
           )}
-
-          {/* health context */}
           {v?.healthContext && (
             <View style={sheet.row}>
               <Text style={sheet.rowIcon}>🧬</Text>
@@ -293,7 +281,6 @@ function DetailSheet({
           )}
         </ScrollView>
 
-        {/* actions */}
         <View style={sheet.actions}>
           <Pressable style={[sheet.btn, sheet.skipBtn]} onPress={() => { dismiss(); onSkip() }}>
             <Text style={sheet.skipText}>Skip it  +2 🧠</Text>
@@ -345,6 +332,11 @@ const sheet = StyleSheet.create({
 // ─── Main screen ──────────────────────────────────────────────────────
 export default function CameraScreen() {
   const insets = useSafeAreaInsets()
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const cartIncrement = useCartStore((s) => s.increment)
+  const cartCount = useCartStore((s) => s.itemCount)
+
   const [perm, requestPerm] = useCameraPermissions()
   const cameraRef   = useRef<CameraView | null>(null)
   const sockRef     = useRef<LiveSocket | null>(null)
@@ -356,10 +348,12 @@ export default function CameraScreen() {
   const [connected,    setConnected]    = useState(false)
   const [cameraReady,  setCameraReady]  = useState(false)
   const [fogDone,      setFogDone]      = useState(false)
-  const [detection,    setDetection]    = useState<Detection | null>(null)
-  const [sheetOpen,    setSheetOpen]    = useState(false)
-  const [palLine,      setPalLine]      = useState('')
+  // Multi-detection: map of detectionId → Detection
+  const [detections,   setDetections]   = useState<Map<string, Detection>>(new Map())
+  const [activeSheet,  setActiveSheet]  = useState<Detection | null>(null)
+  const [palLines,     setPalLines]     = useState<Map<string, string>>(new Map())
   const [framesSent,   setFramesSent]   = useState(0)
+  const [addedToast,   setAddedToast]   = useState<string | null>(null)
 
   useEffect(() => {
     if (!perm) return
@@ -422,29 +416,47 @@ export default function CameraScreen() {
   function handleJson(msg: any) {
     switch (msg?.type) {
       case 'detection.appeared':
-        setDetection({
-          detectionId: msg.detectionId,
-          brand:       msg.brand ?? '',
-          product:     msg.product ?? '',
-          coinDelta:   msg.coinDelta ?? 0,
-          emoji:       msg.emoji ?? '🛒',
-          anchor:      msg.anchor ?? [0.5, 0.5],
-          verdict:     msg.verdict,
+        setDetections(prev => {
+          const next = new Map(prev)
+          next.set(msg.detectionId, {
+            detectionId: msg.detectionId,
+            brand:       msg.brand ?? '',
+            product:     msg.product ?? '',
+            coinDelta:   msg.coinDelta ?? 0,
+            emoji:       msg.emoji ?? '🛒',
+            anchor:      msg.anchor ?? [0.5, 0.5],
+            verdict:     msg.verdict,
+          })
+          return next
         })
         break
       case 'detection.updated':
-        setDetection(d => (d && d.detectionId === msg.detectionId ? { ...d, anchor: msg.anchor } : d))
+        setDetections(prev => {
+          const det = prev.get(msg.detectionId)
+          if (!det) return prev
+          const next = new Map(prev)
+          next.set(msg.detectionId, { ...det, anchor: msg.anchor })
+          return next
+        })
         break
       case 'detection.cleared':
-        setDetection(d => (d && d.detectionId === msg.detectionId ? null : d))
-        setSheetOpen(false)
+        setDetections(prev => {
+          const next = new Map(prev)
+          next.delete(msg.detectionId)
+          return next
+        })
+        setActiveSheet(s => (s?.detectionId === msg.detectionId ? null : s))
         break
       case 'speech.started':
         playingRef.current = msg.detectionId
         audioBufRef.current.set(msg.detectionId, [])
         break
       case 'speech.ended':
-        setPalLine(msg.text ?? '')
+        setPalLines(prev => {
+          const next = new Map(prev)
+          next.set(msg.detectionId, msg.text ?? '')
+          return next
+        })
         playSpeech(msg.detectionId).catch(() => undefined)
         break
     }
@@ -475,11 +487,18 @@ export default function CameraScreen() {
     })
   }
 
-  const overlayPos = useMemo(() => {
-    if (!detection) return null
-    const [cx, cy] = detection.anchor
-    return { left: `${Math.round(cx * 100)}%`, top: `${Math.round(cy * 100)}%` } as any
-  }, [detection])
+  const handleAddToCart = async (detection: Detection) => {
+    sockRef.current?.sendInterrupt('tap')
+    // Optimistically update badge
+    cartIncrement()
+    // Show toast
+    setAddedToast(`${detection.emoji} ${detection.brand} ${detection.product}`)
+    setTimeout(() => setAddedToast(null), 2500)
+    // Invalidate cart query so cart screen refreshes
+    queryClient.invalidateQueries({ queryKey: ['cart'] })
+  }
+
+  const detectionList = useMemo(() => Array.from(detections.values()), [detections])
 
   if (!perm) return <View style={s.bg} />
   if (!perm.granted) {
@@ -503,37 +522,74 @@ export default function CameraScreen() {
         <View style={[s.pill, { backgroundColor: connected ? tokens.color.accent : tokens.color.danger }]}>
           <Text style={s.pillText}>{connected ? 'LIVE' : 'OFFLINE'}</Text>
         </View>
-        <Text style={s.frames}>{framesSent} frames</Text>
+        <View style={{ flex: 1 }} />
+        {/* Cart button */}
+        <Pressable style={s.cartBtn} onPress={() => router.push('/(app)/kid/cart')}>
+          <ShoppingCart size={20} color={tokens.color.text} strokeWidth={1.8} />
+          {cartCount > 0 && (
+            <View style={s.cartBadge}>
+              <Text style={s.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
+            </View>
+          )}
+        </Pressable>
       </View>
 
-      {/* coin badge */}
-      {detection && overlayPos && (
-        <CoinBadge
-          key={detection.detectionId}
-          detection={detection}
-          pos={overlayPos}
-          onPress={() => setSheetOpen(true)}
-        />
+      {/* Multi-item coin badges */}
+      {detectionList.map((det) => {
+        const [cx, cy] = det.anchor
+        const pos = { left: `${Math.round(cx * 100)}%`, top: `${Math.round(cy * 100)}%` }
+        return (
+          <CoinBadge
+            key={det.detectionId}
+            detection={det}
+            pos={pos}
+            onPress={() => setActiveSheet(det)}
+          />
+        )
+      })}
+
+      {/* Scanning hint when nothing detected */}
+      {detectionList.length === 0 && fogDone && (
+        <View style={[s.scanFrame, { top: SH * 0.3, left: SW * 0.15, right: SW * 0.15, bottom: SH * 0.3 }]}>
+          <View style={[s.scanCorner, s.scanTL]} />
+          <View style={[s.scanCorner, s.scanTR]} />
+          <View style={[s.scanCorner, s.scanBL]} />
+          <View style={[s.scanCorner, s.scanBR]} />
+        </View>
       )}
 
-      {/* bottom caption */}
+      {/* Bottom caption — shows all detected items */}
       <View style={[s.caption, { bottom: insets.bottom + tokens.spacing[5] }]}>
-        {detection ? (
-          <Text style={s.itemText}>{detection.emoji} {detection.brand} {detection.product}</Text>
-        ) : (
+        {detectionList.length === 0 ? (
           <Text style={s.hint}>point at anything…</Text>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 60 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {detectionList.map((det) => (
+                <Pressable key={det.detectionId} style={s.captionChip} onPress={() => setActiveSheet(det)}>
+                  <Text style={s.captionChipText}>{det.emoji} {det.brand} {det.product}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
         )}
-        {!!palLine && !!detection && <Text style={s.palLine}>"{palLine}"</Text>}
       </View>
 
-      {/* detail sheet */}
-      {sheetOpen && detection && (
+      {/* Added to cart toast */}
+      {addedToast && (
+        <View style={[s.toast, { top: insets.top + 64 }]}>
+          <Text style={s.toastText}>✓ Added: {addedToast}</Text>
+        </View>
+      )}
+
+      {/* Detail sheet for selected item */}
+      {activeSheet && (
         <DetailSheet
-          detection={detection}
-          palLine={palLine}
-          onClose={() => setSheetOpen(false)}
-          onBuy={() => { sockRef.current?.sendInterrupt('tap'); setSheetOpen(false) }}
-          onSkip={() => { setSheetOpen(false) }}
+          detection={activeSheet}
+          palLine={palLines.get(activeSheet.detectionId) ?? ''}
+          onClose={() => setActiveSheet(null)}
+          onBuy={() => { handleAddToCart(activeSheet); setActiveSheet(null) }}
+          onSkip={() => setActiveSheet(null)}
         />
       )}
     </View>
@@ -544,17 +600,62 @@ const s = StyleSheet.create({
   bg:       { flex: 1, backgroundColor: '#000' },
   center:   { justifyContent: 'center', alignItems: 'center', padding: tokens.spacing[5] },
   title:    { color: tokens.color.text, fontSize: tokens.fontSize.lg, marginBottom: tokens.spacing[4] },
-  hud:      { position: 'absolute', left: tokens.spacing[5], right: tokens.spacing[5],
-               flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+
+  hud: {
+    position: 'absolute', left: tokens.spacing[5], right: tokens.spacing[5],
+    flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
+  },
   pill:     { paddingVertical: 4, paddingHorizontal: 10, borderRadius: tokens.radius.pill },
   pillText: { color: '#000', fontWeight: '800', fontSize: tokens.fontSize.xs, letterSpacing: 0.8 },
-  frames:   { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs },
-  caption:  { position: 'absolute', left: tokens.spacing[5], right: tokens.spacing[5],
-               backgroundColor: 'rgba(0,0,0,0.6)', padding: tokens.spacing[4],
-               borderRadius: tokens.radius.lg },
-  itemText: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '700' },
+
+  cartBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(11,11,15,0.75)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+  },
+  cartBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: tokens.color.accent,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  cartBadgeText: { color: '#000', fontSize: 10, fontWeight: '900' },
+
+  // Scanning frame corners
+  scanFrame: { position: 'absolute', borderRadius: 4 },
+  scanCorner: {
+    position: 'absolute', width: 24, height: 24,
+    borderColor: 'rgba(61,220,132,0.7)', borderWidth: 0,
+  },
+  scanTL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2, borderTopLeftRadius: 4 },
+  scanTR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2, borderTopRightRadius: 4 },
+  scanBL: { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2, borderBottomLeftRadius: 4 },
+  scanBR: { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2, borderBottomRightRadius: 4 },
+
+  caption: {
+    position: 'absolute', left: tokens.spacing[5], right: tokens.spacing[5],
+    backgroundColor: 'rgba(0,0,0,0.6)', padding: tokens.spacing[3],
+    borderRadius: tokens.radius.lg,
+  },
   hint:     { color: tokens.color.textMuted, fontSize: tokens.fontSize.md },
-  palLine:  { color: tokens.color.text, fontSize: tokens.fontSize.sm, marginTop: 6, fontStyle: 'italic' },
+  captionChip: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: tokens.radius.pill,
+  },
+  captionChipText: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '700' },
+
+  toast: {
+    position: 'absolute', left: tokens.spacing[5], right: tokens.spacing[5],
+    backgroundColor: tokens.color.accent,
+    padding: tokens.spacing[3],
+    borderRadius: tokens.radius.lg,
+    alignItems: 'center',
+  },
+  toastText: { color: '#000', fontWeight: '800', fontSize: tokens.fontSize.sm },
+
   btn:      { backgroundColor: tokens.color.accent, paddingHorizontal: tokens.spacing[5],
                paddingVertical: tokens.spacing[3], borderRadius: tokens.radius.pill },
   btnText:  { color: '#000', fontWeight: '700' },

@@ -21,7 +21,7 @@
     "expo-server-sdk": "3.14.0",
     "hono": "4.7.4",
     "jose": "5",
-    "openai": "4.77.0",
+    "openai": "4.103.0",
     "pino": "9.5.0",
     "postgres": "3.4.5",
     "stripe": "17.7.0",

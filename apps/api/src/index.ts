@@ -5,6 +5,11 @@ import { loadEnv } from './env'
 import { logger } from './logger'
 import { routes } from './routes'
 import { onClose, onConnect, onMessage } from './ws/handler'
+import {
+  onVoiceRealtimeClose,
+  onVoiceRealtimeConnect,
+  onVoiceRealtimeMessage,
+} from './ws/voice-realtime'
 
 const env = loadEnv()
 
@@ -17,6 +22,7 @@ const server = serve(
 )
 
 const wss = new WebSocketServer({ noServer: true })
+const voiceRtWss = new WebSocketServer({ noServer: true })
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '', 'http://localhost')
@@ -28,6 +34,17 @@ server.on('upgrade', (req, socket, head) => {
       ws.on('message', (data) => onMessage(ws, data as Buffer))
       ws.on('close', () => onClose(ws))
       ws.on('error', (err) => logger.error({ err: String(err) }, 'ws.error'))
+    })
+    return
+  }
+
+  if (url.pathname === '/voice-rt') {
+    // Real-time voice WebSocket (OpenAI Realtime API)
+    voiceRtWss.handleUpgrade(req, socket, head, (ws) => {
+      onVoiceRealtimeConnect(ws)
+      ws.on('message', (data) => onVoiceRealtimeMessage(ws, data as Buffer))
+      ws.on('close', () => onVoiceRealtimeClose(ws))
+      ws.on('error', (err) => logger.error({ err: String(err) }, 'voice_rt.ws.error'))
     })
     return
   }

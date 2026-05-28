@@ -262,7 +262,23 @@ wallet.post('/wallet/purchase', async (c) => {
 })
 
 
-// ─── GET /cart ────────────────────────────────────────────────────────
+// ─── DELETE /cart/:id ─────────────────────────────────────────────────
+// Remove a single item from the cart.
+wallet.delete('/cart/:id', async (c) => {
+  const accountId = authedAccountId(c)
+  const itemId = c.req.param('id')
+
+  const deleted = await db
+    .delete(cartItems)
+    .where(and(eq(cartItems.id, itemId), eq(cartItems.accountId, accountId)))
+    .returning({ id: cartItems.id })
+
+  if (deleted.length === 0) {
+    return c.json({ error: 'not_found' }, 404)
+  }
+
+  return c.json({ ok: true })
+})
 // Returns the caller's active cart items (not expired).
 wallet.get('/cart', async (c) => {
   const accountId = authedAccountId(c)

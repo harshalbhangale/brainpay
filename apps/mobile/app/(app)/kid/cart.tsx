@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import {
   ActivityIndicator,
@@ -12,18 +12,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ArrowLeft, Bot, ShoppingBag, X } from 'lucide-react-native'
 import { api } from '@/lib/api'
+import { useCartStore } from '@/stores/cart'
 import { tokens } from '@/theme/tokens'
-
-/**
- * Kid's cart screen.
- *
- * For Sprint 1 we don't persist cart items via the camera scan yet
- * (that's the existing camera.tsx job). The cart screen reads from
- * a local API endpoint that returns the kid's active cart_items rows.
- *
- * Empty state encourages scanning. When items exist, shows
- * net Brains effect, PAL basket comment, and a Pay CTA.
- */
 
 type CartItem = {
   id: string
@@ -37,24 +27,27 @@ export default function KidCart() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const queryClient = useQueryClient()
+  const setCartCount = useCartStore((s) => s.setItemCount)
 
-  // For now we read cart items via a yet-to-be-built endpoint. Fall back
-  // to empty state until that endpoint exists.
   const { data, isLoading } = useQuery({
     queryKey: ['cart'],
-    queryFn: async () => {
-      try {
-        return await api<{ items: CartItem[] }>('/cart')
-      } catch {
-        return { items: [] }
-      }
-    },
+    queryFn: () => api<{ items: CartItem[] }>('/cart'),
     staleTime: 5_000,
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (itemId: string) => api(`/cart/${itemId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cart'] })
+    },
   })
 
   const items = data?.items ?? []
   const netBrains = useMemo(() => items.reduce((sum, i) => sum + i.brainsDelta, 0), [items])
   const palComment = useMemo(() => generatePalComment(items), [items])
+
+  // Keep badge in sync
+  useMemo(() => setCartCount(items.length), [items.length])
 
   if (isLoading) {
     return (
@@ -71,7 +64,7 @@ export default function KidCart() {
           <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} strokeWidth={1.5} />
         </Pressable>
         <Text style={s.title}>Your cart</Text>
-        <Text style={s.itemCount}>{items.length} items</Text>
+        <Text style={s.itemCount}>{items.length} item{items.length !== 1 ? 's' : ''}</Text>
       </View>
 
       {items.length === 0 ? (
@@ -96,7 +89,11 @@ export default function KidCart() {
                 <Text style={[s.itemDelta, { color: item.brainsDelta >= 0 ? tokens.color.accent : tokens.color.danger }]}>
                   {item.brainsDelta >= 0 ? '+' : ''}{item.brainsDelta} 🧠
                 </Text>
-                <Pressable hitSlop={8}>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => removeMutation.mutate(item.id)}
+                  disabled={removeMutation.isPending}
+                >
                   <X size={tokens.iconSize.md} color={tokens.color.textMuted} strokeWidth={1.5} />
                 </Pressable>
               </View>
@@ -110,9 +107,9 @@ export default function KidCart() {
             )}
 
             <View style={s.summary}>
-              <Text style={s.summaryLabel}>Net effect</Text>
+              <Text style={s.summaryLabel}>Net Brains effect</Text>
               <Text style={[s.summaryValue, { color: netBrains >= 0 ? tokens.color.accent : tokens.color.danger }]}>
-                {netBrains >= 0 ? '+' : '-'}${Math.abs(netBrains / 100).toFixed(2)}
+                {netBrains >= 0 ? '+' : ''}{netBrains} 🧠
               </Text>
             </View>
           </ScrollView>
@@ -132,15 +129,12 @@ export default function KidCart() {
 }
 
 function generatePalComment(items: CartItem[]): string | null {
-  if (items.length === 0) return null
-  if (items.length === 1) return null
-
+  if (items.length < 2) return null
   const goodCount = items.filter((i) => i.brainsDelta > 0).length
   const badCount = items.filter((i) => i.brainsDelta < 0).length
-
   if (goodCount > 0 && badCount > 0) return 'One good, one bad. Predictable.'
   if (badCount > goodCount) return `${badCount} junk items in here. Bold.`
-  return 'Genuinely a healthy basket. Don\'t make it weird.'
+  return "Genuinely a healthy basket. Don't make it weird."
 }
 
 const s = StyleSheet.create({
@@ -197,9 +191,7 @@ const s = StyleSheet.create({
   summaryLabel: { color: tokens.color.textMuted, fontSize: tokens.fontSize.md },
   summaryValue: { fontSize: tokens.fontSize.xl, fontWeight: '900' },
 
-  bottom: {
-    paddingTop: tokens.spacing[3],
-  },
+  bottom: { paddingTop: tokens.spacing[3] },
   payCta: {
     height: 56,
     backgroundColor: tokens.color.accent,

@@ -1,13 +1,12 @@
 import { useRouter } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
 import {
   Animated,
   Easing,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   Vibration,
   View,
 } from 'react-native'
@@ -15,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ArrowLeft, Wifi } from 'lucide-react-native'
 import { api } from '@/lib/api'
 import { waitForNfcTap } from '@/lib/nfc'
+import { useCartStore } from '@/stores/cart'
 import { Confetti } from '@/components'
 import { tokens } from '@/theme/tokens'
 
@@ -34,10 +34,19 @@ export default function CheckoutNfc() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const queryClient = useQueryClient()
+  const resetCart = useCartStore((s) => s.reset)
 
-  const [step, setStep] = useState<'amount' | 'tap' | 'success'>('amount')
-  const [amountDollars, setAmountDollars] = useState(0)
-  const [customAmount, setCustomAmount] = useState('3.50')
+  // Load cart to compute total
+  const { data: cartData } = useQuery({
+    queryKey: ['cart'],
+    queryFn: () => api<{ items: { id: string; itemName: string; brainsDelta: number }[] }>('/cart'),
+    staleTime: 5_000,
+  })
+  const cartItems = cartData?.items ?? []
+  const cartItemCount = cartItems.length
+
+  // Start directly on tap step — no manual amount entry needed
+  const [step, setStep] = useState<'tap' | 'success'>('tap')
   const [paying, setPaying] = useState(false)
   const [nfcListening, setNfcListening] = useState(false)
   const [result, setResult] = useState<{ netBrainsDelta: number; balanceAfter: number } | null>(null)
@@ -106,24 +115,24 @@ export default function CheckoutNfc() {
         '/wallet/purchase',
         {
           method: 'POST',
-          body: JSON.stringify({ amountCents: Math.round(amountDollars * 100) }),
+          body: JSON.stringify({ amountCents: 0 }),
         },
       )
       setResult({ netBrainsDelta: res.netBrainsDelta, balanceAfter: res.balanceAfter })
       Vibration.vibrate([0, 100, 50, 200])
+      resetCart()
       setStep('success')
       queryClient.invalidateQueries({ queryKey: ['wallet'] })
       queryClient.invalidateQueries({ queryKey: ['cart'] })
     } catch (err) {
       const msg = String(err)
       if (msg.includes('cart_empty')) {
-        // Demo: no cart items — show success anyway.
         setResult({ netBrainsDelta: 0, balanceAfter: 0 })
         Vibration.vibrate([0, 100, 50, 200])
+        resetCart()
         setStep('success')
       } else {
         setErrorMsg('Payment failed. Try again.')
-        setStep('amount')
       }
     } finally {
       setPaying(false)
@@ -143,7 +152,7 @@ export default function CheckoutNfc() {
         <Confetti show />
         <Text style={s.successCheck}>✓</Text>
         <Text style={s.successTitle}>Paid!</Text>
-        <Text style={s.successAmount}>${amountDollars.toFixed(2)}</Text>
+        <Text style={s.successSub}>{cartItemCount} item{cartItemCount !== 1 ? 's' : ''} checked out</Text>
         {result.netBrainsDelta !== 0 && (
           <Text style={[s.successDelta, { color: result.netBrainsDelta >= 0 ? tokens.color.accent : tokens.color.danger }]}>
             Net {result.netBrainsDelta >= 0 ? '+' : ''}{result.netBrainsDelta} 🧠
@@ -156,74 +165,16 @@ export default function CheckoutNfc() {
     )
   }
 
-  // ── Amount entry ───────────────────────────────────────────────────
-  if (step === 'amount') {
-    const setAmount = (val: string) => {
-      const cleaned = val.replace(/[^0-9.]/g, '')
-      setCustomAmount(cleaned)
-      const num = parseFloat(cleaned)
-      if (!isNaN(num)) setAmountDollars(num)
-    }
-
-    return (
-      <View style={[s.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <View style={s.topBar}>
-          <Pressable hitSlop={12} onPress={() => router.back()}>
-            <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} strokeWidth={1.5} />
-          </Pressable>
-        </View>
-
-        <View style={s.amountWrap}>
-          <Text style={s.amountLabel}>How much did you spend?</Text>
-          <View style={s.amountInputRow}>
-            <Text style={s.dollarSign}>$</Text>
-            <TextInput
-              style={s.amountInput}
-              value={customAmount}
-              onChangeText={setAmount}
-              keyboardType="decimal-pad"
-              autoFocus
-              placeholder="0.00"
-              placeholderTextColor={tokens.color.textMuted}
-            />
-          </View>
-
-          <View style={s.chipRow}>
-            {['2.00', '3.50', '5.00', '10.00'].map((amt) => (
-              <Pressable
-                key={amt}
-                style={[s.chip, customAmount === amt && { backgroundColor: tokens.color.accent }]}
-                onPress={() => setAmount(amt)}
-              >
-                <Text style={[s.chipText, customAmount === amt && { color: '#000' }]}>${amt}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {errorMsg && <Text style={s.errorText}>{errorMsg}</Text>}
-        </View>
-
-        <View style={s.bottom}>
-          <Pressable
-            style={[s.cta, amountDollars <= 0 && s.ctaDisabled]}
-            onPress={() => amountDollars > 0 && setStep('tap')}
-            disabled={amountDollars <= 0}
-          >
-            <Text style={s.ctaText}>Continue</Text>
-          </Pressable>
-        </View>
-      </View>
-    )
-  }
-
   // ── Tap card ───────────────────────────────────────────────────────
   return (
     <View style={[s.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={s.topBar}>
-        <Pressable hitSlop={12} onPress={() => setStep('amount')}>
+        <Pressable hitSlop={12} onPress={() => router.back()}>
           <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} strokeWidth={1.5} />
         </Pressable>
-        <Text style={s.amountSmall}>${amountDollars.toFixed(2)}</Text>
+        <Text style={s.amountSmall}>
+          {cartItemCount} item{cartItemCount !== 1 ? 's' : ''}
+        </Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -383,7 +334,7 @@ const s = StyleSheet.create({
 
   successCheck: { fontSize: 100, color: tokens.color.accent, fontWeight: '900' },
   successTitle: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800', marginTop: tokens.spacing[3] },
-  successAmount: { color: tokens.color.text, fontSize: 56, fontWeight: '900', marginTop: tokens.spacing[3] },
+  successSub: { color: tokens.color.textMuted, fontSize: tokens.fontSize.md, marginTop: tokens.spacing[2] },
   successDelta: { fontSize: tokens.fontSize.lg, fontWeight: '800', marginTop: tokens.spacing[2] },
 
   bottom: { paddingTop: tokens.spacing[3] },

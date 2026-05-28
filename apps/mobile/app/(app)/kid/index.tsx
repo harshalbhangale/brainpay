@@ -10,9 +10,12 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Camera, ClipboardList, Flame, ScanLine, ShoppingBag, Sparkles, Target, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react-native'
+import { Camera, ClipboardList, Flame, ScanLine, ShoppingBag, ShoppingCart, Sparkles, Target, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react-native'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 import { useFamily } from '@/hooks/useFamily'
+import { api } from '@/lib/api'
 import { useWallet } from '@/hooks/useWallet'
 import { tokens } from '@/theme/tokens'
 
@@ -36,6 +39,19 @@ export default function KidHome() {
 
   const balance = walletData?.balance ?? me?.cachedBalance ?? 0
   const entries = walletData?.entries ?? []
+
+  // Sync cart badge count from server
+  const setCartCount = useCartStore((s) => s.setItemCount)
+  const cartCount = useCartStore((s) => s.itemCount)
+  const { data: cartData } = useQuery({
+    queryKey: ['cart'],
+    queryFn: () => api<{ items: { id: string }[] }>('/cart'),
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  })
+  useEffect(() => {
+    if (cartData?.items) setCartCount(cartData.items.length)
+  }, [cartData])
 
   // Today's events.
   const todayEntries = useMemo(() => {
@@ -75,11 +91,22 @@ export default function KidHome() {
             <Flame size={16} color={tokens.color.orange} strokeWidth={2} />
             <Text style={s.streakText}>{streak}</Text>
           </Pressable>
-          <Pressable hitSlop={12} onPress={onProfilePress}>
-            <View style={[s.avatarBubble, { backgroundColor: accent + '22' }]}>
-              <Text style={s.avatarEmoji}>{avatar}</Text>
-            </View>
-          </Pressable>
+          <View style={s.topBarRight}>
+            {/* Cart icon with badge */}
+            <Pressable style={s.cartIconBtn} onPress={() => router.push('/(app)/kid/cart')}>
+              <ShoppingCart size={20} color={tokens.color.text} strokeWidth={1.8} />
+              {cartCount > 0 && (
+                <View style={s.cartBadge}>
+                  <Text style={s.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable hitSlop={12} onPress={onProfilePress}>
+              <View style={[s.avatarBubble, { backgroundColor: accent + '22' }]}>
+                <Text style={s.avatarEmoji}>{avatar}</Text>
+              </View>
+            </Pressable>
+          </View>
         </View>
 
         {/* Greeting */}
@@ -207,6 +234,25 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: tokens.spacing[3],
   },
+  topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing[3],
+  },
+  cartIconBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: tokens.color.surface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: tokens.color.surface2,
+  },
+  cartBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: tokens.color.accent,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  cartBadgeText: { color: '#000', fontSize: 10, fontWeight: '900' },
   streakChip: {
     flexDirection: 'row',
     alignItems: 'center',

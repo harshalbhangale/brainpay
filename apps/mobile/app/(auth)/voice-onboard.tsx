@@ -14,7 +14,7 @@ import { Mic, MicOff, X } from 'lucide-react-native'
 import { useAuthStore } from '@/stores/auth'
 import { useFamilyStore } from '@/stores/family'
 import { api } from '@/lib/api'
-import { useVoiceAgent, type VoicePhase } from '@/hooks/useVoiceAgent'
+import { useRealtimeVoice, type RealtimePhase } from '@/hooks/useRealtimeVoice'
 import { ChatBubble } from '@/components'
 import { tokens } from '@/theme/tokens'
 
@@ -63,23 +63,36 @@ export default function VoiceOnboard() {
   const {
     phase,
     level,
-    conversation,
-    start,
+    chatHistory: conversation,
+    connect,
     stop,
-    sendText,
-  } = useVoiceAgent({ role, onComplete })
+  } = useRealtimeVoice({ role, onComplete })
 
   // Detect what PAL is asking about to show visual helpers.
   const lastPalMessage = conversation.filter((m) => m.role === 'assistant').at(-1)?.content ?? ''
   const isAskingAvatar = /avatar|pick|choose|emoji/i.test(lastPalMessage)
   const isAskingStyle = /style|chill|balanced|strict/i.test(lastPalMessage)
 
+  const AVATARS = ['👩‍🦰', '👨', '👩', '👴', '👵', '🧑']
+  const STYLES = [
+    { id: 'chill', label: 'Chill', desc: 'Relaxed approach' },
+    { id: 'balanced', label: 'Balanced', desc: 'Middle ground' },
+    { id: 'strict', label: 'Strict', desc: 'High standards' },
+  ]
+
+  // For realtime hook, visual selections are handled by the server VAD
+  // The user can just speak their choice, or we show visual options as hints
+  const sendText = (_text: string) => {
+    // With realtime API, the user speaks — visual options are just hints
+    // In future: inject text directly into the WebSocket session
+  }
+
   const scrollRef = useRef<ScrollView>(null)
   const pulse = useRef(new Animated.Value(1)).current
 
   // Kick off conversation on mount.
   useEffect(() => {
-    void start()
+    void connect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -227,9 +240,13 @@ export default function VoiceOnboard() {
             <View style={[s.speakingDot, { backgroundColor: tokens.color.accent }]} />
             <Text style={s.listenText}>PAL is talking</Text>
           </View>
-        ) : phase === 'thinking' ? (
+        ) : phase === 'processing' ? (
           <View style={s.micRow}>
-            <Text style={s.listenText}>Thinking...</Text>
+            <Text style={s.listenText}>Processing...</Text>
+          </View>
+        ) : phase === 'connecting' ? (
+          <View style={s.micRow}>
+            <Text style={s.listenText}>Connecting...</Text>
           </View>
         ) : phase === 'done' ? (
           <View style={s.micRow}>
@@ -245,17 +262,18 @@ export default function VoiceOnboard() {
   )
 }
 
-function phaseLabel(phase: VoicePhase): string {
+function phaseLabel(phase: RealtimePhase): string {
   switch (phase) {
-    case 'idle':           return ''
-    case 'greeting':       return 'PAL is starting...'
-    case 'listening':      return ''
-    case 'thinking':       return ''
-    case 'speaking':       return ''
-    case 'done':           return ''
-    case 'no_permission':  return 'Mic blocked'
-    case 'error':          return 'Connection error'
-    default:               return ''
+    case 'idle':          return ''
+    case 'connecting':    return 'Connecting...'
+    case 'ready':         return 'Ready'
+    case 'listening':     return ''
+    case 'processing':    return 'Processing...'
+    case 'speaking':      return ''
+    case 'done':          return ''
+    case 'no_permission': return 'Mic blocked'
+    case 'error':         return 'Connection error'
+    default:              return ''
   }
 }
 

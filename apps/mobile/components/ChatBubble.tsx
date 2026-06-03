@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
  * Chat bubble — animates in with a soft slide + fade.

@@ -39,3 +39,41 @@ export const tokens = {
 } as const
 
 export type Tokens = typeof tokens
+
+/**
+ * Kid platform theme — light, cool, Snapchat-style.
+ * Same shape as `tokens` so kid-only screens can flip by aliasing the import:
+ *   import { kidTheme as tokens } from '@/theme/tokens'
+ */
+export const kidTheme = {
+  ...tokens,
+  color: {
+    ...tokens.color,
+    bg: '#F2F6F4',        // mint white
+    surface: '#FFFFFF',
+    surface2: '#E6EDEA',  // light teal-gray fill / hairline
+    text: '#16201D',      // near-black
+    textMuted: '#7C8B86', // muted slate-green
+    primary: '#0E7C66',   // dark teal — filled buttons (use with white text)
+    accent: '#23C08A',    // bright green (black-text-safe) — success / earn
+    danger: '#FF5C5C',
+    coin: '#FF9F1C',
+    purple: '#7B61FF',
+    blue: '#2D9CFF',
+    orange: '#FF9F43',
+    pink: '#FF5FA2',
+    yellow: '#FFD60A',
+    trafficGreen: '#23C08A',
+    trafficAmber: '#F59E0B',
+    trafficRed: '#EF4444',
+    positive: '#23C08A',  // incoming / +amounts
+    negative: '#FF7A3D',  // outgoing / -amounts
+  },
+} as const
+
+/** Soft light-theme card shadows (spread into a style). */
+export const shadow = {
+  sm: { shadowColor: '#103A33', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2 },
+  md: { shadowColor: '#103A33', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 14, elevation: 3 },
+  lg: { shadowColor: '#103A33', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.14, shadowRadius: 22, elevation: 8 },
+} as const

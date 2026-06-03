@@ -1,156 +1,264 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useRef } from 'react'
+import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
+import { BlurView } from 'expo-blur'
+import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { LinearGradient } from 'expo-linear-gradient'
+import { House, Camera, Sparkle, CreditCard, ClipboardText, ShieldCheck, TrendUp } from 'phosphor-react-native'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
+import { haptic } from '@/lib/haptics'
 import { tokens } from '@/theme/tokens'
 
-/**
- * Custom tab bar — replaces the default Expo tab bar.
- *
- * Design:
- *   - Floating pill shape, not full-width
- *   - Deep surface background with subtle top border
- *   - Active tab: accent-colored icon + label
- *   - Center tab: raised circle button (scan/camera)
- *   - No labels on center tab
- *   - Smooth active indicator dot under active tab
- */
-
-type TabConfig = {
-  name: string
-  label: string
-  icon: (active: boolean) => React.ReactNode
-  isCenter?: boolean
-}
+export const TAB_BAR_TOTAL_HEIGHT = 100
 
 type Props = BottomTabBarProps & {
-  tabs: TabConfig[]
+  accent: string
+  light?: boolean
 }
 
-export function CustomTabBar({ state, navigation, tabs }: Props) {
+export function HotstarTabBar({ state, navigation, accent, light }: Props) {
   const insets = useSafeAreaInsets()
+  const router = useRouter()
+  const muted = light ? '#8A8DA3' : tokens.color.textMuted
+  const kid = !!light
+
+  const tabs = kid
+    ? [
+        { key: 'home', label: 'Home', icon: House, route: 'index' },
+        { key: 'grow', label: 'Grow', icon: TrendUp, push: '/(app)/grow' },
+        { key: 'pals', label: 'Pals', icon: Sparkle, route: 'pal', isCenter: true },
+        { key: 'missions', label: 'Missions', icon: ClipboardText, push: '/(app)/chores' },
+        { key: 'scan', label: 'Scan', icon: Camera, push: '/(app)/camera' },
+      ]
+    : [
+        { key: 'home', label: 'Home', icon: House, route: 'index' },
+        { key: 'accounts', label: 'Accounts', icon: CreditCard, push: '/(app)/transactions' },
+        { key: 'pals', label: 'Pals', icon: Sparkle, route: 'pal', isCenter: true },
+        { key: 'chores', label: 'Chores', icon: ClipboardText, push: '/(app)/parent-chores' },
+        { key: 'safety', label: 'Safety', icon: ShieldCheck, push: '/(app)/family-safety' },
+      ]
+
+  const bottomOffset = Math.max(insets.bottom, 12)
+
+  const renderTabs = () =>
+    tabs.map((tab) => {
+      const routeIndex = tab.route ? state.routes.findIndex((r) => r.name === tab.route) : -1
+      const focused = routeIndex >= 0 && state.index === routeIndex
+      const onPress = () => {
+        haptic.select()
+        if (tab.push) {
+          router.push(tab.push as never)
+          return
+        }
+        const route = state.routes[routeIndex]
+        if (!route) return
+        const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true })
+        if (!focused && !event.defaultPrevented) navigation.navigate(route.name)
+      }
+      if (tab.isCenter) {
+        return <CenterButton key={tab.key} accent={accent} focused={focused} onPress={onPress} />
+      }
+      return (
+        <TabItem key={tab.key} icon={tab.icon} label={tab.label} focused={focused} accent={accent} muted={muted} onPress={onPress} />
+      )
+    })
 
   return (
-    <View style={[s.wrapper, { paddingBottom: insets.bottom }]}>
-      <View style={s.bar}>
-        {tabs.map((tab, i) => {
-          const route = state.routes.find((r) => r.name === tab.name)
-          const routeIndex = state.routes.findIndex((r) => r.name === tab.name)
-          const focused = state.index === routeIndex
-
-          const onPress = () => {
-            if (!route) return
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            })
-            if (!focused && !event.defaultPrevented) {
-              navigation.navigate(route.name)
-            }
-          }
-
-          if (tab.isCenter) {
-            return (
-              <Pressable key={tab.name} style={s.centerWrap} onPress={onPress}>
-                <View style={[s.centerBtn, focused && s.centerBtnActive]}>
-                  {tab.icon(focused)}
-                </View>
-              </Pressable>
-            )
-          }
-
-          return (
-            <Pressable key={tab.name} style={s.tab} onPress={onPress}>
-              <View style={s.tabInner}>
-                {tab.icon(focused)}
-                <Text style={[s.label, focused && s.labelActive]}>
-                  {tab.label}
-                </Text>
-                {focused && <View style={s.activeDot} />}
-              </View>
-            </Pressable>
-          )
-        })}
-      </View>
+    <View style={[s.wrapper, { bottom: bottomOffset }]}>
+      {Platform.OS === 'ios' && !light ? (
+        <BlurView intensity={50} tint="dark" style={s.pill}>
+          <View style={s.pillInner}>{renderTabs()}</View>
+        </BlurView>
+      ) : (
+        <View style={[s.pill, light ? s.pillLight : s.pillAndroid]}>
+          <View style={s.pillInner}>{renderTabs()}</View>
+        </View>
+      )}
     </View>
+  )
+}
+
+type PhosphorIcon = React.ComponentType<{
+  size?: number
+  color?: string
+  weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone'
+}>
+
+function TabItem({
+  icon: Icon,
+  label,
+  focused,
+  accent,
+  muted,
+  onPress,
+}: {
+  icon: PhosphorIcon
+  label: string
+  focused: boolean
+  accent: string
+  muted: string
+  onPress: () => void
+}) {
+  const scale = useRef(new Animated.Value(1)).current
+
+  useEffect(() => {
+    Animated.spring(scale, {
+      toValue: focused ? 1.1 : 1,
+      friction: 6,
+      tension: 200,
+      useNativeDriver: true,
+    }).start()
+  }, [focused, scale])
+
+  return (
+    <Pressable style={s.tab} onPress={onPress}>
+      <Animated.View style={[s.tabIcon, { transform: [{ scale }] }]}>
+        <Icon
+          size={24}
+          color={focused ? accent : muted}
+          weight={focused ? 'fill' : 'duotone'}
+        />
+      </Animated.View>
+      <Text style={[s.tabLabel, { color: muted }, focused && { color: accent, opacity: 1 }]}>
+        {label}
+      </Text>
+    </Pressable>
+  )
+}
+
+function CenterButton({
+  accent,
+  focused,
+  onPress,
+}: {
+  accent: string
+  focused: boolean
+  onPress: () => void
+}) {
+  const pulseAnim = useRef(new Animated.Value(0.4)).current
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 0.8,
+          duration: 1800,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0.4,
+          duration: 1800,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start()
+  }, [pulseAnim])
+
+  return (
+    <Pressable style={s.centerWrap} onPress={onPress}>
+      {/* Glow ring */}
+      <Animated.View
+        style={[
+          s.glowRing,
+          { backgroundColor: accent, opacity: pulseAnim },
+        ]}
+      />
+      {/* Main button */}
+      <View style={s.centerBtn}>
+        <LinearGradient
+          colors={[accent, accent + 'CC']}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <Sparkle size={26} color="#fff" weight="fill" />
+      </View>
+      <Text style={[s.centerLabel, { color: accent }]}>Pals</Text>
+    </Pressable>
   )
 }
 
 const s = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'transparent',
-    paddingHorizontal: 0,
+    left: 20,
+    right: 20,
   },
-  bar: {
+  pill: {
+    borderRadius: 35,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  pillAndroid: {
+    backgroundColor: 'rgba(16,16,22,0.92)',
+  },
+  pillLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(20,20,40,0.06)',
+    shadowColor: '#3B2E8C',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+  pillInner: {
     flexDirection: 'row',
-    backgroundColor: tokens.color.surface,
-    borderTopWidth: 1,
-    borderTopColor: tokens.color.surface2,
-    paddingTop: 8,
-    paddingHorizontal: 4,
     alignItems: 'flex-end',
-    minHeight: 64,
+    justifyContent: 'space-around',
+    paddingTop: 10,
+    paddingBottom: 12,
+    paddingHorizontal: 8,
+    minHeight: 70,
   },
-
-  // Regular tab
   tab: {
     flex: 1,
     alignItems: 'center',
-    paddingBottom: 8,
+    gap: 4,
+    paddingTop: 4,
   },
-  tabInner: {
+  tabIcon: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
-    gap: 3,
-    position: 'relative',
+    justifyContent: 'center',
   },
-  label: {
+  tabLabel: {
     fontSize: 10,
-    fontWeight: '600',
-    color: tokens.color.textMuted,
-    letterSpacing: 0.3,
-  },
-  labelActive: {
-    color: tokens.color.accent,
     fontWeight: '700',
+    color: tokens.color.textMuted,
+    opacity: 0.7,
   },
-  activeDot: {
-    position: 'absolute',
-    bottom: -6,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: tokens.color.accent,
-  },
-
-  // Center raised button
   centerWrap: {
     flex: 1,
     alignItems: 'center',
-    paddingBottom: 8,
+    marginTop: -32,
+  },
+  glowRing: {
+    position: 'absolute',
+    top: -4,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
   },
   centerBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: tokens.color.accent,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
-    // Raised effect
-    shadowColor: tokens.color.accent,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    elevation: 10,
-    // Lift above the bar
-    marginTop: -20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
   },
-  centerBtnActive: {
-    shadowOpacity: 0.65,
-    transform: [{ scale: 1.05 }],
+  centerLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 4,
   },
 })

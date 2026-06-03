@@ -2,61 +2,73 @@ import { useRouter } from 'expo-router'
 import { useEffect, useRef } from 'react'
 import {
   Animated,
+  Dimensions,
   Easing,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Mic, MicOff, X } from 'lucide-react-native'
+import { Mic, MicOff, Sparkles, X } from 'lucide-react-native'
 import { useAuthStore } from '@/stores/auth'
 import { useFamilyStore } from '@/stores/family'
 import { api } from '@/lib/api'
-import { useRealtimeVoice, type RealtimePhase } from '@/hooks/useRealtimeVoice'
-import { ChatBubble } from '@/components'
-import { tokens } from '@/theme/tokens'
+import { useRealtimeWebRTC, type RealtimePhase } from '@/hooks/useRealtimeWebRTC'
+import { kidTheme as tokens } from '@/theme/tokens'
 
-const AVATARS = ['👩‍🦰', '👨', '👩', '👴', '👵', '🧑']
-const STYLES = [
-  { id: 'chill', label: 'Chill', desc: 'Relaxed approach' },
-  { id: 'balanced', label: 'Balanced', desc: 'Middle ground' },
-  { id: 'strict', label: 'Strict', desc: 'High standards' },
-]
+const { width } = Dimensions.get('window')
 
 /**
- * Real-time voice onboarding — like ChatGPT voice mode.
+ * Voice onboarding — ChatGPT voice mode style.
  *
- *   • PAL avatar pulses while speaking
- *   • Chat history scrolls above
- *   • Mic state shown at bottom (auto-listens after PAL speaks)
- *   • Voice activity detection auto-stops on silence
- *   • Conversation continues until persona is complete
+ * On web (Expo web / browser) this immediately redirects to the HTTP TTS
+ * chat-style onboarding (parent-onboarding.tsx) because:
+ *   - expo-audio raw PCM streaming doesn't work in browsers
+ *   - WebSocket mic capture requires getUserMedia which needs extra setup
+ *
+ * On native iOS/Android it uses the OpenAI Realtime WebSocket path.
  */
 export default function VoiceOnboard() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const accountType = useAuthStore((s) => s.accountType)
+  const onboardingComplete = useAuthStore((s) => s.onboardingComplete)
   const setAccountType = useAuthStore((s) => s.setAccountType)
+  const setPersona = useAuthStore((s) => s.setPersona)
   const setFamily = useFamilyStore((s) => s.setFamily)
 
+  // Guard: already onboarded
+  useEffect(() => {
+    if (onboardingComplete) {
+      router.replace('/(app)/(tabs)')
+    }
+  }, [onboardingComplete, accountType, router])
+
+  // On web, skip the realtime path entirely — use the appropriate text-based flow
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      router.replace(accountType === 'kid' ? '/(auth)/kid-persona' : '/(auth)/parent-onboarding')
+    }
+  }, [router, accountType])
+
   const role: 'parent' | 'kid' = accountType === 'kid' ? 'kid' : 'parent'
+  const accentColor = role === 'parent' ? tokens.color.purple : tokens.color.accent
 
   const onComplete = async (persona: Record<string, unknown>) => {
-    // Persona was already persisted server-side. Just route forward.
     setAccountType(role)
+    setPersona(persona)
     if (role === 'parent') {
-      // Refresh family from server (might already exist).
       try {
         const fam = await api<{ family: { id: string; name: string; avatar: string | null } | null }>('/family')
         if (fam.family) setFamily(fam.family)
       } catch { /* ignore */ }
-
-      // If no family yet, route to family-create. Otherwise parent home.
-      router.replace('/(app)/parent')
+      router.replace('/(app)/(tabs)')
     } else {
-      router.replace('/(app)/kid')
+      router.replace('/(app)/(tabs)')
     }
   }
 
@@ -66,55 +78,85 @@ export default function VoiceOnboard() {
     chatHistory: conversation,
     connect,
     stop,
-  } = useRealtimeVoice({ role, onComplete })
+  } = useRealtimeWebRTC({ role, onComplete })
 
-  // Detect what PAL is asking about to show visual helpers.
-  const lastPalMessage = conversation.filter((m) => m.role === 'assistant').at(-1)?.content ?? ''
-  const isAskingAvatar = /avatar|pick|choose|emoji/i.test(lastPalMessage)
-  const isAskingStyle = /style|chill|balanced|strict/i.test(lastPalMessage)
-
-  const AVATARS = ['👩‍🦰', '👨', '👩', '👴', '👵', '🧑']
-  const STYLES = [
-    { id: 'chill', label: 'Chill', desc: 'Relaxed approach' },
-    { id: 'balanced', label: 'Balanced', desc: 'Middle ground' },
-    { id: 'strict', label: 'Strict', desc: 'High standards' },
-  ]
-
-  // For realtime hook, visual selections are handled by the server VAD
-  // The user can just speak their choice, or we show visual options as hints
-  const sendText = (_text: string) => {
-    // With realtime API, the user speaks — visual options are just hints
-    // In future: inject text directly into the WebSocket session
-  }
+  // If mic permission denied, fall back to the appropriate text-based flow
+  useEffect(() => {
+    if (phase === 'no_permission') {
+      router.replace(role === 'kid' ? '/(auth)/kid-persona' : '/(auth)/parent-onboarding')
+    }
+  }, [phase, router, role])
 
   const scrollRef = useRef<ScrollView>(null)
-  const pulse = useRef(new Animated.Value(1)).current
 
-  // Kick off conversation on mount.
+  // Animated values
+  const orbScale = useRef(new Animated.Value(1)).current
+  const orbOpacity = useRef(new Animated.Value(0.6)).current
+  const ring1Scale = useRef(new Animated.Value(1)).current
+  const ring2Scale = useRef(new Animated.Value(1)).current
+  const fadeIn = useRef(new Animated.Value(0)).current
+
+  // Fade in on mount
   useEffect(() => {
+    Animated.timing(fadeIn, {
+      toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+    }).start()
     void connect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Pulse animation while speaking or listening.
+  // Orb animation based on phase
   useEffect(() => {
-    if (phase === 'speaking' || phase === 'listening') {
+    if (phase === 'speaking') {
+      // Pulsing fast while PAL speaks
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulse, { toValue: 1.15, duration: 600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-          Animated.timing(pulse, { toValue: 1, duration: 600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(orbScale, { toValue: 1.12, duration: 400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(orbScale, { toValue: 0.95, duration: 400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
         ]),
       ).start()
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(ring1Scale, { toValue: 1.4, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(ring1Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
+        ]),
+      ).start()
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(400),
+          Animated.timing(ring2Scale, { toValue: 1.6, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(ring2Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
+        ]),
+      ).start()
+      Animated.timing(orbOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start()
+    } else if (phase === 'listening') {
+      // Gentle breathing while listening
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(orbScale, { toValue: 1.06, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(orbScale, { toValue: 0.97, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ]),
+      ).start()
+      orbScale.stopAnimation()
+      ring1Scale.stopAnimation()
+      ring2Scale.stopAnimation()
+      ring1Scale.setValue(1)
+      ring2Scale.setValue(1)
+      Animated.timing(orbOpacity, { toValue: 0.85, duration: 300, useNativeDriver: true }).start()
     } else {
-      pulse.stopAnimation()
-      pulse.setValue(1)
+      orbScale.stopAnimation()
+      ring1Scale.stopAnimation()
+      ring2Scale.stopAnimation()
+      Animated.timing(orbScale, { toValue: 1, duration: 400, useNativeDriver: true }).start()
+      Animated.timing(ring1Scale, { toValue: 1, duration: 400, useNativeDriver: true }).start()
+      Animated.timing(ring2Scale, { toValue: 1, duration: 400, useNativeDriver: true }).start()
+      Animated.timing(orbOpacity, { toValue: 0.6, duration: 300, useNativeDriver: true }).start()
     }
-  }, [phase, pulse])
+  }, [phase])
 
-  // Audio level scales avatar on top of pulse.
-  const avatarScale = level > 0.05 ? 1 + level * 0.3 : 1
+  // Audio level boosts orb scale while listening
+  const liveScale = phase === 'listening' && level > 0.05 ? 1 + level * 0.25 : 1
 
-  // Auto-scroll conversation.
+  // Auto-scroll to latest message
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)
   }, [conversation.length])
@@ -124,161 +166,235 @@ export default function VoiceOnboard() {
     router.back()
   }
 
+  const isSpeaking = phase === 'speaking'
+  const isListening = phase === 'listening'
+  const isConnecting = phase === 'connecting' || phase === 'idle'
+  const isError = phase === 'error'
+
   return (
-    <View style={[s.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      {/* Top close button */}
+    <Animated.View style={[s.root, { opacity: fadeIn, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      {/* Background gradient */}
+      <LinearGradient
+        colors={['#FFFFFF', '#F3F4FA', '#EEF0FA']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      {/* Ambient glow behind orb */}
+      <View style={[s.ambientGlow, { backgroundColor: accentColor + '18' }]} />
+
+      {/* Top bar */}
       <View style={s.topBar}>
-        <Pressable hitSlop={12} onPress={onClose}>
-          <X size={tokens.iconSize.xl} color={tokens.color.textMuted} strokeWidth={1.5} />
+        <Pressable hitSlop={12} onPress={onClose} style={s.closeBtn}>
+          <X size={18} color={tokens.color.textMuted} strokeWidth={2} />
         </Pressable>
-        <Text style={s.statusLabel}>{phaseLabel(phase)}</Text>
-        <View style={{ width: 24 }} />
+        <View style={s.statusPill}>
+          <View style={[s.statusDot, {
+            backgroundColor: isSpeaking ? accentColor : isListening ? '#3DDC84' : tokens.color.surface2,
+          }]} />
+          <Text style={s.statusText}>{phaseLabel(phase)}</Text>
+        </View>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* Conversation history (scrolls above the avatar) */}
+      {/* Conversation transcript — scrolls up */}
       <ScrollView
         ref={scrollRef}
         style={s.scroll}
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {conversation.length === 0 && (
+          <View style={s.emptyHint}>
+            <Text style={s.emptyHintText}>
+              {isConnecting ? 'Connecting to PAL...' : 'PAL will speak first — just listen'}
+            </Text>
+          </View>
+        )}
         {conversation.map((m, i) => (
-          <ChatBubble key={i} from={m.role === 'user' ? 'user' : 'pal'}>
-            {m.content}
-          </ChatBubble>
+          <TranscriptBubble
+            key={i}
+            role={m.role}
+            text={m.content}
+            accent={accentColor}
+          />
         ))}
       </ScrollView>
 
-      {/* Avatar picker — shown when PAL asks about avatar */}
-      {isAskingAvatar && (
-        <View style={s.pickerRow}>
-          {AVATARS.map((emoji) => (
-            <Pressable
-              key={emoji}
-              style={s.pickerBtn}
-              onPress={() => void sendText(`I pick ${emoji}`)}
-            >
-              <Text style={s.pickerEmoji}>{emoji}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-
-      {/* Style picker — shown when PAL asks about parenting style */}
-      {isAskingStyle && (
-        <View style={s.styleRow}>
-          {STYLES.map((st) => (
-            <Pressable
-              key={st.id}
-              style={s.styleBtn}
-              onPress={() => void sendText(st.label)}
-            >
-              <Text style={s.styleBtnLabel}>{st.label}</Text>
-              <Text style={s.styleBtnDesc}>{st.desc}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-
-      {/* PAL avatar + status */}
-      <View style={s.avatarWrap}>
-        {/* Outer pulse ring (only during listening/speaking) */}
-        {(phase === 'listening' || phase === 'speaking') && (
-          <Animated.View
-            style={[
-              s.pulseRing,
-              {
-                transform: [{ scale: pulse }],
-                borderColor: phase === 'speaking' ? tokens.color.accent : tokens.color.purple,
-              },
-            ]}
-          />
+      {/* Central orb section */}
+      <View style={s.orbSection}>
+        {/* Ripple rings — only while speaking */}
+        {isSpeaking && (
+          <>
+            <Animated.View style={[s.ring, s.ring1, {
+              borderColor: accentColor + '30',
+              transform: [{ scale: ring1Scale }],
+            }]} />
+            <Animated.View style={[s.ring, s.ring2, {
+              borderColor: accentColor + '18',
+              transform: [{ scale: ring2Scale }],
+            }]} />
+          </>
         )}
 
-        {/* Avatar disc */}
-        <Animated.View
-          style={[
-            s.avatar,
-            {
-              transform: [{ scale: avatarScale }],
-              backgroundColor: phase === 'speaking' ? tokens.color.accent : tokens.color.purple,
-            },
-          ]}
-        >
-          <Text style={s.avatarChar}>P</Text>
+        {/* Main orb */}
+        <Animated.View style={[s.orbWrap, {
+          transform: [{ scale: Animated.multiply(orbScale, liveScale as unknown as Animated.Value) }],
+          opacity: orbOpacity,
+        }]}>
+          <LinearGradient
+            colors={isSpeaking
+              ? [accentColor, accentColor + 'AA']
+              : isListening
+                ? ['#3DDC84', '#22C55E']
+                : [tokens.color.surface, tokens.color.surface2]}
+            style={s.orb}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          />
+          <Sparkles
+            size={36}
+            color={isSpeaking || isListening ? '#fff' : tokens.color.textMuted}
+            strokeWidth={1.5}
+          />
         </Animated.View>
+
+        {/* Phase label under orb */}
+        <Text style={[s.orbLabel, { color: isSpeaking ? accentColor : isListening ? '#3DDC84' : tokens.color.textMuted }]}>
+          {isSpeaking ? 'PAL is speaking' : isListening ? 'Listening...' : phaseLabel(phase)}
+        </Text>
       </View>
 
-      {/* Bottom mic indicator */}
+      {/* Bottom mic / level indicator */}
       <View style={s.bottom}>
-        {phase === 'no_permission' ? (
-          <View style={s.micRow}>
-            <MicOff size={tokens.iconSize.lg} color={tokens.color.danger} strokeWidth={1.5} />
-            <Text style={s.permText}>Mic permission needed</Text>
+        {phase === 'no_permission' || isError ? (
+          <View style={s.errorRow}>
+            <MicOff size={20} color={tokens.color.danger} strokeWidth={2} />
+            <Text style={s.errorText}>
+              {phase === 'no_permission' ? 'Microphone permission needed' : 'Connection error — tap to retry'}
+            </Text>
+            {isError && (
+              <Pressable style={s.retryBtn} onPress={() => void connect()}>
+                <Text style={s.retryText}>Retry</Text>
+              </Pressable>
+            )}
           </View>
-        ) : phase === 'listening' ? (
+        ) : isListening ? (
           <View style={s.micRow}>
-            <Mic size={tokens.iconSize.lg} color={tokens.color.purple} strokeWidth={2} />
+            <Mic size={18} color="#3DDC84" strokeWidth={2} />
             <View style={s.levelBars}>
+              {[0, 1, 2, 3, 4, 5, 6].map((i) => {
+                const barLevel = level * (1 - Math.abs(i - 3) * 0.15)
+                const active = level > (i / 7)
+                return (
+                  <Animated.View
+                    key={i}
+                    style={[
+                      s.levelBar,
+                      {
+                        height: 4 + barLevel * 32,
+                        backgroundColor: active ? '#3DDC84' : tokens.color.surface2,
+                      },
+                    ]}
+                  />
+                )
+              })}
+            </View>
+            <Text style={s.micLabel}>Listening</Text>
+          </View>
+        ) : isSpeaking ? (
+          <View style={s.micRow}>
+            <View style={s.speakingBars}>
               {[0, 1, 2, 3, 4].map((i) => (
                 <View
                   key={i}
-                  style={[
-                    s.levelBar,
-                    {
-                      height: 4 + level * 28 * (1 - Math.abs(i - 2) * 0.2),
-                      backgroundColor: level > i / 5 ? tokens.color.purple : tokens.color.surface2,
-                    },
-                  ]}
+                  style={[s.speakingBar, {
+                    height: 6 + (i % 3) * 8,
+                    backgroundColor: accentColor,
+                    opacity: 0.6 + (i % 3) * 0.2,
+                  }]}
                 />
               ))}
             </View>
-            <Text style={s.listenText}>Listening...</Text>
-          </View>
-        ) : phase === 'speaking' ? (
-          <View style={s.micRow}>
-            <View style={[s.speakingDot, { backgroundColor: tokens.color.accent }]} />
-            <Text style={s.listenText}>PAL is talking</Text>
-          </View>
-        ) : phase === 'processing' ? (
-          <View style={s.micRow}>
-            <Text style={s.listenText}>Processing...</Text>
-          </View>
-        ) : phase === 'connecting' ? (
-          <View style={s.micRow}>
-            <Text style={s.listenText}>Connecting...</Text>
-          </View>
-        ) : phase === 'done' ? (
-          <View style={s.micRow}>
-            <Text style={[s.listenText, { color: tokens.color.accent }]}>All set ✓</Text>
+            <Text style={[s.micLabel, { color: accentColor }]}>PAL is talking</Text>
           </View>
         ) : (
           <View style={s.micRow}>
-            <Text style={s.listenText}>{phase}</Text>
+            <Text style={s.micLabel}>{isConnecting ? 'Starting up...' : ''}</Text>
           </View>
         )}
+      </View>
+    </Animated.View>
+  )
+}
+
+// ─── Transcript bubble ────────────────────────────────────────────────
+function TranscriptBubble({ role, text, accent }: { role: 'user' | 'assistant'; text: string; accent: string }) {
+  const isPal = role === 'assistant'
+  return (
+    <View style={[tb.row, isPal ? tb.palRow : tb.userRow]}>
+      {isPal && (
+        <View style={[tb.palDot, { backgroundColor: accent }]}>
+          <Sparkles size={10} color="#fff" strokeWidth={2} />
+        </View>
+      )}
+      <View style={[tb.bubble, isPal
+        ? { backgroundColor: tokens.color.surface, borderColor: accent + '33' }
+        : { backgroundColor: accent + '22', borderColor: accent + '44' }
+      ]}>
+        <Text style={[tb.text, { color: isPal ? tokens.color.text : '#fff' }]}>{text}</Text>
       </View>
     </View>
   )
 }
 
+const tb = StyleSheet.create({
+  row: { marginBottom: tokens.spacing[3], maxWidth: '85%' },
+  palRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  userRow: { alignSelf: 'flex-end' },
+  palDot: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, marginBottom: 2,
+  },
+  bubble: {
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: tokens.spacing[4],
+    paddingVertical: tokens.spacing[3],
+  },
+  text: { fontSize: tokens.fontSize.md, lineHeight: 22, fontWeight: '500' },
+})
+
+// ─── Helpers ──────────────────────────────────────────────────────────
 function phaseLabel(phase: RealtimePhase): string {
   switch (phase) {
-    case 'idle':          return ''
+    case 'idle':          return 'Starting...'
     case 'connecting':    return 'Connecting...'
     case 'ready':         return 'Ready'
-    case 'listening':     return ''
+    case 'listening':     return 'Listening'
     case 'processing':    return 'Processing...'
-    case 'speaking':      return ''
-    case 'done':          return ''
+    case 'speaking':      return 'Speaking'
+    case 'done':          return 'Done'
     case 'no_permission': return 'Mic blocked'
-    case 'error':         return 'Connection error'
+    case 'error':         return 'Error'
     default:              return ''
   }
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: tokens.color.bg },
+  root: { flex: 1 },
+
+  ambientGlow: {
+    position: 'absolute',
+    width: width * 1.2,
+    height: width * 1.2,
+    borderRadius: width * 0.6,
+    top: '20%',
+    left: '-10%',
+    opacity: 0.5,
+  },
 
   topBar: {
     flexDirection: 'row',
@@ -287,107 +403,134 @@ const s = StyleSheet.create({
     paddingHorizontal: tokens.spacing[5],
     paddingVertical: tokens.spacing[3],
   },
-  statusLabel: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, fontWeight: '600' },
+  closeBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: tokens.color.surface,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: tokens.color.surface,
+    paddingHorizontal: tokens.spacing[3], paddingVertical: 6,
+    borderRadius: tokens.radius.pill,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { color: tokens.color.textMuted, fontSize: 12, fontWeight: '600' },
 
+  // Transcript scroll
   scroll: { flex: 1 },
   scrollContent: {
-    paddingHorizontal: tokens.spacing[4],
-    paddingVertical: tokens.spacing[3],
+    paddingHorizontal: tokens.spacing[5],
+    paddingTop: tokens.spacing[3],
+    paddingBottom: tokens.spacing[4],
     flexGrow: 1,
     justifyContent: 'flex-end',
   },
+  emptyHint: {
+    alignItems: 'center',
+    paddingVertical: tokens.spacing[6],
+  },
+  emptyHintText: {
+    color: tokens.color.textMuted,
+    fontSize: tokens.fontSize.sm,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
 
-  avatarWrap: {
-    height: 160,
+  // Orb section
+  orbSection: {
+    height: 220,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pulseRing: {
+  ring: {
     position: 'absolute',
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 2,
-    opacity: 0.4,
+    borderRadius: 999,
+    borderWidth: 1.5,
   },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  ring1: { width: 160, height: 160 },
+  ring2: { width: 200, height: 200 },
+  orbWrap: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: tokens.color.purple,
-    shadowOffset: { width: 0, height: 8 },
+    overflow: 'hidden',
+    shadowColor: '#A855F7',
+    shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 12,
+    shadowRadius: 24,
+    elevation: 16,
   },
-  avatarChar: { color: '#fff', fontSize: 44, fontWeight: '900' },
+  orb: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 60,
+  },
+  orbLabel: {
+    marginTop: tokens.spacing[4],
+    fontSize: tokens.fontSize.sm,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
 
+  // Bottom
   bottom: {
     paddingHorizontal: tokens.spacing[5],
     paddingVertical: tokens.spacing[5],
     alignItems: 'center',
+    minHeight: 80,
+    justifyContent: 'center',
   },
-
   micRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: tokens.spacing[3],
-    minHeight: 40,
   },
-
+  micLabel: {
+    color: tokens.color.textMuted,
+    fontSize: tokens.fontSize.sm,
+    fontWeight: '600',
+  },
   levelBars: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    height: 32,
+    height: 40,
   },
   levelBar: {
     width: 4,
     borderRadius: 2,
+    minHeight: 4,
   },
-
-  speakingDot: {
-    width: 12, height: 12, borderRadius: 6,
-  },
-
-  listenText: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '600' },
-  permText: { color: tokens.color.danger, fontSize: tokens.fontSize.md, fontWeight: '600' },
-
-  pickerRow: {
+  speakingBars: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: tokens.spacing[2],
-    paddingHorizontal: tokens.spacing[4],
-    paddingVertical: tokens.spacing[3],
+    alignItems: 'center',
+    gap: 3,
+    height: 28,
+  },
+  speakingBar: {
+    width: 4,
+    borderRadius: 2,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing[3],
     flexWrap: 'wrap',
-  },
-  pickerBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: tokens.color.surface,
-    alignItems: 'center',
     justifyContent: 'center',
   },
-  pickerEmoji: { fontSize: 28 },
-
-  styleRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: tokens.spacing[2],
+  errorText: {
+    color: tokens.color.danger,
+    fontSize: tokens.fontSize.sm,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  retryBtn: {
     paddingHorizontal: tokens.spacing[4],
-    paddingVertical: tokens.spacing[3],
-  },
-  styleBtn: {
-    flex: 1,
+    paddingVertical: tokens.spacing[2],
     backgroundColor: tokens.color.surface,
-    borderRadius: tokens.radius.md,
-    padding: tokens.spacing[3],
-    alignItems: 'center',
-    gap: 4,
+    borderRadius: tokens.radius.pill,
   },
-  styleBtnLabel: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '800' },
-  styleBtnDesc: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, textAlign: 'center' },
+  retryText: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '700' },
 })

@@ -9,7 +9,7 @@ const config = getDefaultConfig(projectRoot)
 
 // pnpm monorepo: watch the whole workspace and let Metro resolve hoisted
 // packages from the workspace root node_modules in addition to the local one.
-config.watchFolders = [workspaceRoot]
+config.watchFolders = [...(config.watchFolders ?? []), workspaceRoot]
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
@@ -31,5 +31,27 @@ config.resolver.disableHierarchicalLookup = false
  *   https://github.com/expo/expo/issues/30530
  */
 config.resolver.unstable_enablePackageExports = false
+
+/**
+ * Web stubs for native-only packages.
+ * Metro calls resolveRequest for every import; on web we redirect
+ * packages that use native modules to lightweight JS stubs.
+ */
+const WEB_STUBS = {
+  '@stripe/stripe-react-native': path.resolve(projectRoot, 'shims/stripe-react-native.web.js'),
+  'expo-secure-store': path.resolve(projectRoot, 'shims/expo-secure-store.web.js'),
+  'react-native-webrtc': path.resolve(projectRoot, 'shims/react-native-webrtc.web.js'),
+}
+
+const originalResolveRequest = config.resolver.resolveRequest
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web' && WEB_STUBS[moduleName]) {
+    return { filePath: WEB_STUBS[moduleName], type: 'sourceFile' }
+  }
+  if (originalResolveRequest) {
+    return originalResolveRequest(context, moduleName, platform)
+  }
+  return context.resolveRequest(context, moduleName, platform)
+}
 
 module.exports = config

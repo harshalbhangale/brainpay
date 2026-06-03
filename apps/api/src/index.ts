@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { WebSocketServer } from 'ws'
 import { loadEnv } from './env'
 import { logger } from './logger'
@@ -10,10 +11,24 @@ import {
   onVoiceRealtimeConnect,
   onVoiceRealtimeMessage,
 } from './ws/voice-realtime'
+import {
+  onTwilioMediaClose,
+  onTwilioMediaConnect,
+  onTwilioMediaMessage,
+} from './ws/twilio-media'
 
 const env = loadEnv()
 
 const app = new Hono()
+
+// CORS — allow all origins in dev, tighten in prod via ALLOWED_ORIGINS env.
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400,
+}))
+
 app.route('/', routes)
 
 const server = serve(
@@ -23,6 +38,7 @@ const server = serve(
 
 const wss = new WebSocketServer({ noServer: true })
 const voiceRtWss = new WebSocketServer({ noServer: true })
+const twilioMediaWss = new WebSocketServer({ noServer: true })
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '', 'http://localhost')
@@ -45,6 +61,17 @@ server.on('upgrade', (req, socket, head) => {
       ws.on('message', (data) => onVoiceRealtimeMessage(ws, data as Buffer))
       ws.on('close', () => onVoiceRealtimeClose(ws))
       ws.on('error', (err) => logger.error({ err: String(err) }, 'voice_rt.ws.error'))
+    })
+    return
+  }
+
+  if (url.pathname === '/twilio-media') {
+    // Twilio Media Stream ↔ OpenAI Realtime bridge (voice-task calls)
+    twilioMediaWss.handleUpgrade(req, socket, head, (ws) => {
+      onTwilioMediaConnect(ws)
+      ws.on('message', (data) => onTwilioMediaMessage(ws, data as Buffer))
+      ws.on('close', () => onTwilioMediaClose(ws))
+      ws.on('error', (err) => logger.error({ err: String(err) }, 'twilio_media.ws.error'))
     })
     return
   }

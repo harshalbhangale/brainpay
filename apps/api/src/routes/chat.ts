@@ -22,6 +22,15 @@ import { toFile } from 'openai'
 export const chat = new Hono<{ Variables: AuthVars }>()
 chat.use('*', requireAuth)
 
+// Council router: picks which specialist Pals chime in and writes each a one-liner.
+const COUNCIL_SYSTEM = `You are the BrainPal council router for a family money app.
+Given the user's message, decide which specialist Pals should add a short note:
+- moneypal: spending, saving, goals, affordability, allowance
+- healthpal: food/snack/nutrition/health
+- studypal: homework, study, learning, screen time
+Return STRICT JSON: {"pals":[{"palId":"moneypal","line":"one short sentence in that Pal's voice"}]}.
+Include only Pals genuinely relevant (0-3). Each line <= 14 words. No other text.`
+
 // ─── POST /chat ───────────────────────────────────────────────────────
 // Send a message to PAL. Returns a text reply and optionally a
 // structured intent that requires user confirmation before executing.
@@ -61,7 +70,7 @@ chat.post('/chat', async (c) => {
   }))
 
   // Parse intent in parallel with generating the reply.
-  const [intentResult, completionResult] = await Promise.allSettled([
+  const [intentResult, completionResult, councilResult] = await Promise.allSettled([
     parseIntent(message, ctx),
     llm.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -70,6 +79,16 @@ chat.post('/chat', async (c) => {
       messages: [
         { role: 'system', content: systemPrompt },
         ...historyMessages,
+        { role: 'user', content: message },
+      ],
+    }),
+    llm.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.5,
+      max_tokens: 160,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: COUNCIL_SYSTEM },
         { role: 'user', content: message },
       ],
     }),
@@ -88,13 +107,30 @@ chat.post('/chat', async (c) => {
 
   const requiresConfirmation = intent.kind !== 'query'
 
+  // Parse council Pals (graceful: [] on any failure).
+  const VALID_PALS = ['moneypal', 'healthpal', 'studypal']
+  let pals: { palId: string; line: string }[] = []
+  if (councilResult.status === 'fulfilled') {
+    try {
+      const raw = councilResult.value.choices[0]?.message?.content ?? '{}'
+      const obj = JSON.parse(raw) as { pals?: { palId?: string; line?: string }[] }
+      pals = (obj.pals ?? [])
+        .filter((p) => p.palId && p.line && VALID_PALS.includes(p.palId))
+        .slice(0, 3)
+        .map((p) => ({ palId: p.palId as string, line: p.line as string }))
+    } catch {
+      pals = []
+    }
+  }
+
   logger.info(
-    { accountId, intentKind: intent.kind, requiresConfirmation },
+    { accountId, intentKind: intent.kind, requiresConfirmation, pals: pals.length },
     'chat.message',
   )
 
   return c.json({
     reply,
+    pals,
     intent: requiresConfirmation ? intent : undefined,
     requiresConfirmation,
   })

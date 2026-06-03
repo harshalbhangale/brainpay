@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { api } from '@/lib/api'
 import { env } from '@/lib/env'
 import { useAuthStore } from '@/stores/auth'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
  * Invite accept — three sub-states:
@@ -122,7 +122,7 @@ export default function InviteAccept() {
       style={s.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={[s.root, { paddingTop: insets.top + tokens.spacing[4], paddingBottom: insets.bottom }]}>
+      <View style={[s.root, { paddingTop: insets.top + tokens.spacing[4] }]}>
         <Pressable hitSlop={16} onPress={() => router.back()} style={s.back}>
           <Text style={s.backText}>‹ Back</Text>
         </Pressable>
@@ -249,7 +249,7 @@ const s = StyleSheet.create({
     borderRadius: tokens.radius.pill, marginTop: tokens.spacing[5],
   },
   topupText: { color: tokens.color.accent, fontWeight: '800', fontSize: tokens.fontSize.md },
-  actions: { gap: tokens.spacing[3], paddingBottom: tokens.spacing[5] },
+  actions: { gap: tokens.spacing[3], paddingBottom: Math.max(tokens.spacing[5], 20), paddingTop: tokens.spacing[3] },
   primary: {
     height: 56, backgroundColor: tokens.color.accent,
     borderRadius: tokens.radius.pill,

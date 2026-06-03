@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native'
 import { api } from '@/lib/api'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
  * ApplePayCheckout — presents the native Apple Pay sheet for a cart checkout.

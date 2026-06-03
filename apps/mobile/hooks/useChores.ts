@@ -13,6 +13,7 @@ export type Chore = {
   aiVerdict: 'approved' | 'rejected' | 'uncertain' | null
   aiReason: string | null
   parentNote: string | null
+  metadata: Record<string, unknown> | null
   createdAt: string
   submittedAt: string | null
   completedAt: string | null

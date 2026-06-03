@@ -24,6 +24,14 @@ const EnvSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_VERIFY_SERVICE_SID: z.string().min(1).optional(),
 
+  // Twilio Voice (inbound voice-task calls)
+  TWILIO_VOICE_NUMBER: z.string().min(1).optional(), // E.164 inbound number
+  PUBLIC_BASE_URL: z.string().url().optional(),       // https base for TwiML webhooks / media stream
+
+  // Twilio Messaging (SMS notifications — voice-task + invites)
+  TWILIO_MESSAGING_SERVICE_SID: z.string().min(1).optional(), // preferred for AU
+  TWILIO_MESSAGING_FROM: z.string().min(1).optional(),        // or a plain From number
+
   // Dev OTP bypass — when DEV_BYPASS_OTP=true, code DEV_BYPASS_CODE
   // (default '123456') is accepted without round-tripping Twilio. Never
   // set this on prod env.

@@ -14,7 +14,7 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuthStore } from '@/stores/auth'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
  * Phone entry — country picker (default AU) + phone input.
@@ -71,7 +71,7 @@ export default function PhoneScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={[styles.root, { paddingTop: insets.top + tokens.spacing[5], paddingBottom: insets.bottom }]}>
+      <View style={[styles.root, { paddingTop: insets.top + tokens.spacing[5] }]}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -139,17 +139,19 @@ export default function PhoneScreen() {
           </Text>
         </ScrollView>
 
-        <Pressable
-          style={[styles.cta, !valid && styles.ctaDisabled]}
-          onPress={submit}
-          disabled={!valid || sending}
-        >
-          {sending ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={[styles.ctaText, !valid && styles.ctaTextDisabled]}>Continue</Text>
-          )}
-        </Pressable>
+        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, tokens.spacing[5]) }]}>
+          <Pressable
+            style={[styles.cta, !valid && styles.ctaDisabled]}
+            onPress={submit}
+            disabled={!valid || sending}
+          >
+            {sending ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <Text style={[styles.ctaText, !valid && styles.ctaTextDisabled]}>Continue</Text>
+            )}
+          </Pressable>
+        </View>
       </View>
     </KeyboardAvoidingView>
   )
@@ -233,6 +235,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: tokens.spacing[4],
+  },
+  bottomBar: {
+    paddingTop: tokens.spacing[3],
   },
   ctaDisabled: { backgroundColor: tokens.color.surface2 },
   ctaText: { color: '#000', fontWeight: '800', fontSize: tokens.fontSize.md },

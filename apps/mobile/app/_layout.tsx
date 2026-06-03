@@ -3,6 +3,7 @@ import { Slot, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import * as Linking from 'expo-linking'
 import { useEffect, useState } from 'react'
+import { Platform, View, StyleSheet } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StripeProvider } from '@stripe/stripe-react-native'
 import { useAuthStore } from '@/stores/auth'
@@ -13,12 +14,12 @@ const STRIPE_MERCHANT = process.env.EXPO_PUBLIC_STRIPE_MERCHANT_ID ?? 'merchant.
 
 // Screen → route map for notification deep links.
 const NOTIFICATION_ROUTES: Record<string, string> = {
-  wallet:  '/(app)/kid',
-  chores:  '/(app)/parent/chores',
-  feed:    '/(app)/parent',
+  wallet:  '/(app)/(tabs)',
+  chores:  '/(app)/parent-chores',
+  feed:    '/(app)/(tabs)',
   home:    '/',
-  goals:   '/(app)/kid',
-  chat:    '/(app)/kid/chat',
+  goals:   '/(app)/goals',
+  chat:    '/(app)/(tabs)/pal',
 }
 
 /**
@@ -45,17 +46,56 @@ export default function RootLayout() {
       >
         <QueryClientProvider client={queryClient}>
           <StatusBar style="light" />
-          <AuthGate />
+          <PhoneFrame>
+            <AuthGate />
+          </PhoneFrame>
         </QueryClientProvider>
       </StripeProvider>
     </SafeAreaProvider>
   )
 }
 
+/**
+ * On web, the app is a full-width desktop page by default, which looks
+ * broken for a phone-first UI. This wraps everything in a centered,
+ * phone-width column so the browser renders it like a device. No-op on
+ * native (returns children directly).
+ */
+function PhoneFrame({ children }: { children: React.ReactNode }) {
+  if (Platform.OS !== 'web') return <>{children}</>
+  return (
+    <View style={frame.outer}>
+      <View style={frame.device}>{children}</View>
+    </View>
+  )
+}
+
+const frame = StyleSheet.create({
+  outer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0B0B0F',
+    // @ts-ignore web-only
+    minHeight: '100vh',
+  },
+  device: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: '#F3F4FA',
+    overflow: 'hidden',
+    // @ts-ignore web-only
+    boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+  },
+})
+
 function AuthGate() {
   const segments = useSegments()
   const router = useRouter()
   const status = useAuthStore((s) => s.status)
+  const onboardingComplete = useAuthStore((s) => s.onboardingComplete)
+  const accountType = useAuthStore((s) => s.accountType)
   const hydrate = useAuthStore((s) => s.hydrateFromSession)
   const [hydrated, setHydrated] = useState(false)
 
@@ -92,23 +132,28 @@ function AuthGate() {
     return () => sub.remove()
   }, [router])
 
-  // Route guards: keep unauthed users in (auth), authed users out of it.
+  // Route guards.
   useEffect(() => {
     if (!hydrated) return
     const segs = segments as readonly string[]
     const inAuthGroup = segs[0] === '(auth)'
-    if (status === 'authenticated' && inAuthGroup) {
-      // Final redirect handled inside individual auth screens (e.g. otp.tsx
-      // routes to invite-accept or role-select); only bounce out of the
-      // very first welcome/phone screens.
-      const screen = segs[1]
-      if (screen === 'welcome' || screen === 'phone' || screen === 'otp') {
-        router.replace('/')
-      }
-    } else if (status !== 'authenticated' && !inAuthGroup && segs.length > 0) {
+    const screen = segs[1]
+
+    if (status !== 'authenticated' && !inAuthGroup && segs.length > 0) {
+      // Not logged in — send to welcome.
       router.replace('/(auth)/welcome')
+      return
     }
-  }, [hydrated, status, segments, router])
+
+    if (status === 'authenticated' && inAuthGroup && onboardingComplete) {
+      // Logged in + onboarding done — never let them back into any auth screen.
+      // Exceptions: invite-accept (joining a second family) is always accessible.
+      // kid-persona / parent-onboarding / parent-persona are mid-onboarding — also exempt.
+      const onboardingScreens = ['invite-accept', 'kid-persona', 'parent-onboarding', 'parent-persona', 'voice-onboard']
+      if (!onboardingScreens.includes(screen)) {
+        router.replace('/(app)/(tabs)')
+      }
+    }  }, [hydrated, status, onboardingComplete, accountType, segments, router])
 
   return <Slot />
 }

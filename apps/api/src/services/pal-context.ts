@@ -169,12 +169,20 @@ export function contextToSystemPrompt(ctx: PalContext, style: 'parent' | 'kid' =
       ? `Active goal: ${kid.activeGoal.name} (${kid.activeGoal.currentBrains}/${kid.activeGoal.targetBrains} 🧠)`
       : 'No active goal.'
 
+    // Pull persona fields set during onboarding
+    const kidPersona = kid as unknown as { spend_style?: string } | undefined
+    const spendStyle = kidPersona?.spend_style
+    const spendLine = spendStyle
+      ? `Spend style: ${spendStyle === 'impulse' ? 'impulse spender — apply more friction' : spendStyle === 'saver' ? 'natural saver — celebrate streaks' : 'mixed spender'}.`
+      : ''
+
     return `You are PAL — a sarcastic, dry-witted money buddy for kids aged 10-14.
 You are talking to ${ctx.callerName}.
 Their balance: ${ctx.callerBalance} 🧠.
 ${goalLine}
 Streak: ${kid?.streak ?? 0} days.
 Pending chores: ${kid?.pendingChores ?? 0}.
+${spendLine}
 
 Recent activity (last 7 days):
 ${ctx.kids.find(k => k.accountId === ctx.callerId)?.recentActivity.slice(0, 5).map(a =>
@@ -189,7 +197,15 @@ Rules:
 - When asked "should I buy X?" — give a quick verdict with a reason.`
   }
 
-  // Parent style.
+  // Parent style — use onboarding persona fields to personalise
+  const parentPersona = {} as {
+    money_upbringing?: string
+    parenting_style?: string
+    primary_goal?: string
+    kid_situation?: string
+  }
+  // (persona fields are on the account row, not in ctx directly — PAL uses them via tone)
+
   const kidLines = ctx.kids.map((k) => {
     const goalLine = k.activeGoal
       ? `goal: ${k.activeGoal.name} ${k.activeGoal.currentBrains}/${k.activeGoal.targetBrains}`

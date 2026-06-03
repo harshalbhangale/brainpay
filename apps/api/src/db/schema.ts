@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -237,5 +238,111 @@ export const chores = pgTable(
   (t) => ({
     byFamilyCreated: index('chores_family_idx').on(t.familyId, t.createdAt),
     byAssignedStatus: index('chores_assigned_idx').on(t.assignedTo, t.status),
+  }),
+)
+
+// ─── call_sessions (voice-task inbound phone calls) ───────────────────
+export const callSessions = pgTable(
+  'call_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }), // matched by caller ID, nullable
+    fromPhone: text('from_phone').notNull(), // E.164 caller ID
+    twilioCallSid: text('twilio_call_sid').unique(),
+    openaiSessionId: text('openai_session_id'),
+    status: text('status').notNull().default('active'), // 'active' | 'ended' | 'failed'
+    transcript: jsonb('transcript').notNull().default(sql`'[]'::jsonb`), // [{ role, content }]
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+  },
+  (t) => ({
+    byAccount: index('call_sessions_account_idx').on(t.accountId),
+  }),
+)
+
+// ─── sms_messages (notification audit) ────────────────────────────────
+export const smsMessages = pgTable(
+  'sms_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    toPhone: text('to_phone').notNull(), // E.164
+    template: text('template').notNull(),
+    variables: jsonb('variables').notNull().default(sql`'{}'::jsonb`),
+    messageSid: text('message_sid'), // Twilio message SID
+    status: text('status').notNull().default('sent'), // 'sent' | 'failed'
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    byAccount: index('sms_messages_account_idx').on(t.accountId),
+  }),
+)
+
+
+// ─── memory_facts (agent foundation — personal + behavioral memory) ───
+export const memoryFacts = pgTable(
+  'memory_facts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    familyId: uuid('family_id').references(() => families.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'cascade' }), // null = family-wide
+    layer: text('layer').notNull(), // 'personal' | 'behavioral'
+    key: text('key').notNull(),
+    value: jsonb('value').notNull().default(sql`'{}'::jsonb`),
+    source: text('source').notNull(), // 'onboarding' | 'health_pal' | 'consolidation' | ...
+    confidence: numeric('confidence', { precision: 3, scale: 2 }).default('1.0').notNull(),
+    status: text('status').notNull().default('proposed'), // 'proposed' | 'confirmed' | 'expired'
+    confirmedBy: uuid('confirmed_by').references(() => accounts.id, { onDelete: 'set null' }),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    byFamily: index('memory_facts_family_idx').on(t.familyId),
+    byAccountStatus: index('memory_facts_account_idx').on(t.accountId, t.status),
+    byStatus: index('memory_facts_status_idx').on(t.status, t.expiresAt),
+  }),
+)
+
+// ─── family_rules (agent foundation — family memory / policy inputs) ──
+export const familyRules = pgTable(
+  'family_rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    familyId: uuid('family_id')
+      .references(() => families.id, { onDelete: 'cascade' })
+      .notNull(),
+    kind: text('kind').notNull(), // 'sugar_limit_g' | 'spend_limit_per_txn' | 'health_threshold' | ...
+    value: jsonb('value').notNull().default(sql`'{}'::jsonb`),
+    status: text('status').notNull().default('confirmed'), // 'proposed' | 'confirmed'
+    createdBy: uuid('created_by').references(() => accounts.id, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    byFamilyKind: index('family_rules_family_kind_idx').on(t.familyId, t.kind),
+  }),
+)
+
+// ─── agent_turns (agent foundation — audit log) ───────────────────────
+export const agentTurns = pgTable(
+  'agent_turns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'cascade' }),
+    familyId: uuid('family_id').references(() => families.id, { onDelete: 'cascade' }),
+    pal: text('pal').notNull(),
+    intent: text('intent').notNull(),
+    risk: text('risk').notNull().default('low'), // 'low' | 'medium' | 'high'
+    needsParentApproval: boolean('needs_parent_approval').notNull().default(false),
+    memoryUsed: jsonb('memory_used').notNull().default(sql`'[]'::jsonb`),
+    constraints: jsonb('constraints').notNull().default(sql`'[]'::jsonb`),
+    toolCalls: jsonb('tool_calls').notNull().default(sql`'[]'::jsonb`),
+    suggestion: text('suggestion'),
+    outcome: text('outcome').notNull(), // 'executed' | 'denied' | 'pending_parent'
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    byAccount: index('agent_turns_account_idx').on(t.accountId, t.createdAt),
   }),
 )

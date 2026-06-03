@@ -10,6 +10,8 @@ import { joinRequests } from './join-requests'
 import { items } from './items'
 import { me } from './me'
 import { payments } from './payments'
+import { realtime } from './realtime'
+import { twilioVoice } from './twilio-voice'
 import { voiceAgent } from './voice-agent'
 import { voiceOnboarding } from './voice-onboarding'
 import { wallet } from './wallet'
@@ -17,6 +19,11 @@ import { wallet } from './wallet'
 export const routes = new Hono()
 routes.route('/', health)
 routes.route('/', auth)
+// Public webhooks must be mounted BEFORE any sub-app that uses
+// `.use('*', requireAuth)` (me/wallet/chat/voiceAgent), otherwise their
+// catch-all auth middleware leaks onto these routes. Twilio signs its own
+// requests; no JWT.
+routes.route('/', twilioVoice)
 routes.route('/', me)
 routes.route('/', family)
 routes.route('/', invitesRoutes)
@@ -29,3 +36,4 @@ routes.route('/', goalsRoutes)
 routes.route('/', chat)
 routes.route('/', voiceAgent)
 routes.route('/', voiceOnboarding)
+routes.route('/', realtime)

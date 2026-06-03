@@ -13,7 +13,7 @@ import {
 } from 'expo-audio'
 import * as FileSystem from 'expo-file-system/legacy'
 import { Mic, MicOff } from 'lucide-react-native'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 import {
   configureAudioForRecording,
   configureAudioForPlayback,

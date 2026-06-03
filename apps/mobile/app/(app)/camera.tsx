@@ -19,6 +19,7 @@ import { Bot, ShoppingCart } from 'lucide-react-native'
 import { useRouter } from 'expo-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { tokens } from '@/theme/tokens'
+import { Lottie } from '@/components/Lottie'
 import { connectLive, type LiveSocket } from '@/lib/ws'
 import { api } from '@/lib/api'
 import { useCartStore } from '@/stores/cart'
@@ -524,7 +525,7 @@ export default function CameraScreen() {
         </View>
         <View style={{ flex: 1 }} />
         {/* Cart button */}
-        <Pressable style={s.cartBtn} onPress={() => router.push('/(app)/kid/cart')}>
+        <Pressable style={s.cartBtn} onPress={() => router.push('/(app)/cart')}>
           <ShoppingCart size={20} color={tokens.color.text} strokeWidth={1.8} />
           {cartCount > 0 && (
             <View style={s.cartBadge}>
@@ -579,6 +580,11 @@ export default function CameraScreen() {
       {addedToast && (
         <View style={[s.toast, { top: insets.top + 64 }]}>
           <Text style={s.toastText}>✓ Added: {addedToast}</Text>
+        </View>
+      )}
+      {addedToast && (
+        <View pointerEvents="none" style={s.coinBurst}>
+          <Lottie name="coinBurst" size={200} loop={false} />
         </View>
       )}
 
@@ -655,6 +661,11 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   toastText: { color: '#000', fontWeight: '800', fontSize: tokens.fontSize.sm },
+
+  coinBurst: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   btn:      { backgroundColor: tokens.color.accent, paddingHorizontal: tokens.spacing[5],
                paddingVertical: tokens.spacing[3], borderRadius: tokens.radius.pill },

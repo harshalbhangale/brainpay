@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
@@ -15,7 +15,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.700.0",
     "@brainpal/shared": "workspace:*",
-    "@hono/node-server": "1.13.8",
+    "@hono/node-server": "1.14.4",
     "@supabase/supabase-js": "2.46.1",
     "drizzle-orm": "0.36.4",
     "expo-server-sdk": "3.14.0",

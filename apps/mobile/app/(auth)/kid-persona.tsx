@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Pressable,
   ScrollView,
@@ -11,14 +11,20 @@ import {
 import { SlidingWizard } from '@/components/SlidingWizard'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
- * Kid persona — same shape as parent's add-kid wizard but the kid edits.
- * Pre-fills from kidSeed (passed via search params from invite-accept).
+ * Kid persona wizard — 7 slides.
+ * Pre-fills from kidSeed (passed via search params from invite-accept / join-request).
  *
- * Slides: confirm name → age → color → avatar → PAL voice → first goal (skippable).
- * Initial top-up is NOT editable here — parent already set it.
+ * Slides:
+ *   1. Confirm name (pre-filled, editable)
+ *   2. Age picker
+ *   3. Accent color
+ *   4. Avatar
+ *   5. PAL voice
+ *   6. Spend style (builds PAL's friction calibration)
+ *   7. First goal (skippable)
  */
 
 const ACCENT_PALETTE = [
@@ -35,20 +41,27 @@ const ACCENT_PALETTE = [
 const KID_AVATARS = ['🧒', '👦', '👧', '🧑', '👽', '🤖', '🦄', '🐱', '🐶', '🐼', '🦊', '🐸'] as const
 
 const VOICES = [
-  { id: 'sarcastic',  emoji: '🤖', name: 'Sarcastic robot' },
-  { id: 'cool',       emoji: '😎', name: 'Cool friend' },
-  { id: 'wise',       emoji: '🧙', name: 'Wise wizard' },
-  { id: 'hyped',      emoji: '⚡', name: 'Hyped coach' },
-  { id: 'chill',      emoji: '🌴', name: 'Chill surfer' },
-  { id: 'auntie',     emoji: '👵', name: 'Sassy auntie' },
+  { id: 'sarcastic', emoji: '🤖', name: 'Sarcastic Robot',  desc: 'Technically correct. Emotionally unavailable.' },
+  { id: 'cool',      emoji: '😎', name: 'Cool Friend',       desc: 'Hype, but honest when it counts.' },
+  { id: 'wise',      emoji: '🧙', name: 'Wise Wizard',       desc: 'Ancient wisdom. Surprisingly relevant.' },
+  { id: 'hyped',     emoji: '⚡', name: 'Hype Coach',        desc: 'Every win is a W. Every loss is a lesson.' },
+  { id: 'deadpan',   emoji: '🕵️', name: 'Deadpan Detective', desc: 'Just the facts. No feelings.' },
+  { id: 'gremlin',   emoji: '👾', name: 'Chaos Gremlin',     desc: 'Unhinged. Occasionally correct.' },
+] as const
+
+const SPEND_STYLES = [
+  { id: 'impulse',  emoji: '💨', label: 'Gone in 24 hours',  sub: '"I spend it immediately"' },
+  { id: 'thinker',  emoji: '🤔', label: 'I think about it',  sub: '"I wait a bit, then spend"' },
+  { id: 'saver',    emoji: '🏦', label: 'I save most of it', sub: '"I\'m patient"' },
+  { id: 'moody',    emoji: '🤷', label: 'Depends on my mood', sub: '"Could go either way"' },
 ] as const
 
 const GOAL_TEMPLATES = [
-  { emoji: '🎧', name: 'AirPods',         target: 500  },
-  { emoji: '🎮', name: 'Game',            target: 1000 },
-  { emoji: '👟', name: 'Sneakers',        target: 800  },
-  { emoji: '📱', name: 'Phone case',      target: 200  },
-  { emoji: '🎨', name: 'Art supplies',    target: 300  },
+  { emoji: '🎧', name: 'AirPods',      target: 500  },
+  { emoji: '🎮', name: 'Game',         target: 1000 },
+  { emoji: '👟', name: 'Sneakers',     target: 800  },
+  { emoji: '📱', name: 'Phone case',   target: 200  },
+  { emoji: '🎨', name: 'Art supplies', target: 300  },
 ] as const
 
 const AGE_RANGE = Array.from({ length: 10 }, (_, i) => i + 8)
@@ -64,23 +77,27 @@ type KidSeed = {
 export default function KidPersona() {
   const router = useRouter()
   const { kidSeed: kidSeedRaw } = useLocalSearchParams<{ kidSeed?: string }>()
+  const onboardingComplete = useAuthStore((s) => s.onboardingComplete)
   const setAccountType = useAuthStore((s) => s.setAccountType)
+  const setPersona = useAuthStore((s) => s.setPersona)
+
+  useEffect(() => {
+    if (onboardingComplete) router.replace('/(app)/(tabs)')
+  }, [onboardingComplete, router])
 
   const seed = useMemo<KidSeed>(() => {
-    try {
-      return kidSeedRaw ? JSON.parse(kidSeedRaw) : {}
-    } catch {
-      return {}
-    }
+    try { return kidSeedRaw ? JSON.parse(kidSeedRaw) : {} }
+    catch { return {} }
   }, [kidSeedRaw])
 
   const [step, setStep] = useState(0)
-  const [name,    setName]    = useState(seed.name ?? '')
-  const [age,     setAge]     = useState<number | null>(seed.age ?? null)
-  const [color,   setColor]   = useState<string | null>(seed.color ?? null)
-  const [avatar,  setAvatar]  = useState<string | null>(seed.avatar ?? null)
-  const [voiceId, setVoiceId] = useState<string | null>(seed.voiceId ?? null)
-  const [goalIdx, setGoalIdx] = useState<number | null>(null)
+  const [name,       setName]       = useState(seed.name ?? '')
+  const [age,        setAge]        = useState<number | null>(seed.age ?? null)
+  const [color,      setColor]      = useState<string | null>(seed.color ?? null)
+  const [avatar,     setAvatar]     = useState<string | null>(seed.avatar ?? null)
+  const [voiceId,    setVoiceId]    = useState<string | null>(seed.voiceId ?? null)
+  const [spendStyle, setSpendStyle] = useState<string | null>(null)
+  const [goalIdx,    setGoalIdx]    = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const accent = color ?? tokens.color.accent
@@ -91,41 +108,37 @@ export default function KidPersona() {
     (step === 2 && color !== null) ||
     (step === 3 && avatar !== null) ||
     (step === 4 && voiceId !== null) ||
-    step === 5 // goal slide is optional
+    (step === 5 && spendStyle !== null) ||
+    step === 6 // goal is optional
 
   const onComplete = async () => {
     if (submitting) return
     setSubmitting(true)
+    const persona = {
+      name: name.trim(),
+      age,
+      color,
+      avatar,
+      voiceId,
+      spend_style: spendStyle,
+    }
     try {
       await api('/me', {
         method: 'PATCH',
-        body: JSON.stringify({
-          accountType: 'kid',
-          persona: {
-            name: name.trim(),
-            age,
-            color,
-            avatar,
-            voiceId,
-          },
-        }),
+        body: JSON.stringify({ accountType: 'kid', persona }),
       })
-      // Optional first goal
       if (goalIdx !== null) {
         const tmpl = GOAL_TEMPLATES[goalIdx]
         await api('/goals', {
           method: 'POST',
-          body: JSON.stringify({
-            name: tmpl.name,
-            emoji: tmpl.emoji,
-            targetBrains: tmpl.target,
-          }),
-        }).catch(() => undefined) // endpoint lands in Task 13; OK if 404 in P0
+          body: JSON.stringify({ name: tmpl.name, emoji: tmpl.emoji, targetBrains: tmpl.target }),
+        }).catch(() => undefined)
       }
       setAccountType('kid')
-      router.replace('/(app)/kid')
-    } catch (err) {
-      console.error('kid_persona_save_failed', err)
+      setPersona(persona)
+      router.replace('/(app)/(tabs)')
+    } catch {
+      console.error('kid_persona_save_failed')
       setSubmitting(false)
     }
   }
@@ -140,9 +153,12 @@ export default function KidPersona() {
       continueLabel="Let's go"
       accent={accent}
       steps={[
-        // Slide 1 — name
+
+        // ── Slide 1: Name ──────────────────────────────────────────
         <View key="name" style={s.slide}>
-          <Text style={s.title}>What's your name?</Text>
+          <Text style={s.title}>
+            {seed.name ? `Is this you? Your parent set this up as "${seed.name}".` : "What's your name?"}
+          </Text>
           <Text style={s.subtitle}>This is what your family sees.</Text>
           <TextInput
             style={s.input}
@@ -155,11 +171,11 @@ export default function KidPersona() {
           />
         </View>,
 
-        // Slide 2 — age
+        // ── Slide 2: Age ───────────────────────────────────────────
         <View key="age" style={s.slide}>
           <Text style={s.title}>How old are you?</Text>
           <Text style={s.subtitle}>PAL adapts to your age.</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.row}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.ageRow}>
             {AGE_RANGE.map((n) => {
               const picked = age === n
               return (
@@ -175,11 +191,11 @@ export default function KidPersona() {
           </ScrollView>
         </View>,
 
-        // Slide 3 — color
+        // ── Slide 3: Color ─────────────────────────────────────────
         <View key="color" style={s.slide}>
           <Text style={s.title}>Pick your color</Text>
           <Text style={s.subtitle}>Yours alone — follows you everywhere.</Text>
-          <View style={s.grid}>
+          <View style={s.swatchGrid}>
             {ACCENT_PALETTE.map((c) => {
               const picked = color === c.color
               return (
@@ -195,10 +211,10 @@ export default function KidPersona() {
           </View>
         </View>,
 
-        // Slide 4 — avatar
+        // ── Slide 4: Avatar ────────────────────────────────────────
         <View key="avatar" style={s.slide}>
           <Text style={s.title}>Pick your avatar</Text>
-          <View style={s.grid}>
+          <View style={s.bubbleGrid}>
             {KID_AVATARS.map((emoji) => {
               const picked = avatar === emoji
               return (
@@ -214,9 +230,9 @@ export default function KidPersona() {
           </View>
         </View>,
 
-        // Slide 5 — PAL voice
+        // ── Slide 5: PAL voice ─────────────────────────────────────
         <View key="voice" style={s.slide}>
-          <Text style={s.title}>Pick PAL's voice</Text>
+          <Text style={s.title}>Pick who you want PAL to be.</Text>
           <Text style={s.subtitle}>You can change it later.</Text>
           <View style={s.voiceList}>
             {VOICES.map((v) => {
@@ -228,17 +244,44 @@ export default function KidPersona() {
                   onPress={() => setVoiceId(v.id)}
                 >
                   <Text style={s.voiceEmoji}>{v.emoji}</Text>
-                  <Text style={s.voiceName}>{v.name}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.voiceName, picked && { color: accent }]}>{v.name}</Text>
+                    <Text style={s.voiceDesc}>{v.desc}</Text>
+                  </View>
                 </Pressable>
               )
             })}
           </View>
         </View>,
 
-        // Slide 6 — first goal (optional)
+        // ── Slide 6: Spend style ───────────────────────────────────
+        <View key="spend" style={s.slide}>
+          <Text style={s.title}>When you get money — what usually happens to it?</Text>
+          <Text style={s.subtitle}>Be honest. PAL won't judge. (Much.)</Text>
+          <View style={s.cardList}>
+            {SPEND_STYLES.map((opt) => {
+              const picked = spendStyle === opt.id
+              return (
+                <Pressable
+                  key={opt.id}
+                  style={[s.card, picked && { borderColor: accent, backgroundColor: tokens.color.surface2 }]}
+                  onPress={() => setSpendStyle(opt.id)}
+                >
+                  <Text style={s.cardEmoji}>{opt.emoji}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.cardLabel, picked && { color: accent }]}>{opt.label}</Text>
+                    <Text style={s.cardSub}>{opt.sub}</Text>
+                  </View>
+                </Pressable>
+              )
+            })}
+          </View>
+        </View>,
+
+        // ── Slide 7: First goal (optional) ─────────────────────────
         <View key="goal" style={s.slide}>
-          <Text style={s.title}>Set your first goal</Text>
-          <Text style={s.subtitle}>Optional. You can do this anytime.</Text>
+          <Text style={s.title}>What are you saving for?</Text>
+          <Text style={s.subtitle}>Don't say nothing.</Text>
           <View style={s.goalList}>
             {GOAL_TEMPLATES.map((g, i) => {
               const picked = goalIdx === i
@@ -250,17 +293,18 @@ export default function KidPersona() {
                 >
                   <Text style={s.goalEmoji}>{g.emoji}</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.goalName}>{g.name}</Text>
+                    <Text style={[s.goalName, picked && { color: accent }]}>{g.name}</Text>
                     <Text style={s.goalTarget}>{g.target} 🧠</Text>
                   </View>
                 </Pressable>
               )
             })}
             <Pressable onPress={() => setGoalIdx(null)}>
-              <Text style={[s.skip, { color: tokens.color.textMuted }]}>Skip — set later</Text>
+              <Text style={s.skip}>Skip — set later</Text>
             </Pressable>
           </View>
         </View>,
+
       ]}
     />
   )
@@ -268,7 +312,7 @@ export default function KidPersona() {
 
 const s = StyleSheet.create({
   slide: { flex: 1, paddingTop: tokens.spacing[5] },
-  title: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800' },
+  title: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800', lineHeight: 34 },
   subtitle: {
     color: tokens.color.textMuted, fontSize: tokens.fontSize.md,
     marginTop: tokens.spacing[2], marginBottom: tokens.spacing[5],
@@ -279,7 +323,9 @@ const s = StyleSheet.create({
     paddingHorizontal: tokens.spacing[4],
     color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '600',
   },
-  row: { gap: tokens.spacing[3], paddingVertical: tokens.spacing[3] },
+
+  // Age
+  ageRow: { gap: tokens.spacing[3], paddingVertical: tokens.spacing[3] },
   ageChip: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: tokens.color.surface,
@@ -287,7 +333,9 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   ageNum: { color: tokens.color.text, fontWeight: '800', fontSize: tokens.fontSize.lg },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing[3] },
+
+  // Color swatches
+  swatchGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing[3] },
   swatch: {
     width: 72, height: 72, borderRadius: 36,
     alignItems: 'center', justifyContent: 'center',
@@ -295,6 +343,9 @@ const s = StyleSheet.create({
   },
   swatchPicked: { borderColor: '#fff' },
   swatchCheck: { color: '#fff', fontSize: 28, fontWeight: '900' },
+
+  // Avatar bubbles
+  bubbleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing[3] },
   bubble: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: tokens.color.surface,
@@ -302,6 +353,8 @@ const s = StyleSheet.create({
     borderWidth: 3, borderColor: 'transparent',
   },
   bubbleEmoji: { fontSize: 36 },
+
+  // Voice cards
   voiceList: { gap: tokens.spacing[3] },
   voiceCard: {
     flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
@@ -309,8 +362,24 @@ const s = StyleSheet.create({
     backgroundColor: tokens.color.surface,
     borderWidth: 2, borderColor: 'transparent',
   },
-  voiceEmoji: { fontSize: 32 },
-  voiceName: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '700' },
+  voiceEmoji: { fontSize: 28 },
+  voiceName: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '800' },
+  voiceDesc: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 2, fontStyle: 'italic' },
+
+  // Spend style cards
+  cardList: { gap: tokens.spacing[3] },
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
+    backgroundColor: tokens.color.surface,
+    padding: tokens.spacing[4],
+    borderRadius: tokens.radius.lg,
+    borderWidth: 2, borderColor: 'transparent',
+  },
+  cardEmoji: { fontSize: 26 },
+  cardLabel: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '800' },
+  cardSub: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 3, fontStyle: 'italic' },
+
+  // Goal cards
   goalList: { gap: tokens.spacing[2] },
   goalCard: {
     flexDirection: 'row', alignItems: 'center', gap: tokens.spacing[3],
@@ -321,5 +390,8 @@ const s = StyleSheet.create({
   goalEmoji: { fontSize: 28 },
   goalName: { color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '700' },
   goalTarget: { color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, marginTop: 2 },
-  skip: { textAlign: 'center', paddingVertical: tokens.spacing[3], fontSize: tokens.fontSize.sm },
+  skip: {
+    textAlign: 'center', paddingVertical: tokens.spacing[3],
+    fontSize: tokens.fontSize.sm, color: tokens.color.textMuted,
+  },
 })

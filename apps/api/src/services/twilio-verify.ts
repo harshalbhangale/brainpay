@@ -37,7 +37,7 @@ export type VerifyStartResult =
 
 export async function verifyStart(phone: string): Promise<VerifyStartResult> {
   if (DEV_BYPASS_OTP_START) {
-    logger.info({ phone }, 'twilio.verify.start_bypassed')
+    logger.info({ phone, bypassCode: DEV_BYPASS_CODE }, 'twilio.verify.start_bypassed — use code: ' + DEV_BYPASS_CODE)
     return { ok: true, bypass: true }
   }
 

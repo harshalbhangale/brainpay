@@ -3,12 +3,11 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuthStore } from '@/stores/auth'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
- * Role selection — full anime art on top, accent gradient + label at the bottom.
- * Tapping "I'm a parent" → voice onboarding with PAL.
- * Tapping "I'm a kid" → invite-accept code entry (kids only join via invite).
+ * Role selection — full-bleed anime art fills the card edge-to-edge.
+ * Footer label overlays the bottom of the image with a gradient scrim.
  */
 
 const parentCard = require('@/assets/images/parentcard.png')
@@ -18,16 +17,36 @@ export default function RoleSelect() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const signOut = useAuthStore((s) => s.signOut)
+  const accountType = useAuthStore((s) => s.accountType)
+  const onboardingComplete = useAuthStore((s) => s.onboardingComplete)
 
   const onSignOut = async () => {
     await signOut()
     router.replace('/(auth)/welcome')
   }
 
+  const onKidPress = () => {
+    // If already a kid with onboarding done, skip straight to the app
+    if (accountType === 'kid' && onboardingComplete) {
+      router.replace('/(app)/(tabs)')
+      return
+    }
+    router.push('/(auth)/join-request')
+  }
+
+  const onParentPress = () => {
+    // If already a parent with onboarding done, skip straight to the app
+    if ((accountType === 'parent' || accountType === 'extended') && onboardingComplete) {
+      router.replace('/(app)/(tabs)')
+      return
+    }
+    router.push('/(auth)/voice-onboard')
+  }
+
   return (
     <View style={[s.root, { paddingTop: insets.top + tokens.spacing[4], paddingBottom: insets.bottom }]}>
       <View style={s.header}>
-        <Text style={s.title}>Welcome to BrainPay</Text>
+        <Text style={s.title}>Welcome to BrainPal</Text>
         <Text style={s.subtitle}>Pick your side.</Text>
       </View>
 
@@ -37,16 +56,14 @@ export default function RoleSelect() {
           title="I'm a parent"
           subtitle="Set up money for your kid"
           accent="#A855F7"
-          accentBg="rgba(168,85,247,0.12)"
-          onPress={() => router.push('/(auth)/voice-onboard')}
+          onPress={onParentPress}
         />
         <RoleCard
           image={kidCard}
           title="I'm a kid"
-          subtitle="Got an invite from your parent?"
+          subtitle="Your parent added you? Sign in here."
           accent="#3DDC84"
-          accentBg="rgba(61,220,132,0.12)"
-          onPress={() => router.push('/(auth)/invite-accept')}
+          onPress={onKidPress}
         />
       </View>
 
@@ -62,14 +79,12 @@ function RoleCard({
   title,
   subtitle,
   accent,
-  accentBg,
   onPress,
 }: {
   image: number
   title: string
   subtitle: string
   accent: string
-  accentBg: string
   onPress: () => void
 }) {
   return (
@@ -77,24 +92,32 @@ function RoleCard({
       onPress={onPress}
       style={({ pressed }) => [
         s.card,
+        { borderColor: accent + '66' },
         pressed && s.cardPressed,
-        { borderColor: accent + '55', backgroundColor: accentBg },
       ]}
     >
-      {/* Image area — top portion, full image visible (contain) */}
-      <View style={s.imageWrapper}>
-        <Image source={image} style={s.image} resizeMode="contain" />
-        {/* Soft accent glow behind the character */}
-        <LinearGradient
-          colors={[accent + '30', 'transparent']}
-          style={s.imageGlow}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          pointerEvents="none"
-        />
-      </View>
+      {/* Full-bleed image — cover fills the entire card, no side bars */}
+      <Image source={image} style={s.image} resizeMode="cover" />
 
-      {/* Footer — solid background for text */}
+      {/* Bottom gradient scrim so text is always readable */}
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)']}
+        style={s.scrim}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        pointerEvents="none"
+      />
+
+      {/* Accent glow at the top */}
+      <LinearGradient
+        colors={[accent + '44', 'transparent']}
+        style={s.topGlow}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        pointerEvents="none"
+      />
+
+      {/* Label overlaid at the bottom */}
       <View style={s.footer}>
         <View style={[s.accentBar, { backgroundColor: accent }]} />
         <Text style={s.cardTitle}>{title}</Text>
@@ -130,40 +153,57 @@ const s = StyleSheet.create({
     gap: tokens.spacing[4],
     paddingBottom: tokens.spacing[4],
   },
+
+  // Card — no background color, image fills it completely
   card: {
     flex: 1,
     borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1.5,
+    backgroundColor: '#000',
   },
   cardPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.9,
+    transform: [{ scale: 0.975 }],
+    opacity: 0.92,
   },
-  imageWrapper: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    position: 'relative',
-  },
+
+  // Image fills the entire card
   image: {
-    width: '100%',
-    height: '100%',
-  },
-  imageGlow: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: '50%',
+    bottom: 0,
+    width: '100%',
+    height: '100%',
   },
+
+  // Gradient scrim over the bottom ~50% for text legibility
+  scrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '60%',
+  },
+
+  // Subtle accent glow at the top
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '35%',
+  },
+
+  // Text label sits at the bottom, on top of the scrim
   footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     paddingHorizontal: tokens.spacing[5],
     paddingVertical: tokens.spacing[4],
-    backgroundColor: 'rgba(11,11,15,0.85)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
     gap: 4,
   },
   accentBar: {
@@ -179,10 +219,11 @@ const s = StyleSheet.create({
     letterSpacing: -0.3,
   },
   cardSubtitle: {
-    color: 'rgba(255,255,255,0.65)',
+    color: 'rgba(255,255,255,0.75)',
     fontSize: tokens.fontSize.sm,
     fontWeight: '500',
   },
+
   signOut: {
     alignSelf: 'center',
     paddingVertical: tokens.spacing[3],

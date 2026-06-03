@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
  * Reusable sliding wizard — horizontal page transitions, progress dots,
@@ -125,7 +125,7 @@ export function SlidingWizard({
         </View>
 
         {/* Continue button */}
-        <View style={[styles.bottom, { paddingBottom: insets.bottom + tokens.spacing[3] }]}>
+        <View style={[styles.bottom, { paddingBottom: Math.max(insets.bottom, tokens.spacing[4]) + tokens.spacing[3] }]}>
           <Pressable
             onPress={goNext}
             disabled={!canContinue}

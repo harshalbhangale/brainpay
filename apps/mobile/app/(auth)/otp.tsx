@@ -15,18 +15,7 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuthStore } from '@/stores/auth'
-import { tokens } from '@/theme/tokens'
-
-/**
- * OTP entry — 6 boxed digit inputs with iOS auto-fill via
- * textContentType="oneTimeCode" on the first input. User taps Verify
- * after the code lands; we don't auto-submit, since iOS autofill on a
- * fresh OTP can fire while the previous code's verification is still
- * in flight.
- *
- * Wrong code → shake animation, keep digits, refocus first.
- * Resend countdown 30s, max 5 attempts (Twilio enforces upstream).
- */
+import { kidTheme as tokens } from '@/theme/tokens'
 
 const RESEND_SECS = 30
 const CODE_LEN = 6
@@ -39,45 +28,60 @@ export default function OtpScreen() {
   const resend = useAuthStore((s) => s.resend)
   const hasPendingInvite = useAuthStore((s) => s.hasPendingInvite)
   const accountType = useAuthStore((s) => s.accountType)
+  const onboardingComplete = useAuthStore((s) => s.onboardingComplete)
   const errorMessage = useAuthStore((s) => s.errorMessage)
 
-  const [digits, setDigits] = useState<string[]>(Array(CODE_LEN).fill(''))
+  const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
   const [secsLeft, setSecsLeft] = useState(RESEND_SECS)
-  const inputs = useRef<Array<TextInput | null>>(Array(CODE_LEN).fill(null))
+  const [focused, setFocused] = useState(false)
+  const inputRef = useRef<TextInput>(null)
   const shake = useRef(new Animated.Value(0)).current
 
-  const code = digits.join('')
+  const digits = code.padEnd(CODE_LEN, '').split('').slice(0, CODE_LEN)
   const canSubmit = code.length === CODE_LEN && !verifying
 
-  // Resend countdown
   useEffect(() => {
     if (secsLeft <= 0) return
     const t = setTimeout(() => setSecsLeft((n) => n - 1), 1000)
     return () => clearTimeout(t)
   }, [secsLeft])
 
-  const submit = async () => {
-    if (!canSubmit) return
+  useEffect(() => {
+    if (code.length === CODE_LEN && !verifying) {
+      doSubmit(code)
+    }
+  }, [code])
+
+  const doSubmit = async (codeToSubmit: string) => {
+    if (codeToSubmit.length !== CODE_LEN || verifying) return
     Keyboard.dismiss()
     setVerifying(true)
     setError(null)
     try {
-      await verifyCode(code)
-      // Routing: pending join request → join-request screen; new user → role-select; else → home
+      await verifyCode(codeToSubmit)
       if (hasPendingInvite) {
+        // Has a pending join request — show it
         router.replace('/(auth)/join-request')
-      } else if (!accountType) {
-        router.replace('/(auth)/role-select')
-      } else {
+      } else if (onboardingComplete) {
+        // Fully onboarded returning user — go to app
         router.replace('/')
+      } else if (accountType === 'kid') {
+        // Accepted join request previously but never finished persona
+        router.replace('/(auth)/kid-persona')
+      } else if (accountType === 'parent') {
+        // Started parent onboarding but never finished
+        router.replace('/(auth)/parent-onboarding')
+      } else {
+        // Brand new user — pick a role
+        router.replace('/(auth)/role-select')
       }
     } catch (err) {
-      // Surface the server-provided detail so the user (and us) can see why.
       const detail = (err as Error)?.message || useAuthStore.getState().errorMessage
       setError(detail || 'Wrong code. Try again.')
-      inputs.current[0]?.focus()
+      setCode('')
+      inputRef.current?.focus()
       Animated.sequence([
         Animated.timing(shake, { toValue: 10,  duration: 50, useNativeDriver: true }),
         Animated.timing(shake, { toValue: -10, duration: 50, useNativeDriver: true }),
@@ -90,118 +94,123 @@ export default function OtpScreen() {
     }
   }
 
-  const onChange = (i: number, v: string) => {
-    setError(null)
-    // iOS auto-fill drops all 6 digits into the first box.
-    if (i === 0 && v.length > 1) {
-      const split = v.replace(/\D/g, '').slice(0, CODE_LEN).split('')
-      const next: string[] = Array(CODE_LEN).fill('').map((_, j) => split[j] ?? '')
-      setDigits(next)
-      let lastFilled = -1
-      for (let j = 0; j < next.length; j++) {
-        if (next[j] !== '') lastFilled = j
-      }
-      inputs.current[Math.min(lastFilled + 1, CODE_LEN - 1)]?.focus()
-      return
-    }
-    const ch = v.replace(/\D/g, '').slice(-1)
-    setDigits((prev) => {
-      const next = [...prev]
-      next[i] = ch
-      return next
-    })
-    if (ch && i < CODE_LEN - 1) inputs.current[i + 1]?.focus()
-  }
-
-  const onKey = (i: number, key: string) => {
-    if (key === 'Backspace' && !digits[i] && i > 0) inputs.current[i - 1]?.focus()
-  }
-
   const onResend = async () => {
     if (secsLeft > 0) return
     await resend()
     setSecsLeft(RESEND_SECS)
-    setDigits(Array(CODE_LEN).fill(''))
+    setCode('')
     setError(null)
-    inputs.current[0]?.focus()
+    inputRef.current?.focus()
   }
 
   const displayError = error ?? errorMessage
 
   return (
     <KeyboardAvoidingView
-      style={styles.flex}
+      style={s.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={[styles.root, { paddingTop: insets.top + tokens.spacing[5], paddingBottom: insets.bottom }]}>
-        <Pressable hitSlop={16} onPress={() => router.back()} style={styles.back}>
-          <Text style={styles.backText}>‹ Back</Text>
+      <View style={[s.root, { paddingTop: insets.top + tokens.spacing[5] }]}>
+        <Pressable hitSlop={16} onPress={() => router.back()} style={s.back}>
+          <Text style={s.backText}>‹ Back</Text>
         </Pressable>
 
         <ScrollView
-          style={styles.flex}
-          contentContainerStyle={styles.scrollContent}
+          style={s.flex}
+          contentContainerStyle={s.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>Enter the code</Text>
-          <Text style={styles.subtitle}>Sent to {phone ?? 'your phone'}</Text>
+          <Text style={s.title}>Enter the code</Text>
+          <Text style={s.subtitle}>Sent to {phone ?? 'your phone'}</Text>
 
-          <Animated.View style={[styles.codeRow, { transform: [{ translateX: shake }] }]}>
-            {digits.map((d, i) => (
-              <TextInput
-                key={i}
-                ref={(r) => { inputs.current[i] = r }}
-                style={[styles.box, d && styles.boxFilled, displayError && styles.boxError]}
-                value={d}
-                onChangeText={(v) => onChange(i, v)}
-                onKeyPress={(e) => onKey(i, e.nativeEvent.key)}
-                keyboardType="number-pad"
-                maxLength={i === 0 ? CODE_LEN : 1}
-                textContentType={i === 0 ? 'oneTimeCode' : 'none'}
-                autoComplete={i === 0 ? 'sms-otp' : 'off'}
-                selectTextOnFocus
-                autoFocus={i === 0}
-                returnKeyType={i === CODE_LEN - 1 ? 'done' : 'next'}
-                onSubmitEditing={() => i === CODE_LEN - 1 && submit()}
-              />
-            ))}
-          </Animated.View>
+          {/* Box row — the real TextInput sits on top, transparent */}
+          <View style={s.codeWrap}>
+            <Animated.View
+              style={[s.codeRow, { transform: [{ translateX: shake }] }]}
+              pointerEvents="none"
+            >
+              {digits.map((d, i) => {
+                const isActive = focused && i === Math.min(code.length, CODE_LEN - 1)
+                const isFilled = i < code.length
+                return (
+                  <View
+                    key={i}
+                    style={[
+                      s.box,
+                      isFilled && s.boxFilled,
+                      isActive && s.boxActive,
+                      !!displayError && s.boxError,
+                    ]}
+                  >
+                    {isFilled
+                      ? <Text style={s.boxDigit}>{d}</Text>
+                      : isActive
+                        ? <View style={s.cursor} />
+                        : null
+                    }
+                  </View>
+                )
+              })}
+            </Animated.View>
 
-          {displayError && <Text style={styles.error}>{displayError}</Text>}
+            {/* Transparent full-size input overlaid on the boxes */}
+            <TextInput
+              ref={inputRef}
+              value={code}
+              onChangeText={(v) => {
+                setError(null)
+                setCode(v.replace(/\D/g, '').slice(0, CODE_LEN))
+              }}
+              keyboardType="number-pad"
+              maxLength={CODE_LEN}
+              textContentType="oneTimeCode"
+              autoComplete="sms-otp"
+              autoFocus
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              style={s.overlayInput}
+              caretHidden
+            />
+          </View>
 
-          <View style={styles.resendRow}>
-            <Text style={styles.resendLabel}>Didn't get it?</Text>
+          {displayError ? <Text style={s.error}>{displayError}</Text> : null}
+
+          <View style={s.resendRow}>
+            <Text style={s.resendLabel}>Didn't get it?</Text>
             <Pressable onPress={onResend} disabled={secsLeft > 0}>
-              <Text style={[styles.resendLink, secsLeft > 0 && styles.resendLinkDisabled]}>
+              <Text style={[s.resendLink, secsLeft > 0 && s.resendLinkDisabled]}>
                 {secsLeft > 0 ? `Resend in ${secsLeft}s` : 'Resend'}
               </Text>
             </Pressable>
           </View>
         </ScrollView>
 
-        <Pressable
-          style={[styles.cta, !canSubmit && styles.ctaDisabled]}
-          onPress={submit}
-          disabled={!canSubmit}
-        >
-          {verifying ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={[styles.ctaText, !canSubmit && styles.ctaTextDisabled]}>Verify</Text>
-          )}
-        </Pressable>
+        {/* Verify button with bottom padding */}
+        <View style={[s.bottomBar, { paddingBottom: Math.max(insets.bottom, tokens.spacing[5]) }]}>
+          <Pressable
+            style={[s.cta, !canSubmit && s.ctaDisabled]}
+            onPress={() => doSubmit(code)}
+            disabled={!canSubmit}
+          >
+            {verifying
+              ? <ActivityIndicator color="#000" />
+              : <Text style={[s.ctaText, !canSubmit && s.ctaTextDisabled]}>Verify</Text>
+            }
+          </Pressable>
+        </View>
       </View>
     </KeyboardAvoidingView>
   )
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   flex: { flex: 1, backgroundColor: tokens.color.bg },
   root: { flex: 1, backgroundColor: tokens.color.bg, paddingHorizontal: tokens.spacing[5] },
   scrollContent: { flexGrow: 1, paddingBottom: tokens.spacing[5] },
   back: { paddingVertical: tokens.spacing[2] },
   backText: { color: tokens.color.text, fontSize: tokens.fontSize.md },
+
   title: {
     color: tokens.color.text,
     fontSize: tokens.fontSize.xl,
@@ -214,25 +223,60 @@ const styles = StyleSheet.create({
     marginTop: tokens.spacing[2],
     marginBottom: tokens.spacing[6],
   },
+
+  // Container that stacks boxes + transparent input
+  codeWrap: {
+    height: 68,
+    marginBottom: tokens.spacing[4],
+  },
   codeRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: tokens.spacing[2],
+    gap: 10,
+    justifyContent: 'center',
+    height: 68,
   },
   box: {
-    flex: 1,
-    height: 64,
-    borderRadius: tokens.radius.md,
+    width: 48,
+    height: 68,
+    borderRadius: 14,
     backgroundColor: tokens.color.surface,
-    color: tokens.color.text,
-    fontSize: tokens.fontSize.xl,
-    fontWeight: '700',
-    textAlign: 'center',
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: tokens.color.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  boxFilled: { borderColor: tokens.color.accent },
-  boxError: { borderColor: tokens.color.danger },
+  boxFilled: {
+    borderColor: tokens.color.blue,
+    backgroundColor: tokens.color.blue + '12',
+  },
+  boxActive: {
+    borderColor: tokens.color.blue,
+    backgroundColor: tokens.color.blue + '12',
+  },
+  boxError: {
+    borderColor: tokens.color.danger,
+    backgroundColor: tokens.color.danger + '12',
+  },
+  boxDigit: {
+    color: tokens.color.text,
+    fontSize: 26,
+    fontWeight: '800',
+    lineHeight: 32,
+  },
+  cursor: {
+    width: 2,
+    height: 28,
+    backgroundColor: tokens.color.blue,
+    borderRadius: 1,
+  },
+
+  // Sits on top of the boxes, captures input, fully transparent
+  overlayInput: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0,
+    color: 'transparent',
+  } as any,
+
   error: {
     color: tokens.color.danger,
     fontSize: tokens.fontSize.sm,
@@ -246,15 +290,19 @@ const styles = StyleSheet.create({
     marginTop: tokens.spacing[5],
   },
   resendLabel: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm },
-  resendLink: { color: tokens.color.accent, fontWeight: '700', fontSize: tokens.fontSize.sm },
+  resendLink: { color: tokens.color.blue, fontWeight: '700', fontSize: tokens.fontSize.sm },
   resendLinkDisabled: { color: tokens.color.textMuted },
+
+  bottomBar: {
+    paddingTop: tokens.spacing[4],
+    paddingHorizontal: 0,
+  },
   cta: {
     height: 56,
     borderRadius: tokens.radius.pill,
     backgroundColor: tokens.color.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: tokens.spacing[3],
   },
   ctaDisabled: { backgroundColor: tokens.color.surface2 },
   ctaText: { color: '#000', fontWeight: '800', fontSize: tokens.fontSize.md },

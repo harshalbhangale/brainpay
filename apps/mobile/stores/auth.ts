@@ -41,6 +41,9 @@ type AuthState = {
   phone: string | null
   accountId: string | null
   accountType: AccountType
+  persona: Record<string, unknown> | null
+  /** True when accountType is set AND persona has a name — onboarding is done. */
+  onboardingComplete: boolean
   hasPendingInvite: boolean
   isNewUser: boolean
   errorMessage: string | null
@@ -49,6 +52,7 @@ type AuthState = {
   setStatus: (s: AuthStatus) => void
   setPhone: (p: string | null) => void
   setAccountType: (t: AccountType) => void
+  setPersona: (p: Record<string, unknown>) => void
   sendCode: (phone: string) => Promise<void>
   verifyCode: (code: string) => Promise<void>
   resend: () => Promise<void>
@@ -71,18 +75,31 @@ async function jsonOrThrow(res: Response, op: string): Promise<unknown> {
   return res.json()
 }
 
+function isOnboardingComplete(accountType: AccountType, persona: Record<string, unknown> | null): boolean {
+  return !!accountType && !!persona && typeof persona.name === 'string' && persona.name.length > 0
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'idle',
   phone: null,
   accountId: null,
   accountType: null,
+  persona: null,
+  onboardingComplete: false,
   hasPendingInvite: false,
   isNewUser: false,
   errorMessage: null,
 
   setStatus: (status) => set({ status }),
   setPhone: (phone) => set({ phone }),
-  setAccountType: (accountType) => set({ accountType }),
+  setAccountType: (accountType) => set((s) => ({
+    accountType,
+    onboardingComplete: isOnboardingComplete(accountType, s.persona),
+  })),
+  setPersona: (persona) => set((s) => ({
+    persona,
+    onboardingComplete: isOnboardingComplete(s.accountType, persona),
+  })),
 
   sendCode: async (phone) => {
     set({ status: 'sendingCode', phone, errorMessage: null })
@@ -145,6 +162,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       status: 'authenticated',
       accountId: body.account.id,
       accountType: body.account.accountType,
+      persona: body.account.persona,
+      onboardingComplete: isOnboardingComplete(body.account.accountType, body.account.persona),
       isNewUser: body.isNewUser,
       hasPendingInvite,
     })
@@ -169,6 +188,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       phone: null,
       accountId: null,
       accountType: null,
+      persona: null,
+      onboardingComplete: false,
       hasPendingInvite: false,
       isNewUser: false,
       errorMessage: null,
@@ -188,6 +209,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         status: 'authenticated',
         accountId: account.id,
         accountType: account.accountType,
+        persona: account.persona,
+        onboardingComplete: isOnboardingComplete(account.accountType, account.persona),
         phone: account.phone,
       })
     } catch {

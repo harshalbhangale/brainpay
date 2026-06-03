@@ -1,7 +1,12 @@
 // Barrel for shared mobile components.
+export { ActionButton } from './ActionButton'
 export { AnimatedNumber } from './AnimatedNumber'
 export { ApplePayCheckout } from './ApplePayCheckout'
 export { ChatBubble, TypingBubble } from './ChatBubble'
 export { Confetti } from './Confetti'
+export { EmptyState } from './EmptyState'
+export { HotstarTabBar, TAB_BAR_TOTAL_HEIGHT } from './TabBar'
+export { ScreenHeader } from './ScreenHeader'
+export { SectionLabel } from './SectionLabel'
 export { SlidingWizard } from './SlidingWizard'
 export { VoiceMic } from './VoiceMic'

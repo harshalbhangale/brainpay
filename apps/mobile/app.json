@@ -6,13 +6,16 @@
     "scheme": "brainpay",
     "platforms": [
       "ios",
-      "android"
+      "android",
+      "web"
     ],
     "ios": {
       "bundleIdentifier": "tech.brainpay.app",
+      "config": {
+        "googleMapsApiKey": "AIzaSyC6B7Ah7w9--GOkz-Q3G-XhSZMohQVdrjg"
+      },
       "supportsTablet": false,
       "associatedDomains": [
-        "applinks:brainpay.app",
         "applinks:brainpay.app"
       ],
       "infoPlist": {
@@ -23,16 +26,18 @@
       },
       "entitlements": {
         "com.apple.developer.nfc.readersession.formats": [
-          "TAG",
           "TAG"
         ]
       }
     },
     "android": {
       "package": "tech.brainpay.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyC6B7Ah7w9--GOkz-Q3G-XhSZMohQVdrjg"
+        }
+      },
       "permissions": [
-        "CAMERA",
-        "RECORD_AUDIO",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
@@ -65,6 +70,7 @@
       ],
       "expo-audio",
       "expo-asset",
+      "@config-plugins/react-native-webrtc",
       [
         "expo-notifications",
         {
@@ -91,6 +97,10 @@
     },
     "experiments": {
       "reactCompiler": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
     },
     "owner": "devs404testing"
   }

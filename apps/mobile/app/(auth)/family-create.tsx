@@ -4,11 +4,11 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { SlidingWizard } from '@/components/SlidingWizard'
 import { api } from '@/lib/api'
 import { useFamilyStore } from '@/stores/family'
-import { tokens } from '@/theme/tokens'
+import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
  * Family creation — Name → Avatar → Add first kid CTA.
- * On final slide tap "Add a kid" → routes to /(app)/parent/add-kid (Task 6)
+ * On final slide tap "Add a kid" → routes to /(app)/(tabs)/add-kid (Task 6)
  * which itself triggers the kid-persona wizard + invite send.
  */
 
@@ -44,7 +44,7 @@ export default function FamilyCreate() {
       setFamily(res.family)
       // After creation, route to the parent home (where they'll see the
       // populated empty-but-no-kids state with "+ Add another kid").
-      router.replace('/(app)/parent')
+      router.replace('/(app)/(tabs)')
     } catch (err) {
       setError(String(err))
       setCreating(false)

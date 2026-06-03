@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router'
+import { kidTheme } from '@/theme/tokens'
 
 /**
  * Auth flow: every step a fullscreen card. Navigation is push-based so
@@ -9,7 +10,7 @@ export default function AuthLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#000' },
+        contentStyle: { backgroundColor: kidTheme.color.bg },
       }}
     />
   )

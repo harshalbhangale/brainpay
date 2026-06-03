@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Plus, Target, Trophy } from 'lucide-react-native'
+import { ArrowLeft, Plus, Target, Trophy } from 'phosphor-react-native'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { kidTheme as tokens } from '@/theme/tokens'
@@ -84,11 +84,11 @@ export default function KidGoals() {
     <View style={[s.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={s.topBar}>
         <Pressable hitSlop={12} onPress={() => router.back()}>
-          <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} strokeWidth={1.5} />
+          <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} weight="bold" />
         </Pressable>
         <Text style={s.title}>My Goals</Text>
         <Pressable hitSlop={12} onPress={() => setAddOpen(true)}>
-          <Plus size={tokens.iconSize.xl} color={tokens.color.accent} strokeWidth={1.5} />
+          <Plus size={tokens.iconSize.xl} color={tokens.color.accent} weight="bold" />
         </Pressable>
       </View>
 
@@ -119,7 +119,7 @@ export default function KidGoals() {
           </>
         ) : (
           <View style={s.empty}>
-            <Target size={tokens.iconSize.hero} color={tokens.color.textMuted} strokeWidth={1.0} />
+            <Target size={tokens.iconSize.hero} color={tokens.color.textMuted} weight="duotone" />
             <Text style={s.emptyTitle}>No active goal</Text>
             <Text style={s.emptySub}>Set a goal to start saving towards something.</Text>
             <Pressable style={s.cta} onPress={() => setAddOpen(true)}>
@@ -133,7 +133,7 @@ export default function KidGoals() {
             <Text style={s.section}>COMPLETED</Text>
             {completedGoals.map((g) => (
               <View key={g.id} style={s.completedRow}>
-                <Trophy size={tokens.iconSize.md} color={tokens.color.coin} strokeWidth={1.5} />
+                <Trophy size={tokens.iconSize.md} color={tokens.color.coin} weight="fill" />
                 <Text style={s.completedName}>{g.name}</Text>
                 <Text style={s.completedBrains}>{g.targetBrains.toLocaleString()} 🧠</Text>
               </View>

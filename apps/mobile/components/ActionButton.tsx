@@ -3,10 +3,11 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { haptic } from '@/lib/haptics'
 import { tokens } from '@/theme/tokens'
 
-type LucideIcon = React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>
+// Accepts either a Lucide or Phosphor icon component.
+type AnyIcon = React.ComponentType<any>
 
 type Props = {
-  icon: LucideIcon
+  icon: AnyIcon
   label: string
   gradient: [string, string]
   onPress: () => void
@@ -25,7 +26,7 @@ export function ActionButton({ icon: Icon, label, gradient, onPress, labelColor,
         onPress={press}
       >
         <View style={[t.iconTile, { backgroundColor: color + '1A' }]}>
-          <Icon size={22} color={color} strokeWidth={2} />
+          <Icon size={22} color={color} weight="duotone" />
         </View>
         <Text style={[t.label, labelColor ? { color: labelColor } : null]}>{label}</Text>
       </Pressable>
@@ -44,7 +45,7 @@ export function ActionButton({ icon: Icon, label, gradient, onPress, labelColor,
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         />
-        <Icon size={22} color="#fff" strokeWidth={1.8} />
+        <Icon size={22} color="#fff" weight="fill" />
       </View>
       <Text style={[s.label, labelColor ? { color: labelColor } : null]}>{label}</Text>
     </Pressable>

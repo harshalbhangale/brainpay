@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, ClipboardList, CircleArrowUp, Flame, Target, TrendingUp } from 'lucide-react-native'
+import { ArrowLeft, ClipboardText, ArrowCircleUp, Flame, Target, TrendUp } from 'phosphor-react-native'
 import { api } from '@/lib/api'
 import { useFamily } from '@/hooks/useFamily'
 import { AnimatedNumber } from '@/components'
@@ -76,7 +76,7 @@ export default function KidDetail() {
       {/* Top bar */}
       <View style={s.topBar}>
         <Pressable hitSlop={12} onPress={() => router.back()}>
-          <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} strokeWidth={1.5} />
+          <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} weight="bold" />
         </Pressable>
       </View>
 
@@ -95,13 +95,13 @@ export default function KidDetail() {
         {/* Action row */}
         <View style={s.actionRow}>
           <ActionBtn
-            icon={CircleArrowUp}
+            icon={ArrowCircleUp}
             label="Top Up"
             color={tokens.color.purple}
             onPress={() => router.push({ pathname: '/(app)/topup', params: { kidId } })}
           />
           <ActionBtn
-            icon={ClipboardList}
+            icon={ClipboardText}
             label="Add Chore"
             color={tokens.color.accent}
             onPress={() => router.push({ pathname: '/(app)/parent-chores', params: { kidId } })}
@@ -118,17 +118,17 @@ export default function KidDetail() {
         <Text style={s.section}>THIS WEEK</Text>
         <View style={s.weekStats}>
           <View style={s.weekStat}>
-            <TrendingUp size={tokens.iconSize.md} color={tokens.color.accent} strokeWidth={1.5} />
+            <TrendUp size={tokens.iconSize.md} color={tokens.color.accent} weight="duotone" />
             <Text style={[s.weekStatNum, { color: tokens.color.accent }]}>+{earned}</Text>
             <Text style={s.weekStatLabel}>earned</Text>
           </View>
           <View style={s.weekStat}>
-            <TrendingUp size={tokens.iconSize.md} color={tokens.color.danger} strokeWidth={1.5} style={{ transform: [{ rotate: '180deg' }] }} />
+            <TrendUp size={tokens.iconSize.md} color={tokens.color.danger} weight="duotone" style={{ transform: [{ rotate: '180deg' }] }} />
             <Text style={[s.weekStatNum, { color: tokens.color.danger }]}>-{spent}</Text>
             <Text style={s.weekStatLabel}>spent</Text>
           </View>
           <View style={s.weekStat}>
-            <Flame size={tokens.iconSize.md} color={tokens.color.orange} strokeWidth={1.5} />
+            <Flame size={tokens.iconSize.md} color={tokens.color.orange} weight="duotone" />
             <Text style={[s.weekStatNum, { color: tokens.color.orange }]}>0</Text>
             <Text style={s.weekStatLabel}>day streak</Text>
           </View>
@@ -179,13 +179,13 @@ export default function KidDetail() {
 }
 
 // ─── Subcomponents ────────────────────────────────────────────────────
-type LucideIcon = React.ComponentType<{ size?: number; color?: string; strokeWidth?: number; style?: object }>
+type IconType = React.ComponentType<{ size?: number; color?: string; weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone'; style?: object }>
 
-function ActionBtn({ icon: Icon, label, color, onPress }: { icon: LucideIcon; label: string; color: string; onPress: () => void }) {
+function ActionBtn({ icon: Icon, label, color, onPress }: { icon: IconType; label: string; color: string; onPress: () => void }) {
   return (
     <Pressable style={s.actionBtn} onPress={onPress}>
       <View style={[s.actionDot, { backgroundColor: color + '22', borderColor: color + '55' }]}>
-        <Icon size={tokens.iconSize.lg} color={color} strokeWidth={1.5} />
+        <Icon size={tokens.iconSize.lg} color={color} weight="duotone" />
       </View>
       <Text style={s.actionLabel}>{label}</Text>
     </Pressable>

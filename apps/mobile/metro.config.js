@@ -41,6 +41,7 @@ const WEB_STUBS = {
   '@stripe/stripe-react-native': path.resolve(projectRoot, 'shims/stripe-react-native.web.js'),
   'expo-secure-store': path.resolve(projectRoot, 'shims/expo-secure-store.web.js'),
   'react-native-webrtc': path.resolve(projectRoot, 'shims/react-native-webrtc.web.js'),
+  'react-native-maps': path.resolve(projectRoot, 'shims/react-native-maps.web.js'),
 }
 
 const originalResolveRequest = config.resolver.resolveRequest

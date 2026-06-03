@@ -13,21 +13,21 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   Camera,
-  ChevronRight,
-  ClipboardList,
+  CaretRight,
+  ClipboardText,
   Flame,
-  ScanLine,
+  Scan,
   ShoppingBag,
   ShoppingCart,
-  Sparkles,
+  Sparkle,
   Star,
   Target,
-  TrendingDown,
-  TrendingUp,
+  TrendDown,
+  TrendUp,
   Users,
   Wallet,
-  Zap,
-} from 'lucide-react-native'
+  Lightning,
+} from 'phosphor-react-native'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
@@ -126,12 +126,12 @@ export default function KidHome() {
         {/* Top bar */}
         <View style={s.topBar}>
           <Pressable style={s.streakChip}>
-            <Flame size={15} color={tokens.color.orange} strokeWidth={2.5} />
+            <Flame size={15} color={tokens.color.orange} weight="fill" />
             <Text style={s.streakText}>{streak} day streak</Text>
           </Pressable>
           <View style={s.topBarRight}>
             <Pressable style={s.iconBtn} onPress={() => router.push('/(app)/cart')}>
-              <ShoppingCart size={19} color={tokens.color.text} strokeWidth={1.8} />
+              <ShoppingCart size={19} color={tokens.color.text} weight="duotone" />
               {cartCount > 0 && (
                 <View style={s.cartBadge}>
                   <Text style={s.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
@@ -170,13 +170,13 @@ export default function KidHome() {
             label="Missions"
           />
           <StatCard
-            icon={Sparkles}
+            icon={Sparkle}
             color={tokens.color.accent}
             value={brainPoints.toLocaleString()}
             label="Brain Score"
           />
           <StatCard
-            icon={TrendingUp}
+            icon={TrendUp}
             color={tokens.color.blue}
             value={awayFromGoal !== null ? `$${(awayFromGoal / 100).toFixed(0)}` : '—'}
             label="To goal"
@@ -204,7 +204,7 @@ export default function KidHome() {
             onPress={() => router.push('/(app)/goals')}
           />
           <ActionButton
-            icon={Sparkles}
+            icon={Sparkle}
             label="Ask PAL"
             variant="tile"
             gradient={[tokens.color.pink, tokens.color.pink + 'AA']}
@@ -228,13 +228,13 @@ export default function KidHome() {
           onPress={() => router.push('/(app)/chores')}
         >
           <View style={s.missionIconWrap}>
-            <ClipboardList size={20} color={tokens.color.purple} strokeWidth={2} />
+            <ClipboardText size={20} color={tokens.color.purple} weight="duotone" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.missionTitle}>My Missions</Text>
             <Text style={s.missionSub}>Complete missions to earn Brain Points</Text>
           </View>
-          <ChevronRight size={18} color={tokens.color.textMuted} strokeWidth={2} />
+          <CaretRight size={18} color={tokens.color.textMuted} weight="bold" />
         </Pressable>
 
         {/* Grow tile */}
@@ -243,13 +243,13 @@ export default function KidHome() {
           onPress={() => router.push('/(app)/grow')}
         >
           <View style={[s.missionIconWrap, { backgroundColor: tokens.color.primary + '1A' }]}>
-            <TrendingUp size={20} color={tokens.color.primary} strokeWidth={2.4} />
+            <TrendUp size={20} color={tokens.color.primary} weight="duotone" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.missionTitle}>Grow your money</Text>
             <Text style={s.missionSub}>Practice investing with Brain Points</Text>
           </View>
-          <ChevronRight size={18} color={tokens.color.textMuted} strokeWidth={2} />
+          <CaretRight size={18} color={tokens.color.textMuted} weight="bold" />
         </Pressable>
 
         {/* Grow tile */}
@@ -258,13 +258,13 @@ export default function KidHome() {
           onPress={() => router.push('/(app)/grow')}
         >
           <View style={[s.missionIconWrap, { backgroundColor: tokens.color.primary + '1A' }]}>
-            <TrendingUp size={20} color={tokens.color.primary} strokeWidth={2.4} />
+            <TrendUp size={20} color={tokens.color.primary} weight="duotone" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.missionTitle}>Grow your money</Text>
             <Text style={s.missionSub}>Practice investing with Brain Points</Text>
           </View>
-          <ChevronRight size={18} color={tokens.color.textMuted} strokeWidth={2} />
+          <CaretRight size={18} color={tokens.color.textMuted} weight="bold" />
         </Pressable>
 
         {/* Today's activity */}
@@ -275,7 +275,7 @@ export default function KidHome() {
 
         {todayEntries.length === 0 ? (
           <View style={s.emptyToday}>
-            <ScanLine size={28} color={tokens.color.textMuted} strokeWidth={1.5} />
+            <Scan size={28} color={tokens.color.textMuted} weight="duotone" />
             <Text style={s.emptyTodayText}>Scan something to start earning</Text>
           </View>
         ) : (
@@ -290,7 +290,11 @@ export default function KidHome() {
   )
 }
 
-type LucideIcon = React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>
+type IconType = React.ComponentType<{
+  size?: number
+  color?: string
+  weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone'
+}>
 
 function StatCard({
   icon: Icon,
@@ -298,7 +302,7 @@ function StatCard({
   value,
   label,
 }: {
-  icon: LucideIcon
+  icon: IconType
   color: string
   value: string
   label: string
@@ -306,7 +310,7 @@ function StatCard({
   return (
     <View style={s.statCard}>
       <View style={[s.statIconWrap, { backgroundColor: color + '1A' }]}>
-        <Icon size={16} color={color} strokeWidth={2.2} />
+        <Icon size={16} color={color} weight="duotone" />
       </View>
       <Text style={s.statValue}>{value}</Text>
       <Text style={s.statLabel}>{label}</Text>
@@ -325,12 +329,12 @@ function ActivityRow({
   const color = isPositive ? tokens.color.trafficGreen : tokens.color.danger
 
   let label = ''
-  let Icon: LucideIcon = Wallet
+  let Icon: IconType = Wallet
   let iconColor: string = tokens.color.textMuted
 
   if (entry.kind === 'topup' || entry.kind === 'topup_stripe') {
     label = meta.note ? `Top up — ${meta.note}` : 'Top up received'
-    Icon = TrendingUp
+    Icon = TrendUp
     iconColor = tokens.color.trafficGreen
   } else if (entry.kind === 'cart_checkout') {
     label = `Bought ${meta.itemName ?? 'item'}`
@@ -338,22 +342,22 @@ function ActivityRow({
     iconColor = tokens.color.orange
   } else if (entry.kind === 'scan_skip_reward') {
     label = `Skipped ${meta.itemName ?? 'junk'}`
-    Icon = Zap
+    Icon = Lightning
     iconColor = tokens.color.purple
   } else if (entry.kind === 'chore_payout') {
     label = `Mission: ${meta.choreTitle ?? 'done'}`
-    Icon = ClipboardList
+    Icon = ClipboardText
     iconColor = tokens.color.blue
   } else {
     label = entry.kind.replace(/_/g, ' ')
-    Icon = isPositive ? TrendingUp : TrendingDown
+    Icon = isPositive ? TrendUp : TrendDown
     iconColor = color
   }
 
   return (
     <View style={s.activityRow}>
       <View style={[s.activityIconWrap, { backgroundColor: iconColor + '1A' }]}>
-        <Icon size={14} color={iconColor} strokeWidth={2} />
+        <Icon size={14} color={iconColor} weight="duotone" />
       </View>
       <Text style={s.activityLabel}>{label}</Text>
       <View style={[s.activityDeltaWrap, { backgroundColor: color + '18' }]}>

@@ -23,11 +23,14 @@
     "web": "expo start --web",
     "build:ios": "eas build --platform ios",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .expo dist"
+    "clean": "rm -rf .expo dist",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@brainpal/shared": "workspace:*",
     "@expo/metro-runtime": "~6.1.2",
+    "@siteed/audio-studio": "^3.2.0",
     "@stripe/stripe-react-native": "0.50.3",
     "@supabase/supabase-js": "2.46.1",
     "@tanstack/react-query": "5.62.7",
@@ -57,16 +60,18 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-gesture-handler": "~2.28.0",
     "react-native-maps": "1.20.1",
     "react-native-nfc-manager": "3.14.14",
     "react-native-qrcode-svg": "^6.3.21",
-    "react-native-reanimated": "~3.16.0",
+    "react-native-reanimated": "~4.1.7",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "^15.12.1",
     "react-native-url-polyfill": "2.0.0",
     "react-native-web": "^0.21.2",
     "react-native-webrtc": "124.0.5",
+    "react-native-worklets": "0.5.1",
     "zustand": "5.0.2"
   },
   "devDependencies": {

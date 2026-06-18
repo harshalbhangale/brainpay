@@ -1,0 +1,69 @@
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../../lib/api'
+import { audSigned, relativeTime } from '../../lib/format'
+import { kidName, type FeedResponse, type LedgerEntry, type Member, type Subject } from './types'
+
+function describe(entry: LedgerEntry): { icon: string; label: string } {
+  const md = (entry.metadata ?? {}) as Record<string, unknown>
+  switch (entry.kind) {
+    case 'chore_payout':
+      return { icon: '✅', label: (md.choreTitle as string) ? `Chore: ${md.choreTitle}` : 'Chore reward' }
+    case 'topup':
+    case 'topup_stripe':
+      return { icon: '💰', label: (md.note as string) || 'Top-up' }
+    case 'cart_checkout':
+      return { icon: '🛒', label: (md.itemName as string) || 'Purchase' }
+    case 'adjustment':
+      return { icon: '⚙️', label: (md.note as string) || 'Adjustment' }
+    default:
+      return { icon: '•', label: entry.kind.replace(/_/g, ' ') }
+  }
+}
+
+export function ActivityTab({ subject, members }: { subject: Subject; members: Member[] }) {
+  const key = subject.kind === 'kid' ? subject.accountId : 'family'
+  const url =
+    subject.kind === 'kid'
+      ? `/family/feed?kidId=${subject.accountId}&limit=100`
+      : '/family/feed?limit=100'
+
+  const q = useQuery({ queryKey: ['feed', key], queryFn: () => api<FeedResponse>(url) })
+  const entries = q.data?.entries ?? []
+  const nameById = new Map(members.map((m) => [m.accountId, kidName(m)]))
+  const showWho = subject.kind === 'family'
+
+  return (
+    <div className="p-5">
+      <h2 className="mb-4 text-xs font-bold uppercase tracking-wide text-muted">Activity</h2>
+
+      {q.isLoading && <p className="text-center text-sm text-muted">Loading…</p>}
+      {!q.isLoading && entries.length === 0 && (
+        <p className="rounded-2xl bg-surface px-4 py-6 text-center text-sm text-muted">No transactions yet.</p>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {entries.map((e) => {
+          const { icon, label } = describe(e)
+          const positive = e.brainsDelta >= 0
+          return (
+            <div key={e.id} className="flex items-center gap-3 rounded-2xl bg-surface px-4 py-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface2 text-lg">
+                {icon}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-ink">{label}</div>
+                <div className="text-xs text-muted">
+                  {showWho ? `${nameById.get(e.accountId) ?? 'Member'} · ` : ''}
+                  {relativeTime(e.createdAt)}
+                </div>
+              </div>
+              <div className={`text-sm font-bold ${positive ? 'text-accent' : 'text-danger'}`}>
+                {audSigned(e.brainsDelta)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}

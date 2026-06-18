@@ -1,0 +1,32 @@
+{
+  "name": "@brainpal/web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist node_modules/.vite"
+  },
+  "dependencies": {
+    "@brainpal/shared": "workspace:*",
+    "@tanstack/react-query": "^5.62.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.1.1",
+    "zod": "3.24.2",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@brainpal/config": "workspace:*",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "5.7.3",
+    "vite": "^7.1.0"
+  }
+}

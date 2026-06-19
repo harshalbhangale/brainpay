@@ -1,7 +1,6 @@
 {
-  "framework": "vite",
+  "buildCommand": "pnpm turbo run build --filter=@brainpal/web",
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "cd ../.. && pnpm turbo run build --filter=@brainpal/web",
-  "outputDirectory": "dist",
+  "outputDirectory": "apps/web/dist",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }

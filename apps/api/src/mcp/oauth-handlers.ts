@@ -64,57 +64,46 @@ export function handleAuthorize(req: IncomingMessage, res: ServerResponse) {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BrainPal — Connect</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, sans-serif; background: #f8f9fa; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-  .card { background: white; border-radius: 16px; padding: 32px; max-width: 380px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-  h1 { font-size: 20px; margin-bottom: 4px; }
-  p { color: #666; font-size: 14px; margin-bottom: 24px; }
-  label { font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px; }
-  input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; margin-bottom: 16px; }
-  button { width: 100%; padding: 14px; background: #10b981; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
-  button:hover { background: #059669; }
-  .error { color: #dc2626; font-size: 13px; margin-bottom: 12px; display: none; }
-  #step2 { display: none; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,sans-serif;background:#f8f9fa;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .card{background:white;border-radius:16px;padding:32px;max-width:380px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,0.08)}
+  h1{font-size:20px;margin-bottom:4px}
+  p{color:#666;font-size:14px;margin-bottom:24px}
+  label{font-size:13px;font-weight:500;display:block;margin-bottom:6px}
+  .phone-row{display:flex;gap:8px;margin-bottom:16px}
+  select{padding:12px 8px;border:1px solid #ddd;border-radius:8px;font-size:14px;background:#f9f9f9;min-width:90px}
+  input{width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:16px}
+  #otp{margin-bottom:16px;letter-spacing:4px;text-align:center;font-size:20px}
+  button{width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer}
+  button:hover{background:#059669}
+  button:disabled{background:#9ca3af;cursor:not-allowed}
+  .error{color:#dc2626;font-size:13px;margin-bottom:12px;display:none}
+  #step2{display:none}
 </style></head><body>
 <div class="card">
-  <h1>🧠 BrainPal</h1>
+  <h1>&#129504; BrainPal</h1>
   <p>Allow Claude to read your family's balances, spending, and chores.</p>
   <div id="step1">
     <label>Phone number</label>
-    <input type="tel" id="phone" placeholder="+91 70281 67389" />
+    <div class="phone-row">
+      <select id="cc"><option value="+91">&#127470;&#127475; +91</option><option value="+61">&#127462;&#127482; +61</option><option value="+1">&#127482;&#127480; +1</option><option value="+44">&#127468;&#127463; +44</option><option value="+65">&#127480;&#127468; +65</option><option value="+971">&#127462;&#127466; +971</option></select>
+      <input type="tel" id="phone" placeholder="7028167389" inputmode="numeric" autocomplete="tel-national"/>
+    </div>
     <div class="error" id="err1"></div>
-    <button onclick="sendOtp()">Send OTP</button>
+    <button id="btn1" onclick="sendOtp()">Send OTP</button>
   </div>
   <div id="step2">
     <label>Enter the 6-digit code</label>
-    <input type="text" id="otp" maxlength="6" inputmode="numeric" />
+    <input type="text" id="otp" maxlength="6" inputmode="numeric" placeholder="123456" autocomplete="one-time-code"/>
     <div class="error" id="err2"></div>
-    <button onclick="verifyOtp()">Connect</button>
+    <button id="btn2" onclick="verifyOtp()">Connect</button>
   </div>
 </div>
 <script>
-  const params = ${JSON.stringify({ clientId, redirectUri, state, codeChallenge, scope })};
-  async function sendOtp() {
-    let phone = document.getElementById('phone').value.trim();
-    if (!phone) return;
-    // Ensure E.164 format
-    if (!phone.startsWith('+')) { phone = '+91' + phone.replace(/^0+/,''); }
-    document.getElementById('phone').value = phone;
-    const r = await fetch('/auth/otp/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({phone}) });
-    if (r.ok) { document.getElementById('step1').style.display='none'; document.getElementById('step2').style.display='block'; }
-    else { const d = await r.json().catch(()=>({})); document.getElementById('err1').textContent = d.error || 'Failed to send OTP'; document.getElementById('err1').style.display='block'; }
-  }
-  async function verifyOtp() {
-    const phone = document.getElementById('phone').value.trim();
-    const code = document.getElementById('otp').value.trim();
-    const r = await fetch('/oauth/authorize/callback', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ phone, code, ...params })
-    });
-    const data = await r.json();
-    if (data.redirect) { window.location.href = data.redirect; }
-    else { document.getElementById('err2').textContent = data.error || 'Verification failed'; document.getElementById('err2').style.display='block'; }
-  }
+const params=${JSON.stringify({clientId,redirectUri,state,codeChallenge,scope})};
+function getPhone(){const cc=document.getElementById('cc').value;const raw=document.getElementById('phone').value.replace(/[^0-9]/g,'').replace(/^0+/,'');return cc+raw;}
+async function sendOtp(){const phone=getPhone();if(phone.length<8)return;document.getElementById('btn1').disabled=true;const r=await fetch('/auth/otp/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})});if(r.ok){document.getElementById('step1').style.display='none';document.getElementById('step2').style.display='block';}else{const d=await r.json().catch(()=>({}));document.getElementById('err1').textContent=d.error||'Failed to send OTP';document.getElementById('err1').style.display='block';document.getElementById('btn1').disabled=false;}}
+async function verifyOtp(){const phone=getPhone();const code=document.getElementById('otp').value.replace(/[^0-9]/g,'');if(code.length!==6)return;document.getElementById('btn2').disabled=true;const r=await fetch('/oauth/authorize/callback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,code,...params})});const data=await r.json();if(data.redirect){window.location.href=data.redirect;}else{document.getElementById('err2').textContent=data.error||'Verification failed';document.getElementById('err2').style.display='block';document.getElementById('btn2').disabled=false;}}
 </script></body></html>`
 
   res.writeHead(200, { 'Content-Type': 'text/html' })
@@ -254,8 +243,10 @@ export async function handleToken(req: IncomingMessage, res: ServerResponse) {
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 async function verifyOtpCode(phone: string, code: string): Promise<boolean> {
-  // Dev bypass
-  if (process.env.DEV_BYPASS_OTP === 'true' && code === '000000') return true
+  // Dev bypass — same logic as twilio-verify.ts
+  const bypassEnabled = process.env.DEV_BYPASS_OTP === 'true'
+  const bypassCode = process.env.DEV_BYPASS_CODE ?? '123456'
+  if (bypassEnabled && code === bypassCode) return true
 
   const sid = process.env.TWILIO_ACCOUNT_SID
   const token = process.env.TWILIO_AUTH_TOKEN

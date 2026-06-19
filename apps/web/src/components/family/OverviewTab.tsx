@@ -64,7 +64,7 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
 
   return (
     <div className="space-y-5 p-5">
-      <BalanceCard name={kidName(kid)} balance={kid.cachedBalance ?? 0} familyName={familyName} />
+      <BalanceCard name={kidName(kid)} balance={kid.cachedBalance ?? 0} familyName={familyName} accountId={kid.accountId} />
 
       <button
         onClick={() => setTopup(true)}
@@ -138,7 +138,7 @@ function FamilyOverview({
 
   return (
     <div className="space-y-5 p-5">
-      <BalanceCard name={parentName} balance={me?.cachedBalance ?? 0} familyName={familyName} />
+      <BalanceCard name={parentName} balance={me?.cachedBalance ?? 0} familyName={familyName} accountId={meAccountId} />
 
       <section>
         <div className="mb-2 flex items-center justify-between">

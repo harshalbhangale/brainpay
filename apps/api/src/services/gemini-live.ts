@@ -22,13 +22,44 @@ const env = loadEnv()
 let client: GoogleGenAI | null = null
 function getClient(): GoogleGenAI {
   if (!client) {
-    client = new GoogleGenAI({
-      vertexai: true,
-      project: env.GOOGLE_CLOUD_PROJECT,
-      location: env.GOOGLE_CLOUD_LOCATION,
-    })
+    // Auth resolution, in priority order:
+    //   1. GOOGLE_SA_JSON — Vertex AI with an explicit service-account key
+    //      (JSON string). Preferred on Fargate: Vertex billing uses the GCP
+    //      project's credits.
+    //   2. GEMINI_API_KEY — Gemini Developer API (simple key). Fallback when
+    //      no service account is available.
+    //   3. ADC — Vertex AI via application-default credentials (local dev,
+    //      `gcloud auth application-default login`).
+    if (env.GOOGLE_SA_JSON) {
+      client = new GoogleGenAI({
+        vertexai: true,
+        project: env.GOOGLE_CLOUD_PROJECT,
+        location: env.GOOGLE_CLOUD_LOCATION,
+        googleAuthOptions: { credentials: JSON.parse(env.GOOGLE_SA_JSON) },
+      })
+    } else if (env.GEMINI_API_KEY) {
+      client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY })
+    } else {
+      client = new GoogleGenAI({
+        vertexai: true,
+        project: env.GOOGLE_CLOUD_PROJECT,
+        location: env.GOOGLE_CLOUD_LOCATION,
+      })
+    }
   }
   return client
+}
+
+/** The live model id, normalized for whichever backend we're talking to. */
+function liveModel(): string {
+  // Vertex and the Developer API use different model ids for the Live API.
+  // Developer API: `gemini-2.0-flash-live-001`
+  // Vertex AI:     `gemini-live-2.5-flash`
+  // Only the Developer-API path (no SA, key present) uses the dev model id.
+  if (!env.GOOGLE_SA_JSON && env.GEMINI_API_KEY) {
+    return env.GEMINI_LIVE_MODEL_DEV || 'gemini-2.0-flash-live-001'
+  }
+  return env.GEMINI_LIVE_MODEL
 }
 
 /**
@@ -139,10 +170,11 @@ export async function connectLiveSession(
   callbacks: LiveCallbacks,
 ): Promise<Session> {
   const ai = getClient()
-  logger.info({ role, mode, model: env.GEMINI_LIVE_MODEL }, 'gemini_live.connecting')
+  const model = liveModel()
+  logger.info({ role, mode, model, backend: env.GEMINI_API_KEY ? 'dev-api' : 'vertex' }, 'gemini_live.connecting')
 
   return ai.live.connect({
-    model: env.GEMINI_LIVE_MODEL,
+    model,
     config: {
       responseModalities: [Modality.AUDIO],
       systemInstruction: buildInstructions(role, mode),

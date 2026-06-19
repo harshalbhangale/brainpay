@@ -9,7 +9,10 @@ const TABS: { id: FamilyTab; icon: string; label: string }[] = [
 
 export function BottomBar({ tab, onTab }: { tab: FamilyTab; onTab: (t: FamilyTab) => void }) {
   return (
-    <nav className="flex border-t border-surface2 bg-canvas">
+    <nav
+      className="flex shrink-0 border-t border-surface2 bg-canvas"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
       {TABS.map((t) => {
         const active = tab === t.id
         return (

@@ -122,6 +122,10 @@ joinRequests.post('/join-requests', requireAuth, async (c) => {
 
   // Create new join request (stored as invite with a special code).
   const code = `JR${generateCode()}`
+  // The `token` column is UNIQUE and notNull; join requests don't use it for
+  // JWT verification, but it must still be distinct per row — otherwise the
+  // second "add a kid" hits a duplicate-key violation. Derive it from a UUID.
+  const token = `jr_${globalThis.crypto.randomUUID()}`
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
 
   const [row] = await db
@@ -130,7 +134,7 @@ joinRequests.post('/join-requests', requireAuth, async (c) => {
       familyId,
       invitedBy: parentId,
       code,
-      token: 'join-request', // not used for JWT verification
+      token,
       expectedRole: role,
       kidSeed,
       initialTopup,

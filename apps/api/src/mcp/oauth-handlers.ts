@@ -95,11 +95,14 @@ export function handleAuthorize(req: IncomingMessage, res: ServerResponse) {
 <script>
   const params = ${JSON.stringify({ clientId, redirectUri, state, codeChallenge, scope })};
   async function sendOtp() {
-    const phone = document.getElementById('phone').value.trim();
+    let phone = document.getElementById('phone').value.trim();
     if (!phone) return;
+    // Ensure E.164 format
+    if (!phone.startsWith('+')) { phone = '+91' + phone.replace(/^0+/,''); }
+    document.getElementById('phone').value = phone;
     const r = await fetch('/auth/otp/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({phone}) });
     if (r.ok) { document.getElementById('step1').style.display='none'; document.getElementById('step2').style.display='block'; }
-    else { document.getElementById('err1').textContent='Failed to send OTP'; document.getElementById('err1').style.display='block'; }
+    else { const d = await r.json().catch(()=>({})); document.getElementById('err1').textContent = d.error || 'Failed to send OTP'; document.getElementById('err1').style.display='block'; }
   }
   async function verifyOtp() {
     const phone = document.getElementById('phone').value.trim();

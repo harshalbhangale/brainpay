@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar'
 import * as Linking from 'expo-linking'
 import { useEffect, useState } from 'react'
 import { Platform, View, StyleSheet } from 'react-native'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StripeProvider } from '@stripe/stripe-react-native'
 import { useAuthStore } from '@/stores/auth'
@@ -19,7 +20,7 @@ const NOTIFICATION_ROUTES: Record<string, string> = {
   feed:    '/(app)/(tabs)',
   home:    '/',
   goals:   '/(app)/goals',
-  chat:    '/(app)/(tabs)/pal',
+  chat:    '/(app)/(tabs)',
 }
 
 /**
@@ -38,20 +39,22 @@ export default function RootLayout() {
   }))
 
   return (
-    <SafeAreaProvider>
-      <StripeProvider
-        publishableKey={STRIPE_PK}
-        merchantIdentifier={STRIPE_MERCHANT}
-        urlScheme="brainpay"
-      >
-        <QueryClientProvider client={queryClient}>
-          <StatusBar style="light" />
-          <PhoneFrame>
-            <AuthGate />
-          </PhoneFrame>
-        </QueryClientProvider>
-      </StripeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StripeProvider
+          publishableKey={STRIPE_PK}
+          merchantIdentifier={STRIPE_MERCHANT}
+          urlScheme="brainpay"
+        >
+          <QueryClientProvider client={queryClient}>
+            <StatusBar style="dark" />
+            <PhoneFrame>
+              <AuthGate />
+            </PhoneFrame>
+          </QueryClientProvider>
+        </StripeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   )
 }
 
@@ -73,20 +76,14 @@ function PhoneFrame({ children }: { children: React.ReactNode }) {
 const frame = StyleSheet.create({
   outer: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0B0B0F',
+    backgroundColor: '#F3F4FA',
     // @ts-ignore web-only
     minHeight: '100vh',
   },
   device: {
     flex: 1,
     width: '100%',
-    maxWidth: 440,
     backgroundColor: '#F3F4FA',
-    overflow: 'hidden',
-    // @ts-ignore web-only
-    boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
   },
 })
 

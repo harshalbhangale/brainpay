@@ -13,12 +13,13 @@ export default function AppLayout() {
       }}
     >
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="dashboard" />
       <Stack.Screen name="camera" />
+      <Stack.Screen name="live" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
       <Stack.Screen name="chores" />
       <Stack.Screen name="chore-verify" />
       <Stack.Screen name="goals" />
       <Stack.Screen name="transactions" />
-      <Stack.Screen name="grow" />
       <Stack.Screen name="card-detail" />
       <Stack.Screen name="family-safety" />
       <Stack.Screen name="cart" />

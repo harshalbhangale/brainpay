@@ -150,7 +150,7 @@ async function beginSession(ws: WebSocket, state: CallState) {
         fromPhone: state.fromPhone || 'unknown',
         twilioCallSid: state.callSid,
         status: 'active',
-      })
+      } as any)
       .returning({ id: callSessions.id })
     state.sessionRowId = row?.id ?? null
   } catch (err) {
@@ -329,7 +329,7 @@ function appendTranscript(state: CallState, role: 'user' | 'assistant', content:
       .for('update')
     const arr = Array.isArray(row?.transcript) ? (row!.transcript as unknown[]) : []
     arr.push({ role, content })
-    await tx.update(callSessions).set({ transcript: arr }).where(eq(callSessions.id, state.sessionRowId!))
+    await tx.update(callSessions).set({ transcript: arr } as any).where(eq(callSessions.id, state.sessionRowId!))
   }).catch(() => undefined)
 }
 
@@ -339,7 +339,7 @@ async function endSession(ws: WebSocket, state: CallState) {
   if (state.sessionRowId) {
     await db
       .update(callSessions)
-      .set({ status: 'ended', endedAt: new Date() })
+      .set({ status: 'ended', endedAt: new Date() } as any)
       .where(eq(callSessions.id, state.sessionRowId))
       .catch(() => undefined)
   }

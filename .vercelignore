@@ -1,0 +1,16 @@
+node_modules
+.git
+.turbo
+.expo
+.DS_Store
+.env
+.env.local
+.env.*.local
+*.log
+apps/mobile
+apps/api/node_modules
+supabase/.temp
+infra
+docs
+.kiro
+.github

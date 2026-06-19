@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { db } from '../db'
-import { accounts } from '../db/schema'
+import { accounts, memberships } from '../db/schema'
 import { logger } from '../logger'
 import { mintToken } from '../services/jwt'
 import { verifyCheck, verifyStart } from '../services/twilio-verify'
@@ -84,6 +84,21 @@ auth.post('/auth/otp/check', async (c) => {
     return c.json({ error: 'account_upsert_failed' }, 500)
   }
 
+  // Recover role from an existing membership if accountType is missing, so an
+  // already-joined member is never sent back to role-select / join-request.
+  let accountType = account.accountType
+  if (!accountType) {
+    const [member] = await db
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(eq(memberships.accountId, account.id))
+      .limit(1)
+    if (member) {
+      accountType = member.role === 'kid' ? 'kid' : member.role === 'guardian' ? 'extended' : 'parent'
+      await db.update(accounts).set({ accountType }).where(eq(accounts.id, account.id))
+    }
+  }
+
   let token: string
   let expiresAt: number
   try {
@@ -102,7 +117,7 @@ auth.post('/auth/otp/check', async (c) => {
     account: {
       id: account.id,
       phone: account.phone,
-      accountType: account.accountType,
+      accountType,
       persona: account.persona,
       cachedBalance: account.cachedBalance,
     },

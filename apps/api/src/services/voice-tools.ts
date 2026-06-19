@@ -159,7 +159,7 @@ export async function toolCreateTask(opts: {
       title: title.trim().slice(0, 200),
       rewardBrains: reward,
       status: 'pending',
-    })
+    } as any)
     .returning()
 
   logger.info({ choreId: chore.id, childId, reward, via: 'voice_call' }, 'voice_tools.create_task')

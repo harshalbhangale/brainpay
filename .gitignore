@@ -15,3 +15,5 @@ supabase/.branches/
 
 # OS noise
 .DS_Store
+.vercel
+.env*

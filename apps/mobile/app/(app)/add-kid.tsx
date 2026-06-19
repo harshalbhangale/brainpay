@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,13 +18,11 @@ import { api } from '@/lib/api'
 import { kidTheme as tokens } from '@/theme/tokens'
 
 /**
- * Add a kid — new flow (no invite codes, no SMS).
+ * Add a kid — dead simple. Name + phone, nothing else.
  *
- * Parent enters kid's phone number.
- * Server stores a join request.
- * Kid sees it when they sign in and taps Accept.
- *
- * Simple. No Twilio. No invite codes.
+ * Parent enters the kid's name and phone number. The kid sees the request
+ * when they sign in and taps Accept. No starting balance, no invite codes,
+ * no SMS. Money is sent later from the parent dashboard.
  */
 
 const COUNTRY_CODES = [
@@ -34,6 +33,13 @@ const COUNTRY_CODES = [
   { flag: '🇳🇿', dial: '+64', name: 'NZ' },
 ]
 
+const ROLES = [
+  { key: 'kid', label: 'Kid', emoji: '🧒' },
+  { key: 'co_parent', label: 'Parent', emoji: '🧑' },
+  { key: 'guardian', label: 'Guardian', emoji: '🧓' },
+] as const
+type RoleKey = (typeof ROLES)[number]['key']
+
 export default function AddKid() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -43,12 +49,13 @@ export default function AddKid() {
   const [showCountryPicker, setShowCountryPicker] = useState(false)
   const [localPhone, setLocalPhone] = useState('')
   const [kidName, setKidName] = useState('')
-  const [initialTopup, setInitialTopup] = useState(100)
+  const [role, setRole] = useState<RoleKey>('kid')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const country = COUNTRY_CODES[countryIdx]
+  const roleLabel = ROLES.find((r) => r.key === role)?.label ?? 'Member'
   const e164 = `${country.dial}${localPhone.replace(/\D/g, '')}`
   const phoneValid = localPhone.replace(/\D/g, '').length >= 6
 
@@ -62,18 +69,19 @@ export default function AddKid() {
         method: 'POST',
         body: JSON.stringify({
           phone: e164,
-          initialTopup,
+          role,
           kidSeed: { name: kidName.trim() || undefined },
         }),
       })
       setSent(true)
       queryClient.invalidateQueries({ queryKey: ['family'] })
+      queryClient.invalidateQueries({ queryKey: ['pending-kids'] })
     } catch (err) {
       const msg = String(err)
       if (msg.includes('already_in_family')) {
-        setError('This number is already in your family.')
+        setError('This number is already added.')
       } else {
-        setError('Could not send request. Check the number and try again.')
+        setError('Could not add. Check the number and try again.')
       }
     } finally {
       setSending(false)
@@ -85,11 +93,10 @@ export default function AddKid() {
     return (
       <View style={[s.root, s.center, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <CircleCheck size={80} color={tokens.color.accent} strokeWidth={1.0} />
-        <Text style={s.sentTitle}>Request sent!</Text>
+        <Text style={s.sentTitle}>{kidName.trim() || roleLabel} added!</Text>
         <Text style={s.sentSub}>
-          When {kidName.trim() || 'your kid'} signs in with {e164}, they'll see your request and can accept it.
+          When they sign in with {e164}, they'll see your request and tap Accept.
         </Text>
-        <Text style={s.sentNote}>No SMS needed — they just sign in.</Text>
         <Pressable style={s.cta} onPress={() => router.back()}>
           <Text style={s.ctaText}>Done</Text>
         </Pressable>
@@ -108,21 +115,40 @@ export default function AddKid() {
           <Pressable hitSlop={12} onPress={() => router.back()}>
             <ArrowLeft size={tokens.iconSize.xl} color={tokens.color.text} strokeWidth={1.5} />
           </Pressable>
-          <Text style={s.title}>Add a kid</Text>
+          <Text style={s.title}>Add to family</Text>
           <View style={{ width: 24 }} />
         </View>
 
-        <View style={s.content}>
-          {/* How it works — purple for parent screens */}
+        <ScrollView
+          style={s.content}
+          contentContainerStyle={s.contentInner}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* How it works */}
           <View style={s.howItWorks}>
-            <UserPlus size={tokens.iconSize.lg} color={tokens.color.purple} strokeWidth={1.5} />
+            <UserPlus size={tokens.iconSize.lg} color={tokens.color.primary} strokeWidth={1.5} />
             <Text style={s.howText}>
-              Enter your kid's phone number. When they sign in, they'll see your request and tap Accept.
+              Just their name and number. They'll see your request when they sign in.
             </Text>
           </View>
 
-          {/* Kid name (optional) */}
-          <Text style={s.label}>Kid's name (optional)</Text>
+          {/* Role */}
+          <Text style={s.label}>ADD AS</Text>
+          <View style={s.roleRow}>
+            {ROLES.map((r) => {
+              const active = role === r.key
+              return (
+                <Pressable key={r.key} style={[s.roleChip, active && s.roleChipActive]} onPress={() => setRole(r.key)}>
+                  <Text style={s.roleEmoji}>{r.emoji}</Text>
+                  <Text style={[s.roleLabel, active && s.roleLabelActive]}>{r.label}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+
+          {/* Kid name */}
+          <Text style={s.label}>NAME</Text>
           <TextInput
             style={s.input}
             value={kidName}
@@ -131,10 +157,12 @@ export default function AddKid() {
             placeholderTextColor={tokens.color.textMuted}
             autoComplete="name"
             maxLength={20}
+            autoFocus
+            returnKeyType="next"
           />
 
           {/* Phone number */}
-          <Text style={s.label}>Kid's phone number</Text>
+          <Text style={s.label}>PHONE NUMBER</Text>
           <View style={s.phoneRow}>
             <Pressable
               style={s.countryBtn}
@@ -147,12 +175,14 @@ export default function AddKid() {
             <TextInput
               style={s.phoneInput}
               value={localPhone}
-              onChangeText={setLocalPhone}
+              onChangeText={(v) => setLocalPhone(v.replace(/\D/g, ''))}
               placeholder="412 345 678"
               placeholderTextColor={tokens.color.textMuted}
-              keyboardType="phone-pad"
-              autoFocus
+              keyboardType="number-pad"
+              inputMode="numeric"
               maxLength={15}
+              returnKeyType="done"
+              onSubmitEditing={sendRequest}
             />
           </View>
 
@@ -176,24 +206,8 @@ export default function AddKid() {
             </View>
           )}
 
-          {/* Starting Brains */}
-          <Text style={s.label}>Starting Brains</Text>
-          <View style={s.chipRow}>
-            {[0, 50, 100, 200, 500].map((amt) => (
-              <Pressable
-                key={amt}
-                style={[s.chip, initialTopup === amt && { backgroundColor: tokens.color.accent }]}
-                onPress={() => setInitialTopup(amt)}
-              >
-                <Text style={[s.chipText, initialTopup === amt && { color: '#000' }]}>
-                  {amt === 0 ? 'None' : `${amt} 🧠`}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
           {error && <Text style={s.error}>{error}</Text>}
-        </View>
+        </ScrollView>
 
         {/* CTA */}
         <View style={[s.bottom, { paddingBottom: Math.max(insets.bottom, tokens.spacing[4]) }]}>
@@ -203,14 +217,11 @@ export default function AddKid() {
             disabled={!phoneValid || sending}
           >
             {sending ? (
-              <ActivityIndicator color="#000" />
+              <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={s.ctaText}>Send request</Text>
+              <Text style={s.ctaText}>Add {roleLabel.toLowerCase()}</Text>
             )}
           </Pressable>
-          <Text style={s.hint}>
-            They'll see this when they sign in — no SMS needed
-          </Text>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -228,28 +239,41 @@ const s = StyleSheet.create({
   },
   title: { color: tokens.color.text, fontSize: tokens.fontSize.lg, fontWeight: '800' },
 
-  content: { flex: 1, paddingTop: tokens.spacing[3] },
+  content: { flex: 1 },
+  contentInner: { paddingTop: tokens.spacing[3], paddingBottom: tokens.spacing[5] },
 
   howItWorks: {
     flexDirection: 'row', alignItems: 'flex-start', gap: tokens.spacing[3],
-    backgroundColor: tokens.color.purple + '15',
+    backgroundColor: tokens.color.primary + '14',
     padding: tokens.spacing[4],
     borderRadius: tokens.radius.lg,
-    borderWidth: 1, borderColor: tokens.color.purple + '33',
+    borderWidth: 1, borderColor: tokens.color.primary + '33',
     marginBottom: tokens.spacing[5],
   },
   howText: { flex: 1, color: tokens.color.text, fontSize: tokens.fontSize.sm, lineHeight: 20 },
 
   label: {
-    color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, fontWeight: '700',
+    color: tokens.color.textMuted, fontSize: tokens.fontSize.xs, fontWeight: '800',
     letterSpacing: 1.2, marginBottom: tokens.spacing[2], marginTop: tokens.spacing[4],
   },
+
+  roleRow: { flexDirection: 'row', gap: tokens.spacing[2] },
+  roleChip: {
+    flex: 1, alignItems: 'center', gap: 4,
+    paddingVertical: tokens.spacing[3],
+    backgroundColor: tokens.color.surface, borderRadius: tokens.radius.md,
+    borderWidth: 1.5, borderColor: tokens.color.surface2,
+  },
+  roleChipActive: { borderColor: tokens.color.primary, backgroundColor: tokens.color.primary + '12' },
+  roleEmoji: { fontSize: 22 },
+  roleLabel: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm, fontWeight: '700' },
+  roleLabelActive: { color: tokens.color.primary },
 
   input: {
     backgroundColor: tokens.color.surface,
     height: 56, borderRadius: tokens.radius.md,
     paddingHorizontal: tokens.spacing[4],
-    color: tokens.color.text, fontSize: tokens.fontSize.md,
+    color: tokens.color.text, fontSize: tokens.fontSize.md, fontWeight: '600',
   },
 
   phoneRow: { flexDirection: 'row', gap: tokens.spacing[2] },
@@ -281,27 +305,16 @@ const s = StyleSheet.create({
   },
   countryPickerName: { flex: 1, color: tokens.color.text, fontSize: tokens.fontSize.md },
 
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing[2] },
-  chip: {
-    paddingHorizontal: tokens.spacing[3], paddingVertical: tokens.spacing[2],
-    backgroundColor: tokens.color.surface, borderRadius: tokens.radius.pill,
-  },
-  chipText: { color: tokens.color.text, fontSize: tokens.fontSize.sm, fontWeight: '700' },
-
   error: { color: tokens.color.danger, fontSize: tokens.fontSize.sm, marginTop: tokens.spacing[3] },
 
   bottom: { paddingTop: tokens.spacing[3] },
   cta: {
     height: 56, borderRadius: tokens.radius.pill,
-    backgroundColor: tokens.color.purple,
+    backgroundColor: tokens.color.primary,
     alignItems: 'center', justifyContent: 'center',
   },
   ctaDisabled: { opacity: 0.5 },
   ctaText: { color: '#fff', fontWeight: '800', fontSize: tokens.fontSize.md },
-  hint: {
-    color: tokens.color.textMuted, fontSize: tokens.fontSize.xs,
-    textAlign: 'center', marginTop: tokens.spacing[2],
-  },
 
   // Success state
   sentTitle: { color: tokens.color.text, fontSize: tokens.fontSize.xl, fontWeight: '800' },
@@ -310,5 +323,4 @@ const s = StyleSheet.create({
     textAlign: 'center', lineHeight: 22,
     paddingHorizontal: tokens.spacing[4],
   },
-  sentNote: { color: tokens.color.textMuted, fontSize: tokens.fontSize.sm, textAlign: 'center' },
 })

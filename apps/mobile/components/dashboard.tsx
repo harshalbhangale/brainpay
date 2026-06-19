@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native'
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { CaretRight, Users } from 'phosphor-react-native'
 import { haptic } from '@/lib/haptics'
@@ -193,55 +193,155 @@ const s = StyleSheet.create({
   cardRowSub: { color: t.color.textMuted, fontSize: 13, marginTop: 2 },
 })
 
-/** Premium Visa-style card: cardholder name, balance, chip, brand mark. */
+/** Hero payment card — clean light card with the hero character art centered,
+ *  the BrainPal logo (natural green) top-right, and card details below.
+ *  `colors` is kept for API compatibility (used as a soft accent tint). */
 export function PayCard({
   name,
   last4,
   balance,
-  colors = ['#0E7C66', '#16A07F'],
-  brand = 'VISA',
+  colors,
+  brand = 'BRAINPAL',
+  tier = 'Hero',
   onPress,
 }: {
   name: string
   last4: string
   balance: number
-  colors?: [string, string]
+  colors?: string[]
   brand?: string
+  tier?: string
   onPress?: () => void
 }) {
+  const accent = colors?.[1] ?? t.color.primary
   return (
-    <Pressable style={({ pressed }) => [pc.card, pressed && onPress ? { opacity: 0.95 } : null]} onPress={onPress} disabled={!onPress}>
-      <LinearGradient colors={colors} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+    <Pressable
+      style={({ pressed }) => [pc.card, pressed && onPress ? { opacity: 0.97, transform: [{ scale: 0.99 }] } : null]}
+      onPress={onPress}
+      disabled={!onPress}
+    >
+      {/* Soft light background */}
+      <LinearGradient
+        colors={['#FFFFFF', '#F4FAF7', '#E9F4EF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {/* Faint brand glow behind the hero */}
+      <View style={[pc.glow, { backgroundColor: accent + '22' }]} pointerEvents="none" />
+
+      {/* Top row: brand logo at the very top-right (natural colors) */}
       <View style={pc.topRow}>
-        <View style={pc.chip} />
-        <Text style={pc.bp}>BrainPal</Text>
+        <Image source={LOGO_IMG} style={pc.logo} resizeMode="contain" />
       </View>
-      <Text style={pc.balLabel}>Balance</Text>
-      <Text style={pc.bal}>${balance.toFixed(2)}</Text>
+
+      {/* Hero character art — centered */}
+      <View style={pc.artWrap} pointerEvents="none">
+        <Image source={HERO_ART_IMG} style={pc.art} resizeMode="contain" />
+      </View>
+
+      {/* Balance */}
+      <View>
+        <Text style={pc.balLabel}>Available balance</Text>
+        <Text style={pc.bal}>${balance.toFixed(2)}</Text>
+      </View>
+
+      {/* Card number */}
+      <Text style={pc.num}>••••  ••••  ••••  {last4}</Text>
+
+      {/* Bottom: cardholder + tier */}
       <View style={pc.bottomRow}>
         <View>
+          <Text style={pc.holderLabel}>CARDHOLDER</Text>
           <Text style={pc.name}>{name.toUpperCase()}</Text>
-          <Text style={pc.num}>•••• {last4}</Text>
         </View>
-        <Text style={pc.brand}>{brand}</Text>
+        <View style={[pc.tierPill, { backgroundColor: accent + '1A' }]}>
+          <Text style={[pc.tier, { color: accent }]}>{tier}</Text>
+        </View>
       </View>
     </Pressable>
   )
 }
 
+const HERO_ART_IMG = require('@/assets/images/captain-america-art.png')
+const LOGO_IMG = require('@/assets/images/logo.png')
+
+/**
+ * Build a 3-ring hero-shield palette from a single accent hex.
+ * Kept for API compatibility with existing callers.
+ */
+export function heroColors(accent?: string): [string, string, string] {
+  if (!accent) return ['#1E3A8A', '#3B82F6', '#93C5FD']
+  return [shade(accent, -0.35), accent, shade(accent, 0.45)]
+}
+
+// Lighten (amount > 0) or darken (amount < 0) a hex color.
+function shade(hex: string, amount: number): string {
+  const h = hex.replace('#', '')
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const num = parseInt(full, 16)
+  let r = (num >> 16) & 0xff
+  let g = (num >> 8) & 0xff
+  let b = num & 0xff
+  const adj = (c: number) =>
+    Math.max(0, Math.min(255, Math.round(amount < 0 ? c * (1 + amount) : c + (255 - c) * amount)))
+  r = adj(r); g = adj(g); b = adj(b)
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`
+}
+
 const pc = StyleSheet.create({
   card: {
-    borderRadius: 24, overflow: 'hidden', padding: t.spacing[5], minHeight: 200,
+    borderRadius: 24,
+    overflow: 'hidden',
+    padding: t.spacing[5],
+    minHeight: 230,
     justifyContent: 'space-between',
-    shadowColor: '#0E7C66', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 8,
+    marginBottom: t.spacing[5],
+    borderWidth: 1,
+    borderColor: 'rgba(16,58,51,0.08)',
+    shadowColor: '#103A33',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 10,
   },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  chip: { width: 38, height: 28, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.85)' },
-  bp: { color: 'rgba(255,255,255,0.9)', fontSize: t.fontSize.sm, fontWeight: '800', letterSpacing: 0.5 },
-  balLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '700', letterSpacing: 1, marginTop: t.spacing[3] },
-  bal: { color: '#fff', fontSize: 38, fontWeight: '900', letterSpacing: -1, marginTop: 2 },
-  bottomRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: t.spacing[4] },
-  name: { color: '#fff', fontSize: t.fontSize.md, fontWeight: '700', letterSpacing: 1.5 },
-  num: { color: 'rgba(255,255,255,0.85)', fontSize: t.fontSize.sm, letterSpacing: 2, marginTop: 4 },
-  brand: { color: '#fff', fontSize: 22, fontWeight: '900', fontStyle: 'italic', letterSpacing: 1 },
+
+  // Soft brand glow blob behind the hero art
+  glow: {
+    position: 'absolute',
+    top: -40,
+    right: -30,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+  },
+
+  topRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: 2 },
+  logo: { width: 116, height: 34 },
+
+  // Centered hero character
+  artWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 0,
+  },
+  art: { width: 150, height: 178, opacity: 0.96 },
+
+  balLabel: {
+    color: t.color.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 0.4, zIndex: 1,
+  },
+  bal: {
+    color: t.color.text, fontSize: 40, fontWeight: '900', letterSpacing: -1.5, marginTop: 2, zIndex: 1,
+  },
+
+  num: {
+    color: t.color.text, fontSize: 16, fontWeight: '800', letterSpacing: 2, zIndex: 1, opacity: 0.85,
+  },
+
+  bottomRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', zIndex: 1 },
+  holderLabel: { color: t.color.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  name: { color: t.color.text, fontSize: t.fontSize.md, fontWeight: '800', letterSpacing: 1, marginTop: 2 },
+  tierPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: t.radius.pill },
+  tier: { fontSize: t.fontSize.sm, fontWeight: '900', letterSpacing: 0.5 },
 })

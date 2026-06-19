@@ -80,9 +80,9 @@ export default function VoiceOnboard() {
     stop,
   } = useRealtimeWebRTC({ role, onComplete })
 
-  // If mic permission denied, fall back to the appropriate text-based flow
+  // Mic denied OR webrtc unavailable (Expo Go / stale dev build) → text-based flow
   useEffect(() => {
-    if (phase === 'no_permission') {
+    if (phase === 'no_permission' || phase === 'unsupported') {
       router.replace(role === 'kid' ? '/(auth)/kid-persona' : '/(auth)/parent-onboarding')
     }
   }, [phase, router, role])

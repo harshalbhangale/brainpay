@@ -16,6 +16,7 @@ import {
   CaretRight,
   ClipboardText,
   Flame,
+  MapPin,
   Scan,
   ShoppingBag,
   ShoppingCart,
@@ -36,7 +37,7 @@ import { useChores } from '@/hooks/useChores'
 import { api } from '@/lib/api'
 import { useWallet } from '@/hooks/useWallet'
 import { ActionButton } from '@/components/ActionButton'
-import { PayCard } from '@/components/dashboard'
+import { PayCard, heroColors } from '@/components/dashboard'
 import { FadeIn } from '@/components/ui'
 import { TAB_BAR_TOTAL_HEIGHT } from '@/components/TabBar'
 import { kidTheme as tokens } from '@/theme/tokens'
@@ -156,6 +157,8 @@ export default function KidHome() {
             name={name}
             last4={(accountId ?? '').replace(/\D/g, '').slice(-4) || '2734'}
             balance={audBalance}
+            colors={heroColors((persona as { color?: string }).color)}
+            tier="Hero"
             onPress={() => router.push('/(app)/transactions')}
           />
         </FadeIn>
@@ -209,7 +212,7 @@ export default function KidHome() {
             variant="tile"
             gradient={[tokens.color.pink, tokens.color.pink + 'AA']}
             labelColor={tokens.color.text}
-            onPress={() => router.push('/(app)/(tabs)/pal')}
+            onPress={() => router.push('/(app)/(tabs)')}
           />
           <ActionButton
             icon={Users}
@@ -237,32 +240,17 @@ export default function KidHome() {
           <CaretRight size={18} color={tokens.color.textMuted} weight="bold" />
         </Pressable>
 
-        {/* Grow tile */}
+        {/* Find Family tile */}
         <Pressable
           style={({ pressed }) => [s.missionTile, pressed && { opacity: 0.9 }]}
-          onPress={() => router.push('/(app)/grow')}
+          onPress={() => router.push('/(app)/family-safety')}
         >
-          <View style={[s.missionIconWrap, { backgroundColor: tokens.color.primary + '1A' }]}>
-            <TrendUp size={20} color={tokens.color.primary} weight="duotone" />
+          <View style={[s.missionIconWrap, { backgroundColor: tokens.color.blue + '1A' }]}>
+            <MapPin size={20} color={tokens.color.blue} weight="duotone" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.missionTitle}>Grow your money</Text>
-            <Text style={s.missionSub}>Practice investing with Brain Points</Text>
-          </View>
-          <CaretRight size={18} color={tokens.color.textMuted} weight="bold" />
-        </Pressable>
-
-        {/* Grow tile */}
-        <Pressable
-          style={({ pressed }) => [s.missionTile, pressed && { opacity: 0.9 }]}
-          onPress={() => router.push('/(app)/grow')}
-        >
-          <View style={[s.missionIconWrap, { backgroundColor: tokens.color.primary + '1A' }]}>
-            <TrendUp size={20} color={tokens.color.primary} weight="duotone" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={s.missionTitle}>Grow your money</Text>
-            <Text style={s.missionSub}>Practice investing with Brain Points</Text>
+            <Text style={s.missionTitle}>Find Family</Text>
+            <Text style={s.missionSub}>See where everyone is on the map</Text>
           </View>
           <CaretRight size={18} color={tokens.color.textMuted} weight="bold" />
         </Pressable>

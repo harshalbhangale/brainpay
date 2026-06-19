@@ -1,21 +1,21 @@
-import { Tabs } from 'expo-router'
-import { useAuthStore } from '@/stores/auth'
-import { HotstarTabBar } from '@/components/TabBar'
-import { tokens, kidTheme } from '@/theme/tokens'
+import { Stack } from 'expo-router'
+import { kidTheme as tokens } from '@/theme/tokens'
 
+/**
+ * The home group no longer hosts a bottom tab bar. The chat-first home
+ * (`RevealHome`) is the single screen here; every other surface is reached
+ * through its gesture-revealed Money panel / Surfaces drawer, or pushed onto
+ * the parent (app) stack.
+ */
 export default function TabsLayout() {
-  const accountType = useAuthStore((s) => s.accountType)
-  const isKid = accountType === 'kid'
-  const accent = isKid ? kidTheme.color.purple : tokens.color.purple
-
   return (
-    <Tabs
-      screenOptions={{ headerShown: false }}
-      tabBar={(props) => <HotstarTabBar {...props} accent={accent} light={isKid} />}
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: tokens.color.bg },
+      }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="pal" options={{ title: 'PAL' }} />
-      <Tabs.Screen name="scan" options={{ title: 'Scan' }} />
-    </Tabs>
+      <Stack.Screen name="index" />
+    </Stack>
   )
 }

@@ -50,6 +50,18 @@ const EnvSchema = z.object({
   BEDROCK_REGION: z.string().default('ap-southeast-2'),
   BEDROCK_MODEL_ID: z.string().default('apac.amazon.nova-lite-v1:0'),
 
+  // Vertex AI — Gemini Live API (real-time camera + voice).
+  // Auth via ADC (gcloud auth application-default login) locally, or the
+  // Fargate task role in prod. No key bound here; the Google SDK discovers it.
+  // NOTE: Live API requires the 'global' location for this project.
+  GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
+  GOOGLE_CLOUD_LOCATION: z.string().default('global'),
+  GEMINI_LIVE_MODEL: z.string().default('gemini-live-2.5-flash'),
+  VERTEX_LIVE_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v.toLowerCase() !== 'false'),
+
   // Voice pipeline kill-switch. When false, perception still fires detections
   // (coin overlay still appears) but Grok + ElevenLabs are skipped entirely.
   VOICE_ENABLED: z

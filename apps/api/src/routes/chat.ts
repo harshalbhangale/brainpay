@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db'
 import { accounts, chatMessages, chores, goals, memberships } from '../db/schema'
@@ -99,10 +99,15 @@ chat.post('/chat', async (c) => {
     ? (completionResult.value.choices[0]?.message?.content ?? "I'm having trouble thinking right now. Try again?")
     : "I'm having trouble thinking right now. Try again?"
 
-  // Persist both messages to chat history.
+  // Persist both messages to chat history. Stagger the timestamps by 1ms so
+  // the user message always sorts before the assistant reply — inserting both
+  // with defaultNow() gives them an identical created_at, which makes ordering
+  // by created_at non-deterministic (reply could render above the prompt).
+  const userAt = new Date()
+  const assistantAt = new Date(userAt.getTime() + 1)
   await db.insert(chatMessages).values([
-    { accountId, role: 'user', content: message },
-    { accountId, role: 'assistant', content: reply },
+    { accountId, role: 'user', content: message, createdAt: userAt },
+    { accountId, role: 'assistant', content: reply, createdAt: assistantAt },
   ])
 
   const requiresConfirmation = intent.kind !== 'query'
@@ -308,10 +313,28 @@ chat.get('/chat/history', async (c) => {
     })
     .from(chatMessages)
     .where(eq(chatMessages.accountId, accountId))
-    .orderBy(desc(chatMessages.createdAt))
+    // desc(createdAt) gets the newest rows for the limit; we reverse() below to
+    // display oldest-first. The asc(role) tiebreaker makes same-timestamp pairs
+    // come back as [assistant, user] pre-reverse, so they render [user, assistant].
+    .orderBy(desc(chatMessages.createdAt), asc(chatMessages.role))
     .limit(limit)
 
   return c.json({ messages: messages.reverse() })
+})
+
+// ─── DELETE /chat/history ─────────────────────────────────────────────
+// Clears all chat messages for the current account. Scoped to the
+// authenticated account only — a user can never delete another's chat.
+chat.delete('/chat/history', async (c) => {
+  const accountId = authedAccountId(c)
+
+  const deleted = await db
+    .delete(chatMessages)
+    .where(eq(chatMessages.accountId, accountId))
+    .returning({ id: chatMessages.id })
+
+  logger.info({ accountId, count: deleted.length }, 'chat.history.cleared')
+  return c.json({ ok: true, cleared: deleted.length })
 })
 
 // ─── POST /chat/transcribe ────────────────────────────────────────────

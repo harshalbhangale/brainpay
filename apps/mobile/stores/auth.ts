@@ -18,6 +18,38 @@ import { registerForPushNotifications } from '@/lib/push'
 const TOKEN_KEY = 'brainpal.auth.token'
 const ACCOUNT_KEY = 'brainpal.auth.account'
 
+/**
+ * Resilient SecureStore wrappers. On the iOS Simulator built without an Apple
+ * Developer team, the Keychain throws "A required entitlement isn't present".
+ * We fall back to an in-memory map so the app runs (session won't persist
+ * across launches) instead of crashing with uncaught promise rejections.
+ */
+const memoryStore = new Map<string, string>()
+
+async function secureGet(key: string): Promise<string | null> {
+  try {
+    return (await SecureStore.getItemAsync(key)) ?? null
+  } catch {
+    return memoryStore.get(key) ?? null
+  }
+}
+
+async function secureSet(key: string, value: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(key, value)
+  } catch {
+    memoryStore.set(key, value)
+  }
+}
+
+async function secureDelete(key: string): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(key)
+  } catch {
+    memoryStore.delete(key)
+  }
+}
+
 export type AuthStatus =
   | 'idle'
   | 'sendingCode'
@@ -143,8 +175,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     // Persist token + account locally.
-    await SecureStore.setItemAsync(TOKEN_KEY, body.token)
-    await SecureStore.setItemAsync(ACCOUNT_KEY, JSON.stringify(body.account))
+    await secureSet(TOKEN_KEY, body.token)
+    await secureSet(ACCOUNT_KEY, JSON.stringify(body.account))
 
     // Lookup pending join requests for this phone (replaces old invite check).
     let hasPendingInvite = false
@@ -179,8 +211,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY)
-    await SecureStore.deleteItemAsync(ACCOUNT_KEY)
+    await secureDelete(TOKEN_KEY)
+    await secureDelete(ACCOUNT_KEY)
     // Best-effort hit logout endpoint. Not awaited beyond a short timeout.
     fetch(apiUrl('/auth/logout'), { method: 'POST' }).catch(() => undefined)
     set({
@@ -197,26 +229,42 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   hydrateFromSession: async () => {
-    const token = await SecureStore.getItemAsync(TOKEN_KEY)
-    const accountRaw = await SecureStore.getItemAsync(ACCOUNT_KEY)
+    const token = await secureGet(TOKEN_KEY)
+    const accountRaw = await secureGet(ACCOUNT_KEY)
     if (!token || !accountRaw) {
       set({ status: 'idle' })
       return
     }
     try {
       const account = JSON.parse(accountRaw) as StoredAccount
+      const complete = isOnboardingComplete(account.accountType, account.persona)
       set({
         status: 'authenticated',
         accountId: account.id,
         accountType: account.accountType,
         persona: account.persona,
-        onboardingComplete: isOnboardingComplete(account.accountType, account.persona),
+        onboardingComplete: complete,
         phone: account.phone,
       })
+
+      // If onboarding isn't done, re-check pending join requests so the
+      // router can show the request (instead of a blank/role-select screen)
+      // on a cold start. Without this, hasPendingInvite is stale (false).
+      if (!complete) {
+        try {
+          const joinRes = await fetch(apiUrl('/join-requests/pending'), {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          if (joinRes.ok) {
+            const data = (await joinRes.json()) as { requests?: unknown[] }
+            set({ hasPendingInvite: (data.requests?.length ?? 0) > 0 })
+          }
+        } catch { /* non-fatal — router falls back to role-select */ }
+      }
     } catch {
       // Corrupt cache — drop and reset to idle.
-      await SecureStore.deleteItemAsync(TOKEN_KEY)
-      await SecureStore.deleteItemAsync(ACCOUNT_KEY)
+      await secureDelete(TOKEN_KEY)
+      await secureDelete(ACCOUNT_KEY)
       set({ status: 'idle' })
     }
   },
@@ -224,5 +272,5 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 /** Read the stored token (used by api.ts to attach Authorization header). */
 export async function getStoredToken(): Promise<string | null> {
-  return SecureStore.getItemAsync(TOKEN_KEY)
+  return secureGet(TOKEN_KEY)
 }

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  mediaDevices,
-  RTCPeerConnection,
-  RTCSessionDescription,
-  type MediaStream,
-} from 'react-native-webrtc'
 import { api } from '@/lib/api'
 import { requestMicPermission, configureAudioForRecording } from '@/lib/audio-mode'
+
+// react-native-webrtc is native-only. Guard the require so Expo Go, web, or a
+// dev build that hasn't compiled it yet degrade gracefully instead of crashing.
+let RNWebRTC: any = null
+try { RNWebRTC = require('react-native-webrtc') } catch { /* unavailable */ }
+export const webrtcAvailable = !!RNWebRTC?.RTCPeerConnection
 
 /**
  * useRealtimeWebRTC — live persona onboarding over OpenAI Realtime (GA, WebRTC).
@@ -21,7 +21,7 @@ import { requestMicPermission, configureAudioForRecording } from '@/lib/audio-mo
 
 export type RealtimePhase =
   | 'idle' | 'connecting' | 'ready' | 'listening'
-  | 'processing' | 'speaking' | 'done' | 'error' | 'no_permission'
+  | 'processing' | 'speaking' | 'done' | 'error' | 'no_permission' | 'unsupported'
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
 
@@ -39,9 +39,9 @@ export function useRealtimeWebRTC({ role, onComplete }: Options) {
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([])
   const [persona, setPersona] = useState<Record<string, unknown>>({})
 
-  const pcRef = useRef<RTCPeerConnection | null>(null)
-  const dcRef = useRef<ReturnType<RTCPeerConnection['createDataChannel']> | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const pcRef = useRef<any>(null)
+  const dcRef = useRef<any>(null)
+  const streamRef = useRef<any>(null)
   const completedRef = useRef(false)
   const pendingDoneRef = useRef(false)
   const replyBufferRef = useRef('')
@@ -109,6 +109,7 @@ export function useRealtimeWebRTC({ role, onComplete }: Options) {
 
   const connect = useCallback(async () => {
     if (completedRef.current) return
+    if (!RNWebRTC?.RTCPeerConnection) { setPhase('unsupported'); return }
 
     if (!(await requestMicPermission())) { setPhase('no_permission'); return }
     setPhase('connecting')
@@ -120,12 +121,12 @@ export function useRealtimeWebRTC({ role, onComplete }: Options) {
 
       await configureAudioForRecording()
 
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
+      const pc = new RNWebRTC.RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
       pcRef.current = pc
 
-      const stream = await mediaDevices.getUserMedia({ audio: true })
+      const stream = await RNWebRTC.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
-      stream.getTracks().forEach((t) => pc.addTrack(t, stream))
+      stream.getTracks().forEach((t: any) => pc.addTrack(t, stream))
 
       const dc = pc.createDataChannel('oai-events') as any
       dcRef.current = dc
@@ -147,7 +148,7 @@ export function useRealtimeWebRTC({ role, onComplete }: Options) {
       })
       if (!sdpRes.ok) throw new Error(`sdp ${sdpRes.status}`)
       const answer = await sdpRes.text()
-      await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answer }))
+      await pc.setRemoteDescription(new RNWebRTC.RTCSessionDescription({ type: 'answer', sdp: answer }))
     } catch {
       setPhase('error')
     }
@@ -155,7 +156,7 @@ export function useRealtimeWebRTC({ role, onComplete }: Options) {
 
   const stop = useCallback(async () => {
     completedRef.current = true
-    try { streamRef.current?.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
+    try { streamRef.current?.getTracks().forEach((t: any) => t.stop()) } catch { /* ignore */ }
     try { dcRef.current?.close() } catch { /* ignore */ }
     try { pcRef.current?.close() } catch { /* ignore */ }
     setPhase('idle')

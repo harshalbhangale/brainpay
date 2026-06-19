@@ -1,6 +1,6 @@
-import OpenAI from 'openai'
 import { loadEnv } from '../env'
 import { logger } from '../logger'
+import OpenAI from 'openai'
 
 /**
  * Personality LLM — OpenAI gpt-5.4-mini by default.

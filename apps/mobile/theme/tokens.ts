@@ -23,8 +23,10 @@ export const tokens = {
     trafficAmber: '#F59E0B',
     trafficRed: '#EF4444',
   },
-  radius: { sm: 8, md: 14, lg: 20, pill: 999 },
+  radius: { sm: 8, md: 14, lg: 20, xl: 28, pill: 999 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32, 8: 48 },
+  // Stacking order for the gesture-revealed home (chat → panels → scrim → drawer).
+  z: { base: 0, chat: 1, grabber: 5, panel: 20, scrim: 30, sheet: 40, drawer: 50 },
   font: { display: 'InterDisplay', body: 'Inter' },
   fontSize: { xs: 12, sm: 14, md: 16, lg: 20, xl: 28, '2xl': 40, hero: 56 },
   // Icon sizes — use with lucide-react-native

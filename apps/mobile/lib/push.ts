@@ -31,31 +31,31 @@ Notifications.setNotificationHandler({
  * Returns the token string, or null if permission was denied.
  */
 export async function registerForPushNotifications(): Promise<string | null> {
-  // Physical device required — simulators can't receive push.
-  // We still run through the flow so the token endpoint is exercised.
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'MoneyPal',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#3DDC84',
-    })
-  }
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync()
-  let finalStatus = existingStatus
-
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync()
-    finalStatus = status
-  }
-
-  if (finalStatus !== 'granted') {
-    // User denied — don't retry, don't crash.
-    return null
-  }
-
   try {
+    // Physical device required — simulators can't receive push.
+    // We still run through the flow so the token endpoint is exercised.
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'MoneyPal',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#3DDC84',
+      })
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync()
+    let finalStatus = existingStatus
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync()
+      finalStatus = status
+    }
+
+    if (finalStatus !== 'granted') {
+      // User denied — don't retry, don't crash.
+      return null
+    }
+
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
     })
@@ -69,7 +69,8 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
     return token
   } catch {
-    // Simulator or misconfigured project — non-fatal.
+    // Simulator (no APNS / Keychain entitlement) or misconfigured project —
+    // entirely non-fatal. Never throw into the auth flow.
     return null
   }
 }

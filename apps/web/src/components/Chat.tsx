@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { aud } from '../lib/format'
+import { LiveSession } from './LiveSession'
 
 type ChatMsg = { id: string; role: 'user' | 'assistant'; content: string }
 type Pal = { palId: string; line: string }
@@ -45,6 +46,7 @@ export function Chat() {
   const [pals, setPals] = useState<Pal[]>([])
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(true)
+  const [live, setLive] = useState<{ camera: boolean } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Initial history load.
@@ -119,7 +121,9 @@ export function Chat() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <>
+      {live && <LiveSession withCamera={live.camera} onClose={() => setLive(null)} />}
+      <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-surface2 px-5 py-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-lg">🧠</div>
         <div>
@@ -127,7 +131,6 @@ export function Chat() {
           <div className="text-xs text-accent">online · just now</div>
         </div>
       </div>
-
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {!loadingHistory && messages.length === 0 && (
           <div className="mt-10 text-center text-sm text-muted">
@@ -186,6 +189,24 @@ export function Chat() {
         }}
         className="flex items-center gap-2 border-t border-surface2 p-3"
       >
+        <button
+          type="button"
+          onClick={() => setLive({ camera: true })}
+          aria-label="Point the camera and ask PAL"
+          title="Camera"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface2 text-accent active:scale-95"
+        >
+          <CameraIcon />
+        </button>
+        <button
+          type="button"
+          onClick={() => setLive({ camera: false })}
+          aria-label="Talk to PAL"
+          title="Voice"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface2 text-accent active:scale-95"
+        >
+          <WaveIcon />
+        </button>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -200,7 +221,25 @@ export function Chat() {
           ↑
         </button>
       </form>
-    </div>
+      </div>
+    </>
+  )
+}
+
+function CameraIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.5 4h-5L8 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-4z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  )
+}
+
+function WaveIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 11v2M7 7v10M12 4v16M17 7v10M21 11v2" />
+    </svg>
   )
 }
 

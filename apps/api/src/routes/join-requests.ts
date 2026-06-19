@@ -41,6 +41,7 @@ joinRequests.post('/join-requests', requireAuth, async (c) => {
   const parsed = z
     .object({
       phone: z.string().regex(E164, 'Must be E.164 format e.g. +61412345678'),
+      role: z.enum(['kid', 'co_parent', 'guardian']).default('kid'),
       kidSeed: z.record(z.unknown()).default({}),
       initialTopup: z.number().int().min(0).max(10_000).default(0),
     })
@@ -50,21 +51,46 @@ joinRequests.post('/join-requests', requireAuth, async (c) => {
     return c.json({ error: 'invalid_body', details: parsed.error.flatten() }, 400)
   }
 
-  const { phone, kidSeed, initialTopup } = parsed.data
+  const { phone, role, kidSeed, initialTopup } = parsed.data
 
-  // Verify parent has a family.
+  // Find the parent's family. If they don't have one yet (we removed the
+  // family-creation step from onboarding), auto-create one now — keyed off
+  // the parent. This keeps the UI to a simple "add a kid" with no family setup.
   const [memberRow] = await db
     .select({ familyId: memberships.familyId, role: memberships.role })
     .from(memberships)
     .where(eq(memberships.accountId, parentId))
     .limit(1)
 
-  if (!memberRow) return c.json({ error: 'no_family' }, 400)
-  if (!['primary_parent', 'co_parent'].includes(memberRow.role)) {
-    return c.json({ error: 'forbidden' }, 403)
-  }
+  let familyId: string
 
-  const { familyId } = memberRow
+  if (!memberRow) {
+    // Auto-provision a family for this parent.
+    const [parentAcct] = await db
+      .select({ persona: accounts.persona })
+      .from(accounts)
+      .where(eq(accounts.id, parentId))
+      .limit(1)
+    const parentName = ((parentAcct?.persona ?? {}) as { name?: string }).name
+    const familyName = parentName ? `${parentName}'s Family` : 'My Family'
+
+    const [fam] = await db.insert(families).values({ name: familyName, avatar: '🏡' }).returning()
+    await db.insert(memberships).values({
+      familyId: fam.id,
+      accountId: parentId,
+      role: 'primary_parent',
+    })
+    // Ensure the parent account is typed as parent.
+    await db.update(accounts).set({ accountType: 'parent' }).where(eq(accounts.id, parentId))
+
+    familyId = fam.id
+    logger.info({ parentId, familyId }, 'join_request.auto_created_family')
+  } else {
+    if (!['primary_parent', 'co_parent'].includes(memberRow.role)) {
+      return c.json({ error: 'forbidden' }, 403)
+    }
+    familyId = memberRow.familyId
+  }
 
   // Check if this phone is already in the family.
   const existingAccount = await db.query.accounts.findFirst({
@@ -105,7 +131,7 @@ joinRequests.post('/join-requests', requireAuth, async (c) => {
       invitedBy: parentId,
       code,
       token: 'join-request', // not used for JWT verification
-      expectedRole: 'kid',
+      expectedRole: role,
       kidSeed,
       initialTopup,
       recipientPhone: phone,
@@ -124,6 +150,33 @@ joinRequests.post('/join-requests', requireAuth, async (c) => {
       expiresAt: row.expiresAt,
     },
   }, 201)
+})
+
+// ─── GET /join-requests/outgoing ──────────────────────────────────────
+// Parent lists the pending kid invites they've sent (not yet accepted).
+joinRequests.get('/join-requests/outgoing', requireAuth, async (c) => {
+  const accountId = authedAccountId(c)
+  const [memberRow] = await db
+    .select({ familyId: memberships.familyId })
+    .from(memberships)
+    .where(eq(memberships.accountId, accountId))
+    .limit(1)
+  if (!memberRow) return c.json({ requests: [] })
+
+  const { invites } = await import('../db/schema')
+  const rows = await db.query.invites.findMany({
+    where: and(eq(invites.familyId, memberRow.familyId), eq(invites.status, 'pending')),
+  })
+
+  return c.json({
+    requests: rows.map((r) => ({
+      id: r.id,
+      phone: r.recipientPhone,
+      name: ((r.kidSeed ?? {}) as { name?: string }).name ?? null,
+      role: r.expectedRole,
+      expiresAt: r.expiresAt,
+    })),
+  })
 })
 
 // ─── GET /join-requests/pending ───────────────────────────────────────
@@ -206,18 +259,21 @@ joinRequests.post('/join-requests/:id/accept', requireAuth, async (c) => {
   if (existing.length > 0) return c.json({ error: 'already_in_family' }, 409)
 
   try {
+    const memberRole = (request.expectedRole ?? 'kid') as 'kid' | 'co_parent' | 'guardian'
+    const acctType = memberRole === 'kid' ? 'kid' : memberRole === 'co_parent' ? 'parent' : 'extended'
+
     await db.transaction(async (tx) => {
-      // Set account type to kid.
+      // Set account type based on the invited role.
       await tx
         .update(accounts)
-        .set({ accountType: 'kid' })
+        .set({ accountType: acctType })
         .where(eq(accounts.id, accountId))
 
-      // Add to family as kid.
+      // Add to family with the invited role.
       await tx.insert(memberships).values({
         familyId: request.familyId,
         accountId,
-        role: 'kid',
+        role: memberRole,
       })
 
       // Credit initial Brains if any.
@@ -243,21 +299,21 @@ joinRequests.post('/join-requests/:id/accept', requireAuth, async (c) => {
         .set({ status: 'accepted', acceptedAt: new Date() })
         .where(eq(invites.id, requestId))
     })
+
+    logger.info({ accountId, familyId: request.familyId, role: memberRole }, 'join_request.accepted')
+
+    return c.json({
+      ok: true,
+      familyId: request.familyId,
+      role: memberRole,
+      accountType: acctType,
+      kidSeed: request.kidSeed,
+      initialTopup: request.initialTopup,
+    })
   } catch (err) {
     logger.error({ err: String(err) }, 'join_request.accept_failed')
     return c.json({ error: 'accept_failed' }, 500)
   }
-
-  logger.info({ accountId, familyId: request.familyId }, 'join_request.accepted')
-
-  return c.json({
-    ok: true,
-    familyId: request.familyId,
-    role: 'kid',
-    accountType: 'kid',
-    kidSeed: request.kidSeed,
-    initialTopup: request.initialTopup,
-  })
 })
 
 // ─── POST /join-requests/:id/decline ─────────────────────────────────

@@ -1,10 +1,12 @@
-import { serve } from '@hono/node-server'
+import { createServer } from 'node:http'
+import { getRequestListener } from '@hono/node-server'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { WebSocketServer } from 'ws'
 import { loadEnv } from './env'
 import { logger } from './logger'
 import { routes } from './routes'
+import { handleMcpRequest } from './mcp/route'
 import { onClose, onConnect, onMessage } from './ws/handler'
 import {
   onVoiceRealtimeClose,
@@ -16,6 +18,11 @@ import {
   onTwilioMediaConnect,
   onTwilioMediaMessage,
 } from './ws/twilio-media'
+import {
+  onGeminiLiveClose,
+  onGeminiLiveConnect,
+  onGeminiLiveMessage,
+} from './ws/gemini-live-bridge'
 
 const env = loadEnv()
 
@@ -31,14 +38,35 @@ app.use('*', cors({
 
 app.route('/', routes)
 
-const server = serve(
-  { fetch: app.fetch, port: env.PORT },
-  ({ port }) => logger.info({ port, env: env.NODE_ENV }, '🚀 BrainPal API up'),
-)
+const honoListener = getRequestListener(app.fetch)
+
+const server = createServer((req, res) => {
+  const pathname = req.url?.split('?')[0]
+  // Intercept /mcp before Hono (avoids body stream consumption)
+  if (pathname === '/mcp') {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Mcp-Session-Id, Last-Event-ID, Mcp-Protocol-Version')
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204)
+      res.end()
+      return
+    }
+    handleMcpRequest(req, res)
+    return
+  }
+  // Everything else goes through Hono
+  honoListener(req, res)
+})
+
+server.listen(env.PORT, () => {
+  logger.info({ port: env.PORT, env: env.NODE_ENV }, '🚀 BrainPal API up')
+})
 
 const wss = new WebSocketServer({ noServer: true })
 const voiceRtWss = new WebSocketServer({ noServer: true })
 const twilioMediaWss = new WebSocketServer({ noServer: true })
+const geminiLiveWss = new WebSocketServer({ noServer: true })
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '', 'http://localhost')
@@ -72,6 +100,17 @@ server.on('upgrade', (req, socket, head) => {
       ws.on('message', (data) => onTwilioMediaMessage(ws, data as Buffer))
       ws.on('close', () => onTwilioMediaClose(ws))
       ws.on('error', (err) => logger.error({ err: String(err) }, 'twilio_media.ws.error'))
+    })
+    return
+  }
+
+  if (url.pathname === '/live-rt') {
+    // Gemini Live bridge — real-time camera + voice (Vertex AI)
+    geminiLiveWss.handleUpgrade(req, socket, head, (ws) => {
+      onGeminiLiveConnect(ws)
+      ws.on('message', (data) => onGeminiLiveMessage(ws, data as Buffer))
+      ws.on('close', () => onGeminiLiveClose(ws))
+      ws.on('error', (err) => logger.error({ err: String(err) }, 'gemini_live.ws.error'))
     })
     return
   }

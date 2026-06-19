@@ -1,34 +1,56 @@
 import { Hono } from 'hono'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { verifyToken } from '../services/jwt'
+import { verifyAccessToken } from './oauth-store'
 import { createMcpServer } from './server'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+
+const BASE_URL = process.env.API_BASE_URL || 'https://api.brainpal.com.au'
 
 /**
  * MCP route — uses the Node.js StreamableHTTPServerTransport which
  * accepts (IncomingMessage, ServerResponse) directly, bypassing Hono's
  * body consumption issue.
  *
- * We export a raw handler to be mounted on the Node.js server directly.
+ * Auth: accepts either a BrainPal JWT or an OAuth access token.
+ * Returns 401 with WWW-Authenticate + resource_metadata per MCP spec.
  */
 
 export async function handleMcpRequest(req: IncomingMessage, res: ServerResponse) {
   // Authenticate from header
   const authHeader = req.headers.authorization
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
   if (!token) {
-    res.writeHead(401, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ error: 'unauthenticated' }))
+    res.writeHead(401, {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': `Bearer resource_metadata="${BASE_URL}/.well-known/oauth-protected-resource", scope="brainpal:read"`,
+    })
+    res.end(JSON.stringify({ error: 'invalid_token', error_description: 'Authentication required' }))
     return
   }
 
-  let accountId: string
-  try {
-    const payload = await verifyToken(token)
-    accountId = payload.accountId
-  } catch {
-    res.writeHead(401, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ error: 'invalid_token' }))
+  // Try OAuth access token first, then fall back to legacy JWT
+  let accountId: string | null = null
+
+  const oauthResult = await verifyAccessToken(token)
+  if (oauthResult) {
+    accountId = oauthResult.accountId
+  } else {
+    try {
+      const jwtResult = await verifyToken(token)
+      accountId = jwtResult.accountId
+    } catch {
+      // Neither worked
+    }
+  }
+
+  if (!accountId) {
+    res.writeHead(401, {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': `Bearer error="invalid_token", resource_metadata="${BASE_URL}/.well-known/oauth-protected-resource", scope="brainpal:read"`,
+    })
+    res.end(JSON.stringify({ error: 'invalid_token', error_description: 'Token expired or invalid' }))
     return
   }
 
@@ -46,10 +68,6 @@ export async function handleMcpRequest(req: IncomingMessage, res: ServerResponse
   res.on('close', () => server.close())
 }
 
-// Also export a dummy Hono route that returns 426 telling clients to use the raw endpoint
-// (this prevents Hono from swallowing requests if someone mounts it wrong)
+// Dummy Hono route (unused — /mcp is handled at server level)
 export const mcpRoute = new Hono()
-mcpRoute.all('/mcp', (c) => {
-  // This should never be reached if mounted correctly
-  return c.json({ error: 'MCP endpoint is handled at server level' }, 500)
-})
+mcpRoute.all('/mcp', (c) => c.json({ error: 'MCP endpoint is handled at server level' }, 500))

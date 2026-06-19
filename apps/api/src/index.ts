@@ -7,6 +7,13 @@ import { loadEnv } from './env'
 import { logger } from './logger'
 import { routes } from './routes'
 import { handleMcpRequest } from './mcp/route'
+import {
+  handleAuthServerMetadata,
+  handleAuthorize,
+  handleAuthorizeCallback,
+  handleProtectedResourceMetadata,
+  handleToken,
+} from './mcp/oauth-handlers'
 import { onClose, onConnect, onMessage } from './ws/handler'
 import {
   onVoiceRealtimeClose,
@@ -42,19 +49,56 @@ const honoListener = getRequestListener(app.fetch)
 
 const server = createServer((req, res) => {
   const pathname = req.url?.split('?')[0]
-  // Intercept /mcp before Hono (avoids body stream consumption)
-  if (pathname === '/mcp') {
+
+  // CORS for all intercepted routes
+  const setCors = () => {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Mcp-Session-Id, Last-Event-ID, Mcp-Protocol-Version')
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204)
-      res.end()
-      return
-    }
+  }
+
+  if (req.method === 'OPTIONS' && (pathname === '/mcp' || pathname?.startsWith('/oauth') || pathname?.startsWith('/.well-known'))) {
+    setCors()
+    res.writeHead(204)
+    res.end()
+    return
+  }
+
+  // MCP endpoint
+  if (pathname === '/mcp') {
+    setCors()
     handleMcpRequest(req, res)
     return
   }
+
+  // OAuth discovery
+  if (pathname === '/.well-known/oauth-protected-resource' || pathname === '/.well-known/oauth-protected-resource/mcp') {
+    setCors()
+    handleProtectedResourceMetadata(req, res)
+    return
+  }
+  if (pathname === '/.well-known/oauth-authorization-server') {
+    setCors()
+    handleAuthServerMetadata(req, res)
+    return
+  }
+
+  // OAuth endpoints
+  if (pathname === '/oauth/authorize' && req.method === 'GET') {
+    handleAuthorize(req, res)
+    return
+  }
+  if (pathname === '/oauth/authorize/callback' && req.method === 'POST') {
+    setCors()
+    handleAuthorizeCallback(req, res)
+    return
+  }
+  if (pathname === '/oauth/token' && req.method === 'POST') {
+    setCors()
+    handleToken(req, res)
+    return
+  }
+
   // Everything else goes through Hono
   honoListener(req, res)
 })

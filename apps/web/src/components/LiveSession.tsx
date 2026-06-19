@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../stores/auth'
-import { connectLiveRt, type LiveRtSocket } from '../lib/liveRt'
+import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../lib/liveRt'
 import { startCamera, captureJpeg, type CameraHandle } from '../lib/camera'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../lib/liveAudio'
 
@@ -29,6 +29,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
   const [speakerOn, setSpeakerOn] = useState(true)
   const [speaking, setSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [detections, setDetections] = useState<LiveDetection[]>([])
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -97,6 +98,13 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
           },
           onPalAudio: (pcm) => {
             if (speakerOnRef.current) playerRef.current?.enqueue(pcm)
+          },
+          onDetection: (d) => {
+            setDetections((prev) => {
+              // de-dupe by product name; newest wins, keep last 3
+              const rest = prev.filter((p) => p.name.toLowerCase() !== d.name.toLowerCase())
+              return [...rest, d].slice(-3)
+            })
           },
           onError: (m) => {
             setError(m)
@@ -190,7 +198,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
               />
               <div className="absolute h-44 w-44 rounded-full bg-accent/10" />
               <div className="relative flex h-40 w-40 items-center justify-center rounded-full bg-gradient-to-br from-[#3ddc84] to-[#16a07f] shadow-[0_0_70px_rgba(61,220,132,0.45)]">
-                <span className="text-5xl">🧠</span>
+                <span className="text-5xl">✨</span>
               </div>
             </div>
           </div>
@@ -232,6 +240,15 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
       )}
 
       <div className="flex-1" />
+
+      {/* Health + budget verdict popups */}
+      {withCamera && detections.length > 0 && (
+        <div className="relative z-10 space-y-2 px-4 pb-2">
+          {detections.map((d) => (
+            <VerdictPopup key={d.detectionId} d={d} />
+          ))}
+        </div>
+      )}
 
       {/* Captions */}
       <div className="relative z-10 space-y-2 px-5 pb-2">
@@ -324,5 +341,34 @@ function IconVolumeOff() {
     <svg width="26" height="26" viewBox="0 0 24 24" {...sw}>
       <path d="M11 5 6 9H2v6h4l5 4zM22 9l-6 6M16 9l6 6" />
     </svg>
+  )
+}
+
+const VERDICTS = {
+  great: { color: '#3ddc84', label: 'Great pick', icon: '🟢' },
+  okay: { color: '#ffb627', label: 'Okay', icon: '🟡' },
+  avoid: { color: '#ff5c5c', label: 'Think twice', icon: '🔴' },
+} as const
+
+function VerdictPopup({ d }: { d: LiveDetection }) {
+  const v = VERDICTS[d.verdict] ?? VERDICTS.okay
+  return (
+    <div
+      className="animate-pop-in flex items-start gap-3 rounded-2xl bg-black/70 p-3 backdrop-blur"
+      style={{ boxShadow: `inset 0 0 0 1.5px ${v.color}66` }}
+    >
+      <span className="text-2xl">{d.emoji}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-bold text-ink">{d.name}</span>
+          {d.estimatedPrice && <span className="text-xs text-white/60">{d.estimatedPrice}</span>}
+        </div>
+        <div className="mt-0.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: v.color }}>
+          {v.icon} {v.label}
+        </div>
+        {d.healthNote && <div className="mt-1 text-xs leading-snug text-white/80">🥦 {d.healthNote}</div>}
+        {d.budgetNote && <div className="mt-0.5 text-xs leading-snug text-white/80">💰 {d.budgetNote}</div>}
+      </div>
+    </div>
   )
 }

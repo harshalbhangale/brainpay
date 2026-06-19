@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { aud, audSigned, relativeTime } from '../../lib/format'
@@ -51,9 +50,7 @@ export function OverviewTab({
 }
 
 function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: string; onGoTab: (t: FamilyTab) => void }) {
-  const navigate = useNavigate()
   const [topup, setTopup] = useState(false)
-
   const feedQ = useQuery({
     queryKey: ['feed', kid.accountId],
     queryFn: () => api<FeedResponse>(`/family/feed?kidId=${kid.accountId}&limit=50`),
@@ -70,7 +67,7 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
         onClick={() => setTopup(true)}
         className="w-full rounded-full bg-accent py-3.5 font-bold text-black active:scale-[0.99]"
       >
-        Send money
+        Add money
       </button>
 
       <div className="grid grid-cols-2 gap-3">
@@ -95,18 +92,6 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
           </div>
         )}
       </section>
-
-      <button
-        onClick={() => navigate('/live')}
-        className="flex w-full items-center gap-3 rounded-2xl bg-surface p-4 text-left active:scale-[0.99]"
-      >
-        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/20 text-xl">📷</span>
-        <span className="flex-1">
-          <span className="block font-bold text-ink">Live scan</span>
-          <span className="block text-sm text-muted">Real-time PAL verdict on a product</span>
-        </span>
-        <span className="text-muted">›</span>
-      </button>
 
       {topup && <TopupModal kid={kid} onClose={() => setTopup(false)} />}
     </div>

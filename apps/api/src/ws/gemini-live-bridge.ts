@@ -170,15 +170,30 @@ function handleLiveMessage(ws: WebSocket, state: SessionState, m: LiveServerMess
         const args = (call.args ?? {}) as {
           name?: string
           category?: string
+          verdict?: string
+          healthNote?: string
+          budgetNote?: string
+          estimatedPrice?: string
           healthScore?: number
           confidence?: number
         }
         const category = args.category ?? ''
+        const verdict = ['great', 'okay', 'avoid'].includes(args.verdict ?? '')
+          ? (args.verdict as 'great' | 'okay' | 'avoid')
+          : (args.healthScore ?? 0) >= 5
+            ? 'great'
+            : (args.healthScore ?? 0) <= -5
+              ? 'avoid'
+              : 'okay'
         send(ws, {
           type: 'detection',
           detectionId: crypto.randomUUID(),
           name: args.name ?? 'item',
           category,
+          verdict,
+          healthNote: args.healthNote ?? '',
+          budgetNote: args.budgetNote ?? '',
+          estimatedPrice: args.estimatedPrice ?? '',
           coinDelta: Math.round(args.healthScore ?? 0),
           emoji: emojiFor(category),
           confidence: args.confidence ?? 0,

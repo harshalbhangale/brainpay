@@ -28,6 +28,19 @@ const TAG_OUT_AUDIO = 0x04
 export type LiveRole = 'parent' | 'kid'
 export type LiveMode = 'assist' | 'shop'
 
+export type LiveDetection = {
+  detectionId: string
+  name: string
+  category: string
+  verdict: 'great' | 'okay' | 'avoid'
+  healthNote: string
+  budgetNote: string
+  estimatedPrice: string
+  emoji: string
+  coinDelta: number
+  confidence: number
+}
+
 export type LiveRtHandlers = {
   onOpen?: () => void
   onConnected?: () => void
@@ -36,6 +49,7 @@ export type LiveRtHandlers = {
   onTurnComplete?: () => void
   onInterrupted?: () => void
   onPalAudio?: (pcm: Int16Array) => void
+  onDetection?: (d: LiveDetection) => void
   onError?: (message: string) => void
   onClose?: () => void
 }
@@ -99,6 +113,9 @@ export function connectLiveRt(handlers: LiveRtHandlers, token?: string | null): 
         break
       case 'interrupted':
         handlers.onInterrupted?.()
+        break
+      case 'detection':
+        handlers.onDetection?.(msg as unknown as LiveDetection)
         break
       case 'error':
         handlers.onError?.((msg.message as string) ?? 'Live session error')

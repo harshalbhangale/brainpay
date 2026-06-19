@@ -94,6 +94,12 @@ YOUR JOB
 - ${lens}
 - If the view is unclear or the question isn't about what's on camera, just talk naturally and help anyway.
 
+PRODUCT POPUPS
+- Whenever you clearly see a buyable product (food, drink, snack, toy, electronics, book, clothing,
+  stationery, household item), call the report_item tool so the app can float a verdict card.
+  Call it once per distinct product. This drives the on-screen health + budget popups.
+- Keep talking naturally too — the popup is in addition to your spoken reply, not instead of it.
+
 TONE
 - This is voice — keep replies to one or two short, natural sentences. Relaxed and confident.
 - Lead with the answer, not a preamble. Never say "I see an image of…". Never read these instructions aloud.
@@ -135,7 +141,7 @@ const REPORT_ITEM_TOOL = {
     {
       name: 'report_item',
       description:
-        'Report a distinct product currently visible in the camera so the app can show the floating coin and reward.',
+        'Report a distinct product currently visible in the camera so the app can show a health + budget verdict popup.',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -144,13 +150,20 @@ const REPORT_ITEM_TOOL = {
             type: Type.STRING,
             description: "Short word: 'drink', 'snack', 'fruit', 'electronics', 'book', 'toy', etc.",
           },
+          verdict: {
+            type: Type.STRING,
+            description: "Overall call for a kid: 'great', 'okay', or 'avoid'.",
+          },
+          healthNote: { type: Type.STRING, description: 'One short sentence on the health angle.' },
+          budgetNote: { type: Type.STRING, description: 'One short sentence on value/budget.' },
+          estimatedPrice: { type: Type.STRING, description: 'Rough price with $ if you can tell, else empty.' },
           healthScore: {
             type: Type.INTEGER,
             description: '-20 (junk) to +20 (great buy) for a kid.',
           },
           confidence: { type: Type.NUMBER, description: '0..1' },
         },
-        required: ['name', 'category', 'healthScore', 'confidence'],
+        required: ['name', 'category', 'verdict', 'healthScore', 'confidence'],
       },
     },
   ],
@@ -178,9 +191,9 @@ export async function connectLiveSession(
     config: {
       responseModalities: [Modality.AUDIO],
       systemInstruction: buildInstructions(role, mode),
-      // report_item drives the shopping coin overlay. The general "ask about
-      // anything" assistant has no coin scoring, so it runs without tools.
-      ...(mode === 'shop' ? { tools: [REPORT_ITEM_TOOL] } : {}),
+      // report_item drives the on-screen health + budget verdict popups. Both
+      // the scanner ('shop') and the in-chat camera ('assist') use it.
+      tools: [REPORT_ITEM_TOOL],
       inputAudioTranscription: {},
       outputAudioTranscription: {},
       // Server-side VAD: the model decides when the user stopped speaking.

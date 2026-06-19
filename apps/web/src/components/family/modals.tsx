@@ -119,7 +119,7 @@ export function TopupModal({ kid, onClose }: { kid: Member; onClose: () => void 
   const valid = (parseInt(amount || '0', 10) || 0) >= 1
 
   return (
-    <Modal title={`Send money to ${kidName(kid)}`} onClose={onClose}>
+    <Modal title={`Add money to ${kidName(kid)}'s wallet`} onClose={onClose}>
       <label className={labelClass}>Amount (AUD)</label>
       <input autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" className={`${fieldClass} mb-4`} />
 
@@ -133,7 +133,7 @@ export function TopupModal({ kid, onClose }: { kid: Member; onClose: () => void 
       )}
 
       <button onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending} className={submitClass}>
-        {mutation.isPending ? 'Sending…' : `Send $${amount || 0}`}
+        {mutation.isPending ? 'Adding…' : `Add $${amount || 0}`}
       </button>
     </Modal>
   )

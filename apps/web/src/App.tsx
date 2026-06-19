@@ -4,8 +4,11 @@ import { Login } from './screens/Login'
 import { RoleSelect } from './screens/RoleSelect'
 import { ParentOnboarding } from './screens/ParentOnboarding'
 import { Home } from './screens/Home'
-import { LiveCamera } from './screens/LiveCamera'
 
+/**
+ * Single-camera app: the only camera lives inside the PAL chat (point & ask
+ * with health + budget popups). The old kid-section "Live scan" was removed.
+ */
 export default function App() {
   return (
     <Routes>
@@ -31,14 +34,6 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Home />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/live"
-        element={
-          <ProtectedRoute>
-            <LiveCamera />
           </ProtectedRoute>
         }
       />

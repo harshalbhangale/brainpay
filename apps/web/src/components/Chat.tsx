@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { aud } from '../lib/format'
+import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../lib/agents'
 import { LiveSession } from './LiveSession'
 
-type ChatMsg = { id: string; role: 'user' | 'assistant'; content: string }
 type Pal = { palId: string; line: string }
 type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' } & Record<string, unknown>
 
@@ -13,17 +13,18 @@ type SendResponse = {
   intent?: Intent
   requiresConfirmation?: boolean
 }
-
 type ExecuteResponse = { ok: boolean; confirmationMessage?: string }
 
-const PAL_LABELS: Record<string, string> = {
-  moneypal: '💰 MoneyPal',
-  healthpal: '🥦 HealthPal',
-  studypal: '📚 StudyPal',
+/** A single item in the chat timeline. */
+type Msg = {
+  id: string
+  kind: 'user' | 'agent'
+  agentId?: AgentId
+  content: string
 }
 
 let tmpId = 1
-const uid = () => `tmp${tmpId++}`
+const uid = () => `m${tmpId++}`
 
 function describeIntent(intent: Intent): string {
   const kidName = (intent.kidName as string) || 'your kid'
@@ -31,7 +32,7 @@ function describeIntent(intent: Intent): string {
     case 'add_chore':
       return `Add chore "${intent.title as string}" for ${kidName} — ${aud((intent.rewardBrains as number) ?? 50)}`
     case 'topup':
-      return `Send ${aud((intent.brainsDelta as number) ?? 0)} to ${kidName}`
+      return `Add ${aud((intent.brainsDelta as number) ?? 0)} to ${kidName}'s wallet`
     case 'set_goal':
       return `Set goal "${intent.goalName as string}" for ${kidName} — ${aud((intent.targetBrains as number) ?? 500)}`
     default:
@@ -39,22 +40,35 @@ function describeIntent(intent: Intent): string {
   }
 }
 
+const SUGGESTIONS = [
+  'Add a dishes chore for $50',
+  'How much has my kid saved?',
+  'Add $20 to their wallet',
+  'Set a savings goal for a bike',
+]
+
 export function Chat() {
-  const [messages, setMessages] = useState<ChatMsg[]>([])
+  const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [pals, setPals] = useState<Pal[]>([])
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [live, setLive] = useState<{ camera: boolean } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Initial history load.
+  // Initial history load (oldest → newest).
   useEffect(() => {
     let active = true
-    api<{ messages: ChatMsg[] }>('/chat/history')
+    api<{ messages: { id: string; role: string; content: string }[] }>('/chat/history')
       .then((res) => {
-        if (active) setMessages(res.messages ?? [])
+        if (!active) return
+        const hist: Msg[] = (res.messages ?? []).map((m) => ({
+          id: m.id,
+          kind: m.role === 'user' ? 'user' : 'agent',
+          agentId: m.role === 'user' ? undefined : 'pal',
+          content: m.content,
+        }))
+        setMessages(hist)
       })
       .catch(() => undefined)
       .finally(() => {
@@ -65,31 +79,33 @@ export function Chat() {
     }
   }, [])
 
-  // Auto-scroll to the newest message.
+  // Auto-scroll to newest.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, pals, pendingIntent])
+  }, [messages, sending, pendingIntent])
 
-  async function send() {
-    const text = input.trim()
-    if (!text || sending) return
+  async function sendText(text: string) {
+    const trimmed = text.trim()
+    if (!trimmed || sending) return
     setInput('')
-    setPals([])
     setPendingIntent(null)
-    setMessages((m) => [...m, { id: uid(), role: 'user', content: text }])
+    setMessages((m) => [...m, { id: uid(), kind: 'user', content: trimmed }])
     setSending(true)
     try {
       const res = await api<SendResponse>('/chat', {
         method: 'POST',
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: trimmed }),
       })
-      setMessages((m) => [...m, { id: uid(), role: 'assistant', content: res.reply }])
-      setPals(res.pals ?? [])
+      const additions: Msg[] = [{ id: uid(), kind: 'agent', agentId: 'pal', content: res.reply }]
+      for (const p of res.pals ?? []) {
+        additions.push({ id: uid(), kind: 'agent', agentId: agentFor(p.palId).id, content: p.line })
+      }
+      setMessages((m) => [...m, ...additions])
       if (res.requiresConfirmation && res.intent) setPendingIntent(res.intent)
     } catch {
       setMessages((m) => [
         ...m,
-        { id: uid(), role: 'assistant', content: "I'm having trouble thinking right now. Try again?" },
+        { id: uid(), kind: 'agent', agentId: 'pal', content: "I'm having trouble thinking right now. Try again?" },
       ])
     } finally {
       setSending(false)
@@ -108,121 +124,277 @@ export function Chat() {
       })
       setMessages((m) => [
         ...m,
-        { id: uid(), role: 'assistant', content: res.confirmationMessage ?? 'Done ✅' },
+        { id: uid(), kind: 'agent', agentId: 'pal', content: res.confirmationMessage ?? 'Done ✅' },
       ])
     } catch (e) {
       setMessages((m) => [
         ...m,
-        { id: uid(), role: 'assistant', content: e instanceof Error ? `Couldn't do that: ${e.message}` : "Couldn't do that." },
+        {
+          id: uid(),
+          kind: 'agent',
+          agentId: 'pal',
+          content: e instanceof Error ? `Couldn't do that: ${e.message}` : "Couldn't do that.",
+        },
       ])
     } finally {
       setSending(false)
     }
   }
 
+  const empty = !loadingHistory && messages.length === 0
+
   return (
     <>
       {live && <LiveSession withCamera={live.camera} onClose={() => setLive(null)} />}
-      <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-surface2 px-5 py-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-lg">🧠</div>
-        <div>
-          <div className="font-bold leading-tight">PAL</div>
-          <div className="text-xs text-accent">online · just now</div>
+      <div className="flex h-full flex-col bg-canvas">
+        <ChatHeader />
+
+        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
+          {empty && <EmptyState onPick={sendText} />}
+
+          {messages.map((m, i) =>
+            m.kind === 'user' ? (
+              <UserBubble key={m.id} content={m.content} />
+            ) : (
+              <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} />
+            ),
+          )}
+
+          {sending && <Conferring />}
+
+          {pendingIntent && <IntentCard intent={pendingIntent} onConfirm={confirmIntent} onCancel={() => setPendingIntent(null)} />}
         </div>
-      </div>
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {!loadingHistory && messages.length === 0 && (
-          <div className="mt-10 text-center text-sm text-muted">
-            Say hi to PAL 👋
-            <br />
-            Try: "Add a dishes chore for $50" or "How much has my kid saved?"
-          </div>
-        )}
 
-        {messages.map((m) => (
-          <Bubble key={m.id} role={m.role} content={m.content} />
-        ))}
-
-        {pals.length > 0 && (
-          <div className="flex flex-wrap gap-2 pl-2">
-            {pals.map((p, i) => (
-              <div
-                key={`${p.palId}-${i}`}
-                className="rounded-2xl bg-surface2 px-3 py-2 text-xs text-ink"
-              >
-                <span className="font-bold text-accent">{PAL_LABELS[p.palId] ?? p.palId}</span>{' '}
-                {p.line}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {pendingIntent && (
-          <div className="rounded-2xl border border-accent/40 bg-surface p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted">PAL wants to</div>
-            <div className="mt-1 font-semibold text-ink">{describeIntent(pendingIntent)}</div>
-            <div className="mt-3 flex gap-2">
-              <button
-                onClick={() => setPendingIntent(null)}
-                className="flex-1 rounded-full bg-surface2 py-2.5 text-sm font-bold text-ink active:scale-[0.98]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmIntent}
-                className="flex-1 rounded-full bg-accent py-2.5 text-sm font-bold text-black active:scale-[0.98]"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        )}
-
-        {sending && <Bubble role="assistant" content="…" />}
-      </div>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          send()
-        }}
-        className="flex items-center gap-2 border-t border-surface2 p-3"
-      >
-        <button
-          type="button"
-          onClick={() => setLive({ camera: true })}
-          aria-label="Point the camera and ask PAL"
-          title="Camera"
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface2 text-accent active:scale-95"
-        >
-          <CameraIcon />
-        </button>
-        <button
-          type="button"
-          onClick={() => setLive({ camera: false })}
-          aria-label="Talk to PAL"
-          title="Voice"
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface2 text-accent active:scale-95"
-        >
-          <WaveIcon />
-        </button>
-        <input
+        <Composer
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Message PAL…"
-          className="h-12 flex-1 rounded-full bg-surface px-4 text-ink outline-none ring-1 ring-transparent focus:ring-accent"
+          disabled={sending}
+          onChange={setInput}
+          onSend={() => sendText(input)}
+          onCamera={() => setLive({ camera: true })}
+          onVoice={() => setLive({ camera: false })}
         />
-        <button
-          type="submit"
-          disabled={sending || !input.trim()}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-xl font-black text-black disabled:opacity-40"
-        >
-          ↑
-        </button>
-      </form>
       </div>
     </>
+  )
+}
+
+/* ── Header: orchestrator orb + specialist roster ────────────────────── */
+function ChatHeader() {
+  const pal = AGENTS.pal
+  return (
+    <div className="flex items-center gap-3 border-b border-surface2 px-4 py-3">
+      <AgentOrb agent={pal} size={40} aura />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 font-bold leading-tight">
+          PAL
+          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">
+            AI council
+          </span>
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          {SPECIALISTS.map((a) => (
+            <span key={a.id} className="flex items-center gap-1 text-[11px] text-muted">
+              <span>{a.emoji}</span>
+              {a.name.replace('PAL', '')}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Empty state with suggestions ────────────────────────────────────── */
+function EmptyState({ onPick }: { onPick: (t: string) => void }) {
+  return (
+    <div className="flex flex-col items-center px-4 pt-10 text-center">
+      <div className="relative mb-4">
+        <AgentOrb agent={AGENTS.pal} size={72} aura />
+      </div>
+      <div className="text-lg font-extrabold text-ink">Meet your money council</div>
+      <p className="mt-1 max-w-xs text-sm text-muted">
+        Ask PAL anything. MoneyPAL, HealthPAL &amp; StudyPAL jump in when it's their thing.
+      </p>
+      <div className="mt-5 flex w-full flex-col gap-2">
+        {SUGGESTIONS.map((s) => (
+          <button
+            key={s}
+            onClick={() => onPick(s)}
+            className="rounded-2xl border border-surface2 bg-surface px-4 py-3 text-left text-sm text-ink transition active:scale-[0.99] hover:border-accent/40"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── Bubbles ─────────────────────────────────────────────────────────── */
+function UserBubble({ content }: { content: string }) {
+  return (
+    <div className="animate-msg-in flex justify-end">
+      <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm font-medium leading-relaxed text-black">
+        {content}
+      </div>
+    </div>
+  )
+}
+
+function AgentBubble({ agent, content, index }: { agent: Agent; content: string; index: number }) {
+  const isPal = agent.id === 'pal'
+  return (
+    <div className="animate-msg-in flex items-end gap-2" style={{ animationDelay: `${Math.min(index, 6) * 20}ms` }}>
+      <AgentOrb agent={agent} size={30} />
+      <div className="max-w-[82%]">
+        {!isPal && (
+          <div className="mb-1 ml-1 text-[11px] font-bold" style={{ color: agent.color }}>
+            {agent.emoji} {agent.name}
+          </div>
+        )}
+        <div
+          className="whitespace-pre-wrap rounded-2xl rounded-bl-md px-4 py-2.5 text-sm leading-relaxed text-ink"
+          style={
+            isPal
+              ? { background: 'var(--color-surface2)' }
+              : { background: `${agent.color}1a`, boxShadow: `inset 0 0 0 1px ${agent.color}33` }
+          }
+        >
+          {content}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Processing: "agents conferring" ─────────────────────────────────── */
+function Conferring() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex -space-x-2">
+        {[AGENTS.pal, AGENTS.moneypal, AGENTS.healthpal].map((a, i) => (
+          <span key={a.id} className="animate-confer" style={{ animationDelay: `${i * 180}ms` }}>
+            <AgentOrb agent={a} size={28} ring />
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-1.5 rounded-2xl bg-surface2 px-3.5 py-2.5">
+        <span className="dot h-1.5 w-1.5 rounded-full bg-muted" style={{ animationDelay: '0ms' }} />
+        <span className="dot h-1.5 w-1.5 rounded-full bg-muted" style={{ animationDelay: '160ms' }} />
+        <span className="dot h-1.5 w-1.5 rounded-full bg-muted" style={{ animationDelay: '320ms' }} />
+        <span className="ml-1 text-xs text-muted">the council is thinking…</span>
+      </div>
+    </div>
+  )
+}
+
+/* ── Intent confirmation card ────────────────────────────────────────── */
+function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div className="animate-msg-in rounded-2xl border border-accent/40 bg-surface p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted">PAL wants to</div>
+      <div className="mt-1 font-semibold text-ink">{describeIntent(intent)}</div>
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={onCancel}
+          className="flex-1 rounded-full bg-surface2 py-2.5 text-sm font-bold text-ink active:scale-[0.98]"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          className="flex-1 rounded-full bg-accent py-2.5 text-sm font-bold text-black active:scale-[0.98]"
+        >
+          Confirm
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ── Composer ────────────────────────────────────────────────────────── */
+function Composer({
+  value,
+  disabled,
+  onChange,
+  onSend,
+  onCamera,
+  onVoice,
+}: {
+  value: string
+  disabled: boolean
+  onChange: (v: string) => void
+  onSend: () => void
+  onCamera: () => void
+  onVoice: () => void
+}) {
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSend()
+      }}
+      className="flex items-center gap-2 border-t border-surface2 p-3"
+      style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+    >
+      <button
+        type="button"
+        onClick={onCamera}
+        aria-label="Point the camera and ask"
+        title="Camera"
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface2 text-accent active:scale-95"
+      >
+        <CameraIcon />
+      </button>
+      <button
+        type="button"
+        onClick={onVoice}
+        aria-label="Talk to PAL"
+        title="Voice"
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface2 text-accent active:scale-95"
+      >
+        <WaveIcon />
+      </button>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Message the council…"
+        className="h-12 flex-1 rounded-full bg-surface px-4 text-ink outline-none ring-1 ring-transparent focus:ring-accent"
+      />
+      <button
+        type="submit"
+        disabled={disabled || !value.trim()}
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-xl font-black text-black transition disabled:opacity-40"
+      >
+        ↑
+      </button>
+    </form>
+  )
+}
+
+/* ── Agent avatar orb ────────────────────────────────────────────────── */
+function AgentOrb({ agent, size, aura, ring }: { agent: Agent; size: number; aura?: boolean; ring?: boolean }) {
+  return (
+    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }}>
+      {aura && (
+        <span
+          className="animate-spin-slow absolute inset-[-3px] rounded-full opacity-60 blur-[2px]"
+          style={{ background: `conic-gradient(from 0deg, ${agent.gradient[0]}, ${agent.gradient[1]}, ${agent.gradient[0]})` }}
+        />
+      )}
+      <span
+        className="relative flex items-center justify-center rounded-full"
+        style={{
+          width: size,
+          height: size,
+          background: `linear-gradient(135deg, ${agent.gradient[0]}, ${agent.gradient[1]})`,
+          boxShadow: ring ? '0 0 0 2px var(--color-canvas)' : undefined,
+          fontSize: size * 0.5,
+        }}
+      >
+        {agent.emoji}
+      </span>
+    </span>
   )
 }
 
@@ -240,20 +412,5 @@ function WaveIcon() {
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 11v2M7 7v10M12 4v16M17 7v10M21 11v2" />
     </svg>
-  )
-}
-
-function Bubble({ role, content }: { role: 'user' | 'assistant'; content: string }) {
-  const isUser = role === 'user'
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-          isUser ? 'bg-accent text-black' : 'bg-surface2 text-ink'
-        }`}
-      >
-        {content}
-      </div>
-    </div>
   )
 }

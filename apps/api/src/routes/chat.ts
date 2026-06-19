@@ -206,7 +206,7 @@ chat.post('/chat/execute', async (c) => {
       ok: true,
       kind: 'add_chore',
       result: { chore },
-      confirmationMessage: `Chore "${chore.title}" added for ${intent.kidName ?? 'kid'} — ${chore.rewardBrains} 🧠 reward.`,
+      confirmationMessage: `Chore "${chore.title}" added for ${intent.kidName ?? 'kid'} — $${chore.rewardBrains} reward.`,
     })
   }
 
@@ -259,7 +259,7 @@ chat.post('/chat/execute', async (c) => {
       ok: true,
       kind: 'topup',
       result: { balanceAfter, brainsDelta: intent.brainsDelta },
-      confirmationMessage: `Sent ${intent.brainsDelta} 🧠 to ${intent.kidName ?? 'kid'}. New balance: ${balanceAfter} 🧠.`,
+      confirmationMessage: `Added $${intent.brainsDelta} to ${intent.kidName ?? 'kid'}\u2019s wallet. New balance: $${balanceAfter}.`,
     })
   }
 
@@ -291,7 +291,7 @@ chat.post('/chat/execute', async (c) => {
       ok: true,
       kind: 'set_goal',
       result: { goal },
-      confirmationMessage: `Goal "${goal.name}" set for ${intent.kidName ?? 'kid'} — ${goal.targetBrains} 🧠 target.`,
+      confirmationMessage: `Goal "${goal.name}" set for ${intent.kidName ?? 'kid'} — $${goal.targetBrains} target.`,
     })
   }
 

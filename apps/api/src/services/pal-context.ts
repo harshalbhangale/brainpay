@@ -166,7 +166,7 @@ export function contextToSystemPrompt(ctx: PalContext, style: 'parent' | 'kid' =
   if (style === 'kid') {
     const kid = ctx.kids.find((k) => k.accountId === ctx.callerId) ?? ctx.kids[0]
     const goalLine = kid?.activeGoal
-      ? `Active goal: ${kid.activeGoal.name} (${kid.activeGoal.currentBrains}/${kid.activeGoal.targetBrains} 🧠)`
+      ? `Active goal: ${kid.activeGoal.name} ($${kid.activeGoal.currentBrains} of $${kid.activeGoal.targetBrains})`
       : 'No active goal.'
 
     // Pull persona fields set during onboarding
@@ -178,7 +178,7 @@ export function contextToSystemPrompt(ctx: PalContext, style: 'parent' | 'kid' =
 
     return `You are PAL — a sarcastic, dry-witted money buddy for kids aged 10-14.
 You are talking to ${ctx.callerName}.
-Their balance: ${ctx.callerBalance} 🧠.
+Their balance: $${ctx.callerBalance} AUD.
 ${goalLine}
 Streak: ${kid?.streak ?? 0} days.
 Pending chores: ${kid?.pendingChores ?? 0}.
@@ -186,7 +186,7 @@ ${spendLine}
 
 Recent activity (last 7 days):
 ${ctx.kids.find(k => k.accountId === ctx.callerId)?.recentActivity.slice(0, 5).map(a =>
-  `- ${a.kind}: ${a.brainsDelta >= 0 ? '+' : ''}${a.brainsDelta} 🧠`
+  `- ${a.kind}: ${a.brainsDelta >= 0 ? '+' : ''}$${a.brainsDelta}`
 ).join('\n') || '- No recent activity.'}
 
 Rules:
@@ -208,9 +208,9 @@ Rules:
 
   const kidLines = ctx.kids.map((k) => {
     const goalLine = k.activeGoal
-      ? `goal: ${k.activeGoal.name} ${k.activeGoal.currentBrains}/${k.activeGoal.targetBrains}`
+      ? `goal: ${k.activeGoal.name} $${k.activeGoal.currentBrains}/$${k.activeGoal.targetBrains}`
       : 'no goal'
-    return `- ${k.name}${k.age ? ` (${k.age}yo)` : ''}: ${k.balance} 🧠, streak ${k.streak}d, ${k.pendingChores} pending chores, ${goalLine}`
+    return `- ${k.name}${k.age ? ` (${k.age}yo)` : ''}: $${k.balance} AUD, streak ${k.streak}d, ${k.pendingChores} pending chores, ${goalLine}`
   }).join('\n')
 
   return `You are PAL — a smart, slightly sarcastic family money assistant.

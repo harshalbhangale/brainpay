@@ -315,5 +315,200 @@ export function createMcpServer(accountId: string) {
     },
   )
 
+  // ══════════════════════════════════════════════════════════════════════
+  // WRITE TOOLS
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── create_chore ─────────────────────────────────────────────────────
+  server.tool(
+    'create_chore',
+    'Create a new chore and assign it to a kid. The kid earns the reward Brains when the chore is approved.',
+    {
+      kidName: z.string().describe("The kid's name to assign the chore to"),
+      title: z.string().describe('What the chore is (e.g. "Make your bed", "Walk the dog")'),
+      rewardBrains: z.number().min(1).max(10000).describe('How many Brains the kid earns for completing it'),
+    },
+    async ({ kidName, title, rewardBrains }) => {
+      const familyId = await requireParentFamily()
+
+      const members = await db
+        .select({ accountId: memberships.accountId, persona: accounts.persona })
+        .from(memberships)
+        .innerJoin(accounts, eq(accounts.id, memberships.accountId))
+        .where(and(eq(memberships.familyId, familyId), eq(memberships.role, 'kid')))
+
+      const kid = members.find((m) => {
+        const name = (m.persona as { name?: string } | null)?.name ?? ''
+        return name.toLowerCase().includes(kidName.toLowerCase())
+      })
+      if (!kid) return { content: [{ type: 'text' as const, text: `No kid named "${kidName}" in your family` }] }
+
+      const [chore] = await db
+        .insert(chores)
+        .values({
+          familyId,
+          assignedTo: kid.accountId,
+          createdBy: accountId,
+          title,
+          rewardBrains,
+          status: 'pending',
+        })
+        .returning()
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ created: true, choreId: chore.id, title, assignedTo: kidName, rewardBrains }, null, 2) }] }
+    },
+  )
+
+  // ── approve_chore ────────────────────────────────────────────────────
+  server.tool(
+    'approve_chore',
+    'Approve a submitted chore and pay the kid their reward Brains.',
+    {
+      choreId: z.string().describe('The chore ID to approve'),
+    },
+    async ({ choreId }) => {
+      const familyId = await requireParentFamily()
+
+      const [chore] = await db
+        .select()
+        .from(chores)
+        .where(and(eq(chores.id, choreId), eq(chores.familyId, familyId)))
+        .limit(1)
+
+      if (!chore) return { content: [{ type: 'text' as const, text: 'Chore not found' }] }
+      const approvable = ['submitted', 'ai_approved', 'ai_rejected', 'ai_uncertain']
+      if (!approvable.includes(chore.status)) {
+        return { content: [{ type: 'text' as const, text: `Chore can't be approved — current status: ${chore.status}` }] }
+      }
+
+      // Pay the kid atomically
+      await db.transaction(async (tx) => {
+        await tx
+          .update(accounts)
+          .set({ cachedBalance: sql`${accounts.cachedBalance} + ${chore.rewardBrains}` })
+          .where(eq(accounts.id, chore.assignedTo))
+
+        const [acct] = await tx.select({ cachedBalance: accounts.cachedBalance }).from(accounts).where(eq(accounts.id, chore.assignedTo))
+
+        await tx.insert(ledger).values({
+          familyId,
+          accountId: chore.assignedTo,
+          actorId: accountId,
+          kind: 'chore_payout',
+          brainsDelta: chore.rewardBrains,
+          balanceAfter: acct.cachedBalance,
+          metadata: { choreId: chore.id, choreTitle: chore.title, approvedBy: accountId },
+        })
+
+        await tx.update(chores).set({ status: 'paid', completedAt: new Date() }).where(eq(chores.id, choreId))
+      })
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ approved: true, choreId, title: chore.title, brainsPaid: chore.rewardBrains }, null, 2) }] }
+    },
+  )
+
+  // ── reject_chore ─────────────────────────────────────────────────────
+  server.tool(
+    'reject_chore',
+    'Reject a submitted chore with an optional note explaining why.',
+    {
+      choreId: z.string().describe('The chore ID to reject'),
+      reason: z.string().optional().describe('Optional reason for rejection'),
+    },
+    async ({ choreId, reason }) => {
+      const familyId = await requireParentFamily()
+
+      const [chore] = await db
+        .select()
+        .from(chores)
+        .where(and(eq(chores.id, choreId), eq(chores.familyId, familyId)))
+        .limit(1)
+
+      if (!chore) return { content: [{ type: 'text' as const, text: 'Chore not found' }] }
+
+      await db.update(chores).set({ status: 'parent_rejected', parentNote: reason ?? null }).where(eq(chores.id, choreId))
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ rejected: true, choreId, title: chore.title, reason }, null, 2) }] }
+    },
+  )
+
+  // ── topup_brains ─────────────────────────────────────────────────────
+  server.tool(
+    'topup_brains',
+    "Give Brains to a kid. Use this for allowance, rewards, or manual top-ups.",
+    {
+      kidName: z.string().describe("The kid's name"),
+      amount: z.number().min(1).max(100000).describe('Number of Brains to give'),
+      note: z.string().optional().describe('Optional note (e.g. "Weekly allowance")'),
+    },
+    async ({ kidName, amount, note }) => {
+      const familyId = await requireParentFamily()
+
+      const members = await db
+        .select({ accountId: memberships.accountId, persona: accounts.persona })
+        .from(memberships)
+        .innerJoin(accounts, eq(accounts.id, memberships.accountId))
+        .where(and(eq(memberships.familyId, familyId), eq(memberships.role, 'kid')))
+
+      const kid = members.find((m) => {
+        const name = (m.persona as { name?: string } | null)?.name ?? ''
+        return name.toLowerCase().includes(kidName.toLowerCase())
+      })
+      if (!kid) return { content: [{ type: 'text' as const, text: `No kid named "${kidName}" in your family` }] }
+
+      // Credit atomically
+      const result = await db.transaction(async (tx) => {
+        await tx
+          .update(accounts)
+          .set({ cachedBalance: sql`${accounts.cachedBalance} + ${amount}` })
+          .where(eq(accounts.id, kid.accountId))
+
+        const [acct] = await tx.select({ cachedBalance: accounts.cachedBalance }).from(accounts).where(eq(accounts.id, kid.accountId))
+
+        await tx.insert(ledger).values({
+          familyId,
+          accountId: kid.accountId,
+          actorId: accountId,
+          kind: 'topup',
+          brainsDelta: amount,
+          balanceAfter: acct.cachedBalance,
+          metadata: { note: note ?? null, source: 'mcp_topup' },
+        })
+
+        return { balanceAfter: acct.cachedBalance }
+      })
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ topped_up: true, kid: kidName, amount, newBalance: result.balanceAfter, note }, null, 2) }] }
+    },
+  )
+
+  // ── set_family_rule ──────────────────────────────────────────────────
+  server.tool(
+    'set_family_rule',
+    'Set or update a family rule (e.g. daily sugar limit, spend limit per transaction, health threshold).',
+    {
+      kind: z.string().describe('Rule type: sugar_limit_g, spend_limit_per_txn, health_threshold, or any custom key'),
+      value: z.any().describe('The value for this rule (number, string, or object)'),
+    },
+    async ({ kind, value }) => {
+      const familyId = await requireParentFamily()
+
+      // Upsert: check if rule exists
+      const [existing] = await db
+        .select({ id: familyRules.id })
+        .from(familyRules)
+        .where(and(eq(familyRules.familyId, familyId), eq(familyRules.kind, kind)))
+        .limit(1)
+
+      if (existing) {
+        await db.update(familyRules).set({ value, updatedAt: new Date() }).where(eq(familyRules.id, existing.id))
+      } else {
+        await db.insert(familyRules).values({ familyId, kind, value, status: 'confirmed', createdBy: accountId })
+      }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ rule_set: true, kind, value }, null, 2) }] }
+    },
+  )
+
   return server
 }

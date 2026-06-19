@@ -101,7 +101,12 @@ export default function JoinRequestScreen() {
     try {
       await api(`/join-requests/${req.id}/decline`, { method: 'POST' })
     } catch { /* ignore */ }
-    setRequests((prev) => prev.filter((r) => r.id !== req.id))
+    const remaining = requests.filter((r) => r.id !== req.id)
+    setRequests(remaining)
+    if (remaining.length === 0) {
+      // Kid chose "Create My Own" — proceed to normal onboarding
+      router.replace('/(auth)/role-select')
+    }
   }
 
   if (loading) {
@@ -205,7 +210,7 @@ export default function JoinRequestScreen() {
           ) : (
             <>
               <CircleCheck size={tokens.iconSize.lg} color="#000" strokeWidth={2} />
-              <Text style={s.acceptText}>Accept</Text>
+              <Text style={s.acceptText}>Join Family</Text>
             </>
           )}
         </Pressable>
@@ -216,7 +221,7 @@ export default function JoinRequestScreen() {
           disabled={accepting}
         >
           <CircleX size={tokens.iconSize.lg} color={tokens.color.textMuted} strokeWidth={1.5} />
-          <Text style={s.declineText}>Decline</Text>
+          <Text style={s.declineText}>Create My Own Account</Text>
         </Pressable>
       </View>
     </View>

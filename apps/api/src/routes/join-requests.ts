@@ -169,7 +169,7 @@ joinRequests.get('/join-requests/outgoing', requireAuth, async (c) => {
 
   const { invites } = await import('../db/schema')
   const rows = await db.query.invites.findMany({
-    where: and(eq(invites.familyId, memberRow.familyId), eq(invites.status, 'pending')),
+    where: and(eq(invites.familyId, memberRow.familyId), sql`${invites.status} IN ('pending', 'declined')`),
   })
 
   return c.json({
@@ -178,6 +178,7 @@ joinRequests.get('/join-requests/outgoing', requireAuth, async (c) => {
       phone: r.recipientPhone,
       name: ((r.kidSeed ?? {}) as { name?: string }).name ?? null,
       role: r.expectedRole,
+      status: r.status,
       expiresAt: r.expiresAt,
     })),
   })
@@ -331,8 +332,21 @@ joinRequests.post('/join-requests/:id/decline', requireAuth, async (c) => {
 
   await db
     .update(invites)
-    .set({ status: 'revoked', revokedAt: new Date() })
+    .set({ status: 'declined', revokedAt: new Date() })
     .where(eq(invites.id, requestId))
+
+  // Notify the parent who sent the invite
+  const { sendPushToAccount } = await import('../services/push')
+  const [kidAcct] = await db
+    .select({ persona: accounts.persona })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1)
+  const kidName = ((kidAcct?.persona ?? {}) as { name?: string }).name ?? 'The kid'
+  sendPushToAccount(
+    request.invitedBy,
+    { title: `${kidName} declined your invite`, body: 'They chose to create their own account instead.', data: { screen: 'home' } },
+  ).catch(() => undefined)
 
   return c.json({ ok: true })
 })

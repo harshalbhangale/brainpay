@@ -70,14 +70,18 @@ export async function processDocument(documentId: string, rawContent?: string) {
       cardsDue: sql`${studyTopics.cardsDue} + ${cards.length}`,
     }).where(eq(studyTopics.id, doc.topicId))
 
-    // Award brains for successful document upload
-    const [membership] = await db
-      .select({ familyId: memberships.familyId })
-      .from(memberships)
-      .where(eq(memberships.accountId, doc.accountId))
-      .limit(1)
-    if (membership?.familyId) {
-      await awardStudyBrains(doc.accountId, membership.familyId, 'study_upload', STUDY_REWARD_AMOUNTS.study_upload, { documentId })
+    // Award brains for successful document upload (non-fatal)
+    try {
+      const [membership] = await db
+        .select({ familyId: memberships.familyId })
+        .from(memberships)
+        .where(eq(memberships.accountId, doc.accountId))
+        .limit(1)
+      if (membership?.familyId) {
+        await awardStudyBrains(doc.accountId, membership.familyId, 'study_upload', STUDY_REWARD_AMOUNTS.study_upload, { documentId })
+      }
+    } catch (rewardErr) {
+      logger.warn({ err: String(rewardErr).slice(0, 120), documentId }, 'study.reward_skipped')
     }
 
     logger.info({ documentId, chunks: chunks.length, cards: cards.length }, 'study.document_processed')
@@ -183,29 +187,44 @@ async function generateCards(
     messages: [
       {
         role: 'system',
-        content: `You are a study card generator for a student. Create flashcards from the provided text.
-Each card should test ONE concept. The front is a question, the back is a concise answer.
-Return JSON array: [{"front": "...", "back": "..."}]
-Generate 5-15 cards depending on content density. Focus on key definitions, formulas, and important facts.`,
+        content: `You are an expert study flashcard generator for school students.
+
+You will receive EITHER study material (notes, textbook text, extracted PDF/image content) OR a request to generate concepts for a subject and grade.
+
+In BOTH cases, produce a set of flashcards covering the most important concepts, definitions, formulas, and facts a student needs to know.
+
+Return ONLY valid JSON in this exact shape:
+{"cards": [{"front": "question or concept", "back": "clear, concise answer or explanation"}]}
+
+Generate 8-15 cards. Each card tests ONE concept. Make answers student-friendly and accurate.`,
       },
-      { role: 'user', content: text.slice(0, 6000) },
+      { role: 'user', content: text.slice(0, 12000) },
     ],
     response_format: { type: 'json_object' },
-    max_tokens: 2000,
+    max_tokens: 3000,
   })
 
+  const raw = res.choices[0]?.message?.content ?? '{}'
   let cards: { front: string; back: string }[] = []
   try {
-    const parsed = JSON.parse(res.choices[0]?.message?.content ?? '{}')
-    cards = Array.isArray(parsed.cards) ? parsed.cards : Array.isArray(parsed) ? parsed : []
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed.cards)) cards = parsed.cards
+    else if (Array.isArray(parsed)) cards = parsed
+    else if (Array.isArray(parsed.flashcards)) cards = parsed.flashcards
   } catch {
+    logger.error({ documentId, raw: raw.slice(0, 200) }, 'study.card_parse_failed')
     return []
   }
 
-  if (cards.length === 0) return []
+  // Validate shape
+  cards = cards.filter((c) => c && typeof c.front === 'string' && typeof c.back === 'string' && c.front.length > 0)
 
-  // Insert all cards
-  const values = cards.map((card) => ({
+  if (cards.length === 0) {
+    logger.warn({ documentId, raw: raw.slice(0, 200) }, 'study.no_cards_generated')
+    return []
+  }
+
+  await db.insert(studyCards).values(cards.map((card) => ({
     topicId,
     accountId,
     documentId,
@@ -213,9 +232,8 @@ Generate 5-15 cards depending on content density. Focus on key definitions, form
     back: card.back,
     status: 'new' as const,
     nextReviewAt: new Date(),
-  }))
+  })))
 
-  await db.insert(studyCards).values(values)
-
+  logger.info({ documentId, cardCount: cards.length }, 'study.cards_generated')
   return cards
 }

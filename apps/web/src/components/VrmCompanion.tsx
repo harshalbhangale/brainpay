@@ -6,25 +6,23 @@ import { VRMLoaderPlugin, VRMUtils, type VRM } from '@pixiv/three-vrm'
 export type CompanionMood = 'neutral' | 'happy' | 'sad' | 'surprised'
 
 /**
- * Mika — the BrainPal anime companion, rendered as a live VRM avatar.
+ * The BrainPal anime companion, rendered as a live VRM avatar.
  *
- * - Idle life: breathing sway, auto-blink, spring-bone hair physics.
- * - Lip-sync: the mouth ('aa' viseme) follows PAL's speaking level via getLevel().
- * - Reactions: `mood` maps to VRM expression presets (happy on a great pick,
- *   sad/surprised on "think twice").
- *
- * `compact` renders a tight face/bust framing for the chat dock; otherwise a
- * fuller upper-body framing for the camera overlay.
+ * - Natural idle: arms rest at the sides (out of the default T-pose), with
+ *   breathing, weight-shift, gentle arm sway, and head motion.
+ * - Lip-sync: the mouth ('aa') follows the speaking level via getLevel().
+ * - Reactions: `mood` maps to VRM expression presets.
+ * - Framing auto-fits the whole model so the hair is never cropped.
  */
 export function VrmCompanion({
+  src,
   getLevel,
   mood = 'neutral',
-  compact = false,
   className,
 }: {
+  src: string
   getLevel?: () => number
   mood?: CompanionMood
-  compact?: boolean
   className?: string
 }) {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -46,6 +44,7 @@ export function VrmCompanion({
     let disposed = false
     let raf = 0
     let vrm: VRM | null = null
+    setLoading(true)
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -55,13 +54,33 @@ export function VrmCompanion({
     renderer.domElement.style.height = '100%'
 
     const scene = new THREE.Scene()
-    const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 20)
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50)
 
-    // Soft, flattering light for the toon shading.
-    const key = new THREE.DirectionalLight(0xffffff, 2.2)
-    key.position.set(1, 2, 2.5)
+    const key = new THREE.DirectionalLight(0xffffff, 2.4)
+    key.position.set(0.5, 2, 2.5)
     scene.add(key)
-    scene.add(new THREE.AmbientLight(0xffffff, 1.4))
+    const rim = new THREE.DirectionalLight(0xcfe9ff, 0.8)
+    rim.position.set(-1.5, 1.5, -1.5)
+    scene.add(rim)
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5))
+
+    // Frame the whole avatar (top of hair → mid-shin) centred in the canvas.
+    function fitView() {
+      if (!vrm) return
+      const box = new THREE.Box3().setFromObject(vrm.scene)
+      const size = new THREE.Vector3()
+      const center = new THREE.Vector3()
+      box.getSize(size)
+      box.getCenter(center)
+      // Show roughly the top 80% (head to upper legs) for a friendly portrait.
+      const viewHeight = size.y * 0.82
+      const fov = (camera.fov * Math.PI) / 180
+      const dist = (viewHeight / 2 / Math.tan(fov / 2)) * 1.05
+      const targetY = box.max.y - viewHeight / 2
+      camera.position.set(center.x, targetY, (center.z || 0) + dist)
+      camera.lookAt(center.x, targetY, center.z || 0)
+      camera.updateProjectionMatrix()
+    }
 
     function resize() {
       const w = mount!.clientWidth || 1
@@ -69,17 +88,7 @@ export function VrmCompanion({
       renderer.setSize(w, h, false)
       camera.aspect = w / h
       camera.updateProjectionMatrix()
-    }
-
-    // Framing: head+bust for compact, upper body otherwise.
-    function frame() {
-      if (compact) {
-        camera.position.set(0, 1.33, 0.78)
-        camera.lookAt(0, 1.32, 0)
-      } else {
-        camera.position.set(0, 1.18, 1.15)
-        camera.lookAt(0, 1.1, 0)
-      }
+      fitView()
     }
 
     const loader = new GLTFLoader()
@@ -88,20 +97,27 @@ export function VrmCompanion({
     const clock = new THREE.Clock()
     let blinkTimer = 1 + Math.random() * 3
     let blink = 0
-    const expr: Record<string, number> = { happy: 0, sad: 0, surprised: 0, aa: 0 }
+    let nextGlance = 3 + Math.random() * 4
+    let glance = 0
+    const expr = { happy: 0, sad: 0, surprised: 0, aa: 0 }
+
+    // Rest pose offsets (radians) to bring arms down from the T-pose.
+    const REST = {
+      upperArmZ: 1.2, // brought to sides
+      upperArmX: 0.12,
+      lowerArmZ: 0.18,
+    }
 
     loader.load(
-      '/mika.vrm',
+      src,
       (gltf) => {
         if (disposed) return
         vrm = gltf.userData.vrm as VRM
         VRMUtils.removeUnnecessaryVertices(gltf.scene)
         VRMUtils.combineSkeletons(gltf.scene)
-        // VRM 1.0 already faces +Z (toward camera); no rotation needed.
         vrm.scene.rotation.y = 0
         scene.add(vrm.scene)
         resize()
-        frame()
         setLoading(false)
       },
       undefined,
@@ -111,22 +127,57 @@ export function VrmCompanion({
       },
     )
 
+    const bone = (n: Parameters<NonNullable<VRM['humanoid']>['getNormalizedBoneNode']>[0]) =>
+      vrm?.humanoid?.getNormalizedBoneNode(n) ?? null
+
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const dt = clock.getDelta()
       const t = clock.elapsedTime
 
       if (vrm) {
-        // Gentle breathing + idle sway.
-        const spine = vrm.humanoid?.getNormalizedBoneNode('spine')
-        if (spine) {
-          spine.rotation.x = Math.sin(t * 1.1) * 0.02
-          spine.rotation.y = Math.sin(t * 0.5) * 0.03
+        // ── Arms: rest down + gentle sway ──
+        const lUp = bone('leftUpperArm')
+        const rUp = bone('rightUpperArm')
+        const lLow = bone('leftLowerArm')
+        const rLow = bone('rightLowerArm')
+        const sway = Math.sin(t * 0.9) * 0.05
+        const breathe = Math.sin(t * 1.6) * 0.025
+        if (lUp) {
+          lUp.rotation.z = -REST.upperArmZ - sway
+          lUp.rotation.x = REST.upperArmX + breathe
         }
-        const head = vrm.humanoid?.getNormalizedBoneNode('head')
-        if (head) head.rotation.z = Math.sin(t * 0.7) * 0.02
+        if (rUp) {
+          rUp.rotation.z = REST.upperArmZ + sway
+          rUp.rotation.x = REST.upperArmX + breathe
+        }
+        if (lLow) lLow.rotation.z = -REST.lowerArmZ - Math.max(0, Math.sin(t * 0.7)) * 0.12
+        if (rLow) rLow.rotation.z = REST.lowerArmZ + Math.max(0, Math.sin(t * 0.7 + 1)) * 0.12
 
-        // Auto-blink.
+        // ── Body: breathing + slow weight shift ──
+        const spine = bone('spine')
+        if (spine) {
+          spine.rotation.x = Math.sin(t * 1.6) * 0.02
+          spine.rotation.z = Math.sin(t * 0.45) * 0.03
+        }
+        const chest = bone('chest')
+        if (chest) chest.rotation.x = Math.sin(t * 1.6 + 0.5) * 0.015
+
+        // ── Head: subtle motion + occasional glance ──
+        nextGlance -= dt
+        if (nextGlance <= 0) {
+          glance = (Math.random() - 0.5) * 0.5
+          nextGlance = 3 + Math.random() * 5
+        }
+        glance *= 1 - Math.min(1, dt * 1.5)
+        const head = bone('head')
+        if (head) {
+          head.rotation.z = Math.sin(t * 0.7) * 0.03
+          head.rotation.y = glance
+          head.rotation.x = Math.sin(t * 0.9) * 0.02
+        }
+
+        // ── Blink ──
         blinkTimer -= dt
         if (blinkTimer <= 0) {
           blink = 1
@@ -134,11 +185,9 @@ export function VrmCompanion({
         }
         blink = Math.max(0, blink - dt * 7)
 
-        // Lip-sync from speaking level.
+        // ── Lip-sync + mood ──
         const target = Math.min(1, levelRef.current() * 1.2)
         expr.aa += (target - expr.aa) * Math.min(1, dt * 18)
-
-        // Mood → expression presets (smoothed).
         const m = moodRef.current
         const approach = (cur: number, to: number) => cur + (to - cur) * Math.min(1, dt * 6)
         expr.happy = approach(expr.happy, m === 'happy' ? 0.9 : 0)
@@ -161,10 +210,7 @@ export function VrmCompanion({
     }
     tick()
 
-    const ro = new ResizeObserver(() => {
-      resize()
-      frame()
-    })
+    const ro = new ResizeObserver(() => resize())
     ro.observe(mount)
 
     return () => {
@@ -178,17 +224,16 @@ export function VrmCompanion({
       renderer.dispose()
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
     }
-  }, [compact])
+  }, [src])
 
   return (
     <div ref={mountRef} className={className ?? 'relative h-full w-full'}>
       {loading && (
-        <div className="absolute inset-0 flex items-end justify-center pb-6">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="flex items-center gap-1.5 rounded-full bg-black/40 px-3 py-1.5 text-xs text-white backdrop-blur">
             <span className="dot h-1.5 w-1.5 rounded-full bg-white" style={{ animationDelay: '0ms' }} />
             <span className="dot h-1.5 w-1.5 rounded-full bg-white" style={{ animationDelay: '160ms' }} />
             <span className="dot h-1.5 w-1.5 rounded-full bg-white" style={{ animationDelay: '320ms' }} />
-            <span className="ml-1">waking Mika…</span>
           </div>
         </div>
       )}

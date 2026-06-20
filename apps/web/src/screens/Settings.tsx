@@ -5,6 +5,7 @@ import { Sun, Moon, X, LogOut, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuthStore } from '../stores/auth'
 import { useTheme } from '../lib/theme'
+import { AVATARS, useAvatar } from '../lib/avatar'
 
 /**
  * Settings — a full-screen overlay reachable from the Home top bar.
@@ -33,6 +34,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const account = useAuthStore((s) => s.account)
   const logout = useAuthStore((s) => s.logout)
   const { theme, setTheme } = useTheme()
+  const { avatar, setAvatar } = useAvatar()
 
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
   const [clearing, setClearing] = useState(false)
@@ -117,6 +119,29 @@ export function Settings({ onClose }: { onClose: () => void }) {
               </SegBtn>
             </div>
           </div>
+        </Section>
+
+        {/* Companion */}
+        <Section title="Companion">
+          {AVATARS.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setAvatar(a.id)}
+              className="flex w-full items-center justify-between px-4 py-3.5 text-left transition active:bg-surface2"
+            >
+              <span className="text-sm font-medium text-ink">{a.name}</span>
+              <span
+                className="flex h-5 w-5 items-center justify-center rounded-full ring-2"
+                style={{
+                  borderColor: 'transparent',
+                  backgroundColor: avatar === a.id ? 'var(--color-accent)' : 'transparent',
+                  boxShadow: avatar === a.id ? 'none' : 'inset 0 0 0 2px var(--color-surface2)',
+                }}
+              >
+                {avatar === a.id && <span className="h-2 w-2 rounded-full bg-on-accent" />}
+              </span>
+            </button>
+          ))}
         </Section>
 
         {/* Preferences */}

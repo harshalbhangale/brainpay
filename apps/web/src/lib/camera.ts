@@ -39,20 +39,29 @@ export async function captureJpeg(
   canvas: HTMLCanvasElement,
   maxWidth = 384,
   quality = 0.6,
+  zoom = 1,
 ): Promise<Uint8Array | null> {
   const vw = video.videoWidth
   const vh = video.videoHeight
   if (!vw || !vh) return null
 
-  const scale = Math.min(1, maxWidth / vw)
-  const w = Math.round(vw * scale)
-  const h = Math.round(vh * scale)
+  // Digital zoom: crop a centred region and blow it up, so the model "sees"
+  // exactly what the zoomed preview shows.
+  const z = Math.max(1, zoom)
+  const cropW = vw / z
+  const cropH = vh / z
+  const sx = (vw - cropW) / 2
+  const sy = (vh - cropH) / 2
+
+  const scale = Math.min(1, maxWidth / cropW)
+  const w = Math.round(cropW * scale)
+  const h = Math.round(cropH * scale)
   canvas.width = w
   canvas.height = h
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
-  ctx.drawImage(video, 0, 0, w, h)
+  ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, w, h)
 
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, 'image/jpeg', quality),

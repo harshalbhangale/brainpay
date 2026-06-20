@@ -23,6 +23,8 @@ export type KidSummary = {
   pendingChores: number
   recentActivity: { kind: string; brainsDelta: number; metadata: unknown; createdAt: Date }[]
   activeGoal?: { name: string; targetBrains: number; currentBrains: number }
+  interests?: string[]
+  savingGoal?: string
 }
 
 export type PalContext = {
@@ -101,7 +103,7 @@ export async function loadPalContext(accountId: string): Promise<PalContext> {
 
   const kidSummaries: KidSummary[] = await Promise.all(
     kids.map(async (kid) => {
-      const persona = (kid.persona ?? {}) as { name?: string; age?: number; streak?: number }
+      const persona = (kid.persona ?? {}) as { name?: string; age?: number; streak?: number; interests?: string[]; savingGoal?: string }
 
       // Recent ledger entries.
       const recentActivity = await db
@@ -143,6 +145,8 @@ export async function loadPalContext(accountId: string): Promise<PalContext> {
         pendingChores: pendingChoreRows.length,
         recentActivity,
         activeGoal: activeGoal ?? undefined,
+        interests: persona.interests ?? [],
+        savingGoal: persona.savingGoal ?? undefined,
       }
     }),
   )
@@ -175,6 +179,10 @@ export function contextToSystemPrompt(ctx: PalContext, style: 'parent' | 'kid' =
     const spendLine = spendStyle
       ? `Spend style: ${spendStyle === 'impulse' ? 'impulse spender — apply more friction' : spendStyle === 'saver' ? 'natural saver — celebrate streaks' : 'mixed spender'}.`
       : ''
+    const interestsLine = kid?.interests && kid.interests.length
+      ? `They love: ${kid.interests.join(', ')} — weave these in when you give examples.`
+      : ''
+    const savingLine = kid?.savingGoal ? `They're saving up for: ${kid.savingGoal} — connect money tips to this.` : ''
 
     return `You are PAL — a sarcastic, dry-witted money buddy for kids aged 10-14.
 You are talking to ${ctx.callerName}.
@@ -183,6 +191,8 @@ ${goalLine}
 Streak: ${kid?.streak ?? 0} days.
 Pending chores: ${kid?.pendingChores ?? 0}.
 ${spendLine}
+${interestsLine}
+${savingLine}
 
 Recent activity (last 7 days):
 ${ctx.kids.find(k => k.accountId === ctx.callerId)?.recentActivity.slice(0, 5).map(a =>

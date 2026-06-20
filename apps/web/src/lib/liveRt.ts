@@ -27,7 +27,7 @@ const TAG_OUT_AUDIO = 0x04
 const TAG_OUT_MP3 = 0x05
 
 export type LiveRole = 'parent' | 'kid'
-export type LiveMode = 'assist' | 'shop'
+export type LiveMode = 'assist' | 'shop' | 'onboard_parent' | 'onboard_kid'
 
 export type LiveDetection = {
   detectionId: string
@@ -54,6 +54,7 @@ export type LiveRtHandlers = {
   onInterrupted?: () => void
   onPalAudio?: (pcm: Int16Array) => void
   onPalAudioMp3?: (mp3: ArrayBuffer) => void
+  onPersona?: (persona: Record<string, unknown>) => void
   onDetection?: (d: LiveDetection) => void
   onError?: (message: string) => void
   onClose?: () => void
@@ -124,6 +125,9 @@ export function connectLiveRt(handlers: LiveRtHandlers, token?: string | null): 
         break
       case 'detection':
         handlers.onDetection?.(msg as unknown as LiveDetection)
+        break
+      case 'persona.saved':
+        handlers.onPersona?.((msg.persona as Record<string, unknown>) ?? {})
         break
       case 'error':
         handlers.onError?.((msg.message as string) ?? 'Live session error')

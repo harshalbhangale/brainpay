@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuthStore, type Account } from '../stores/auth'
+import { VoiceOnboarding } from '../components/VoiceOnboarding'
 
 /**
  * Parent onboarding — 5 questions that build the PAL persona.
@@ -57,6 +58,11 @@ export function ParentOnboarding() {
   const [primaryGoal, setPrimaryGoal] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [flow, setFlow] = useState<'voice' | 'wizard'>('voice')
+
+  if (flow === 'voice') {
+    return <VoiceOnboarding role="parent" onDone={() => navigate('/', { replace: true })} onTypeInstead={() => setFlow('wizard')} />
+  }
 
   const palStyle = PARENTING_INSTINCT.find((x) => x.id === instinct)?.style ?? 'balanced'
 

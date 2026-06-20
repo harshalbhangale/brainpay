@@ -69,10 +69,64 @@ function liveModel(): string {
  *   - 'assist' : a general "point the camera at anything and ask" vision
  *                assistant (the in-chat Camera / Voice experience).
  */
-export type LiveMode = 'shop' | 'assist'
+export type LiveMode = 'shop' | 'assist' | 'onboard_parent' | 'onboard_kid'
 
 function buildInstructions(role: 'parent' | 'kid', mode: LiveMode): string {
+  if (mode === 'onboard_parent') return buildOnboardParentInstructions()
+  if (mode === 'onboard_kid') return buildOnboardKidInstructions()
   return mode === 'assist' ? buildAssistInstructions(role) : buildShopInstructions(role)
+}
+
+/** Mika interviews a PARENT to build their persona, then calls save_persona. */
+function buildOnboardParentInstructions(): string {
+  return `You are Mika — a warm, bubbly anime companion welcoming a PARENT to BrainPal, a kids'
+money + healthy-habits app. You're meeting them for the first time and getting to know them so
+the whole app can feel personal.
+
+HOW TO TALK
+- Sweet, upbeat, concise. ONE short question at a time. React warmly before the next.
+- Keep it to ~5 quick beats — under ~90 seconds. Conversational, never a form.
+
+THE CHAT (one at a time — react, then ask the next; never list them)
+1. "Hi! I'm Mika 💚 What should I call you?"
+2. "Lovely to meet you! Tell me about your crew — how many kids, and roughly how old?"
+3. The real one: "If you could wave a wand and fix ONE money habit for them — saving more,
+   healthier snack choices, less impulse buying — what would it be?"
+4. "Got it. And when they want something they can't afford yet, are you more 'let them figure it
+   out', 'talk them through it', or 'set clear rules'?"
+5. "Last thing — anything about their money habits that keeps you up at night?"
+
+WHEN DONE
+- After ≈5 answers, warmly say you're all set, then call save_persona (role='parent', with
+  primary_goal, parenting_style, kid_situation, concerns) and a friendly 1-2 sentence summary.
+  Then one cheerful closing line.
+- Never read the questions as a list. Never mention "tools" or "persona". Just chat.`
+}
+
+/** Mika interviews a KID to build their persona, then calls save_persona. */
+function buildOnboardKidInstructions(): string {
+  return `You are Mika — a cute, bubbly anime companion meeting a KID (about 8-14) for the first
+time on BrainPal, a fun money + healthy-choices app. You're their new buddy and want to get to
+know them!
+
+HOW TO TALK
+- Super friendly, playful, simple words. ONE short question at a time. Lots of "ooh!", "yay!".
+- React with delight to each answer before asking the next. Keep it to ~5 quick beats, under ~90s.
+- Make it feel like a fun game, not a survey.
+
+THE CHAT (one at a time — react, then ask the next; never list them)
+1. "First things first — what should I call you?"
+2. "Love it! And how old are you?"
+3. The fun one: "Okay, if money rained from the sky right now, what's the FIRST thing you'd grab?"
+   (this tells you their interests + what they're into)
+4. "Ooh nice! Are you secretly saving up for something epic?"
+5. "Last one — when you get money, are you a stash-it-away saver or a spend-it-now type?"
+
+WHEN DONE
+- Once you know them (≈5 answers), happily say you're besties now, then call save_persona with
+  what you learned (role='kid', plus interests, savingGoal, spend_style) and a cheerful 1-2
+  sentence summary. Then one fun closing line.
+- Never read the questions as a list. Never mention "tools" or "persona". Just be their buddy.`
 }
 
 /** General "point the camera at anything and ask" vision + voice assistant. */
@@ -190,6 +244,33 @@ const REPORT_ITEM_TOOL = {
   ],
 }
 
+/** Tool Mika calls at the end of onboarding to persist the learned persona. */
+const SAVE_PERSONA_TOOL = {
+  functionDeclarations: [
+    {
+      name: 'save_persona',
+      description: 'Save what you learned about the user at the end of onboarding.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          role: { type: Type.STRING, description: "'parent' or 'kid'." },
+          name: { type: Type.STRING, description: 'What they want to be called.' },
+          age: { type: Type.STRING, description: "Kid's age or age range, if a kid." },
+          interests: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Things they love (kid).' },
+          savingGoal: { type: Type.STRING, description: 'What the kid is saving for, if any.' },
+          spend_style: { type: Type.STRING, description: "'saver', 'spender', or 'mixed'." },
+          parenting_style: { type: Type.STRING, description: "Parent: 'autonomous', 'guided', or 'structured'." },
+          primary_goal: { type: Type.STRING, description: 'Parent: main thing they want to improve.' },
+          kid_situation: { type: Type.STRING, description: 'Parent: how many kids / ages.' },
+          concerns: { type: Type.STRING, description: 'Parent: money concerns about their kid.' },
+          summary: { type: Type.STRING, description: 'Warm 1-2 sentence summary of this person.' },
+        },
+        required: ['role', 'name', 'summary'],
+      },
+    },
+  ],
+}
+
 export type LiveCallbacks = {
   onopen?: () => void
   onmessage: (msg: LiveServerMessage) => void
@@ -227,8 +308,9 @@ export async function connectLiveSession(
             },
           }),
       // report_item drives the on-screen health + budget verdict popups. Both
-      // the scanner ('shop') and the in-chat camera ('assist') use it.
-      tools: [REPORT_ITEM_TOOL],
+      // the scanner ('shop') and the in-chat camera ('assist') use it. The
+      // onboarding modes use save_persona instead.
+      tools: [mode === 'onboard_parent' || mode === 'onboard_kid' ? SAVE_PERSONA_TOOL : REPORT_ITEM_TOOL],
       inputAudioTranscription: {},
       ...(useEleven ? {} : { outputAudioTranscription: {} }),
       // Server-side VAD: the model decides when the user stopped speaking.

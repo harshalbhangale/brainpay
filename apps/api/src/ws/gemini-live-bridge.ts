@@ -194,7 +194,9 @@ export async function onGeminiLiveMessage(ws: WebSocket, data: Buffer) {
         ws,
         state,
         (msg.role as 'parent' | 'kid') ?? 'kid',
-        msg.mode === 'assist' ? 'assist' : 'shop',
+        (['assist', 'shop', 'onboard_parent', 'onboard_kid'].includes(msg.mode as string)
+          ? (msg.mode as LiveMode)
+          : 'shop'),
       )
       break
     case 'mic':
@@ -283,6 +285,10 @@ function handleLiveMessage(ws: WebSocket, state: SessionState, m: LiveServerMess
           estimatedPrice: args.estimatedPrice ?? '',
           confidence: args.confidence ?? 0,
         })
+      }
+      if (call.name === 'save_persona') {
+        send(ws, { type: 'persona.saved', persona: (call.args ?? {}) as Record<string, unknown> })
+        logger.info('onboard.persona_saved')
       }
       responses.push({ id: call.id, name: call.name ?? 'report_item', response: { result: 'ok' } })
     }

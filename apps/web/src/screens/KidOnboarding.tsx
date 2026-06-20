@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuthStore, type Account } from '../stores/auth'
+import { VoiceOnboarding } from '../components/VoiceOnboarding'
 
 /** Kid onboarding — builds a kid persona used to personalise every agent. */
 
@@ -52,6 +53,11 @@ export function KidOnboarding() {
   const [spend, setSpend] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [flow, setFlow] = useState<'choose' | 'voice' | 'wizard'>('voice')
+
+  if (flow === 'voice') {
+    return <VoiceOnboarding role="kid" onDone={() => navigate('/', { replace: true })} onTypeInstead={() => setFlow('wizard')} />
+  }
 
   const canContinue =
     (step === 0 && name.trim().length > 0) ||

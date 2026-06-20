@@ -34,6 +34,8 @@ export default function AppLayout() {
       <Stack.Screen name="study-topic" />
       <Stack.Screen name="study-new-topic" />
       <Stack.Screen name="study-review" />
+      <Stack.Screen name="study-quiz" />
+      <Stack.Screen name="study-interview" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
     </Stack>
   )
 }

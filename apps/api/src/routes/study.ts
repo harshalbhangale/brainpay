@@ -446,6 +446,12 @@ study.post('/study/interviews/:id/complete', async (c) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 study.post('/study/nudge-check', async (c) => {
+  // Auth: cron key or valid JWT
+  const cronKey = c.req.header('X-Cron-Key')
+  const authHeader = c.req.header('Authorization')
+  if (cronKey !== 'brainpal-internal-cron-2024' && !authHeader?.startsWith('Bearer ')) {
+    return c.json({ error: 'unauthorized' }, 401)
+  }
   const { checkAndSendStudyNudges } = await import('../services/study-nudges')
   const count = await checkAndSendStudyNudges()
   return c.json({ ok: true, nudgesSent: count })

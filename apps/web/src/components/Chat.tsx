@@ -124,7 +124,7 @@ export function Chat() {
       })
       setMessages((m) => [
         ...m,
-        { id: uid(), kind: 'agent', agentId: 'pal', content: res.confirmationMessage ?? 'Done ✅' },
+        { id: uid(), kind: 'agent', agentId: 'pal', content: res.confirmationMessage ?? 'Done.' },
       ])
     } catch (e) {
       setMessages((m) => [
@@ -191,10 +191,10 @@ function ChatHeader() {
             AI council
           </span>
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5">
+        <div className="mt-0.5 flex items-center gap-2">
           {SPECIALISTS.map((a) => (
             <span key={a.id} className="flex items-center gap-1 text-[11px] text-muted">
-              <span>{a.emoji}</span>
+              <a.Icon size={12} style={{ color: a.color }} />
               {a.name.replace('PAL', '')}
             </span>
           ))}
@@ -234,7 +234,7 @@ function EmptyState({ onPick }: { onPick: (t: string) => void }) {
 function UserBubble({ content }: { content: string }) {
   return (
     <div className="animate-msg-in flex justify-end">
-      <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm font-medium leading-relaxed text-black">
+      <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm font-medium leading-relaxed text-on-accent">
         {content}
       </div>
     </div>
@@ -248,8 +248,8 @@ function AgentBubble({ agent, content, index }: { agent: Agent; content: string;
       <AgentOrb agent={agent} size={30} />
       <div className="max-w-[82%]">
         {!isPal && (
-          <div className="mb-1 ml-1 text-[11px] font-bold" style={{ color: agent.color }}>
-            {agent.emoji} {agent.name}
+          <div className="mb-1 ml-1 flex items-center gap-1 text-[11px] font-bold" style={{ color: agent.color }}>
+            <agent.Icon size={12} /> {agent.name}
           </div>
         )}
         <div
@@ -303,7 +303,7 @@ function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm
         </button>
         <button
           onClick={onConfirm}
-          className="flex-1 rounded-full bg-accent py-2.5 text-sm font-bold text-black active:scale-[0.98]"
+          className="flex-1 rounded-full bg-accent py-2.5 text-sm font-bold text-on-accent active:scale-[0.98]"
         >
           Confirm
         </button>
@@ -364,7 +364,7 @@ function Composer({
       <button
         type="submit"
         disabled={disabled || !value.trim()}
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-xl font-black text-black transition disabled:opacity-40"
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-xl font-black text-on-accent transition disabled:opacity-40"
       >
         ↑
       </button>
@@ -383,16 +383,15 @@ function AgentOrb({ agent, size, aura, ring }: { agent: Agent; size: number; aur
         />
       )}
       <span
-        className="relative flex items-center justify-center rounded-full"
+        className="relative flex items-center justify-center rounded-full text-white"
         style={{
           width: size,
           height: size,
           background: `linear-gradient(135deg, ${agent.gradient[0]}, ${agent.gradient[1]})`,
           boxShadow: ring ? '0 0 0 2px var(--color-canvas)' : undefined,
-          fontSize: size * 0.5,
         }}
       >
-        {agent.emoji}
+        <agent.Icon size={size * 0.5} strokeWidth={2.4} />
       </span>
     </span>
   )

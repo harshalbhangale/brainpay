@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, type LucideIcon } from 'lucide-react'
 import { useCardSettings } from '../../lib/card'
 import { aud } from '../../lib/format'
 import { PaymentCard } from './PaymentCard'
@@ -34,25 +35,27 @@ export function CardTab({
       <div className="flex gap-3">
         <button
           onClick={() => setRevealed((v) => !v)}
-          className="flex-1 rounded-full bg-surface2 py-3 text-sm font-bold text-ink active:scale-[0.98]"
+          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-surface2 py-3 text-sm font-bold text-ink active:scale-[0.98]"
         >
-          {revealed ? 'Hide details' : 'Show card number'}
+          {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
+          {revealed ? 'Hide details' : 'Show number'}
         </button>
         <button
           onClick={() => update({ frozen: !settings.frozen })}
-          className={`flex-1 rounded-full py-3 text-sm font-bold active:scale-[0.98] ${
-            settings.frozen ? 'bg-accent text-black' : 'bg-surface2 text-ink'
+          className={`flex flex-1 items-center justify-center gap-2 rounded-full py-3 text-sm font-bold active:scale-[0.98] ${
+            settings.frozen ? 'bg-accent text-on-accent' : 'bg-surface2 text-ink'
           }`}
         >
-          {settings.frozen ? 'Unfreeze card' : 'Freeze card'}
+          <Snowflake size={16} />
+          {settings.frozen ? 'Unfreeze' : 'Freeze card'}
         </button>
       </div>
 
       {/* Status */}
-      <div className="flex items-center gap-3 rounded-2xl bg-surface p-4">
+      <div className="flex items-center gap-3 rounded-2xl bg-surface p-4 ring-1 ring-border">
         <span
           className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: settings.frozen ? '#ff5c5c' : '#3ddc84' }}
+          style={{ backgroundColor: settings.frozen ? 'var(--color-danger)' : 'var(--color-accent)' }}
         />
         <span className="text-sm font-semibold text-ink">
           {settings.frozen ? 'Card is frozen' : 'Card is active'}
@@ -64,21 +67,21 @@ export function CardTab({
         <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Controls</h3>
         <div className="overflow-hidden rounded-2xl bg-surface">
           <ToggleRow
-            icon="🌐"
+            Icon={Globe}
             label="Online payments"
             on={settings.online}
             disabled={settings.frozen}
             onToggle={() => update({ online: !settings.online })}
           />
           <ToggleRow
-            icon="🏧"
+            Icon={Banknote}
             label="ATM withdrawals"
             on={settings.atm}
             disabled={settings.frozen}
             onToggle={() => update({ atm: !settings.atm })}
           />
           <ToggleRow
-            icon="📶"
+            Icon={Nfc}
             label="Contactless (tap to pay)"
             on={settings.contactless}
             disabled={settings.frozen}
@@ -88,7 +91,7 @@ export function CardTab({
           {/* Daily limit */}
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
-              <span className="text-lg">📊</span>
+              <Gauge size={20} className="text-muted" />
               <span className="text-sm font-medium text-ink">Daily spend limit</span>
             </div>
             <div className="flex items-center gap-2">
@@ -112,8 +115,9 @@ export function CardTab({
 
       <button
         onClick={() => update({ frozen: true })}
-        className="w-full rounded-2xl bg-danger/10 py-3.5 text-sm font-bold text-danger active:scale-[0.99]"
+        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-danger/10 py-3.5 text-sm font-bold text-danger active:scale-[0.99]"
       >
+        <ShieldAlert size={16} />
         Report lost or stolen
       </button>
     </div>
@@ -121,13 +125,13 @@ export function CardTab({
 }
 
 function ToggleRow({
-  icon,
+  Icon,
   label,
   on,
   disabled,
   onToggle,
 }: {
-  icon: string
+  Icon: LucideIcon
   label: string
   on: boolean
   disabled?: boolean
@@ -137,7 +141,7 @@ function ToggleRow({
   return (
     <div className={`flex items-center justify-between px-4 py-3 ${disabled ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-3">
-        <span className="text-lg">{icon}</span>
+        <Icon size={20} className="text-muted" />
         <span className="text-sm font-medium text-ink">{label}</span>
       </div>
       <button

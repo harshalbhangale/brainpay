@@ -27,7 +27,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 const fieldClass =
   'h-12 w-full rounded-2xl bg-surface2 px-4 text-ink outline-none ring-1 ring-transparent focus:ring-accent'
 const labelClass = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-muted'
-const submitClass = 'mt-2 w-full rounded-full bg-accent py-3.5 font-bold text-black disabled:opacity-40'
+const submitClass = 'mt-2 w-full rounded-full bg-accent py-3.5 font-bold text-on-accent disabled:opacity-40'
 
 export function AddKidModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()

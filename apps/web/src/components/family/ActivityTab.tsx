@@ -1,22 +1,23 @@
 import { useQuery } from '@tanstack/react-query'
+import { CheckCircle2, Banknote, ShoppingBag, SlidersHorizontal, Circle, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { audSigned, relativeTime } from '../../lib/format'
 import { kidName, type FeedResponse, type LedgerEntry, type Member, type Subject } from './types'
 
-function describe(entry: LedgerEntry): { icon: string; label: string } {
+function describe(entry: LedgerEntry): { Icon: LucideIcon; label: string } {
   const md = (entry.metadata ?? {}) as Record<string, unknown>
   switch (entry.kind) {
     case 'chore_payout':
-      return { icon: '✅', label: (md.choreTitle as string) ? `Chore: ${md.choreTitle}` : 'Chore reward' }
+      return { Icon: CheckCircle2, label: (md.choreTitle as string) ? `Chore: ${md.choreTitle}` : 'Chore reward' }
     case 'topup':
     case 'topup_stripe':
-      return { icon: '💰', label: (md.note as string) || 'Top-up' }
+      return { Icon: Banknote, label: (md.note as string) || 'Money added' }
     case 'cart_checkout':
-      return { icon: '🛒', label: (md.itemName as string) || 'Purchase' }
+      return { Icon: ShoppingBag, label: (md.itemName as string) || 'Purchase' }
     case 'adjustment':
-      return { icon: '⚙️', label: (md.note as string) || 'Adjustment' }
+      return { Icon: SlidersHorizontal, label: (md.note as string) || 'Adjustment' }
     default:
-      return { icon: '•', label: entry.kind.replace(/_/g, ' ') }
+      return { Icon: Circle, label: entry.kind.replace(/_/g, ' ') }
   }
 }
 
@@ -43,12 +44,12 @@ export function ActivityTab({ subject, members }: { subject: Subject; members: M
 
       <div className="flex flex-col gap-2">
         {entries.map((e) => {
-          const { icon, label } = describe(e)
+          const { Icon, label } = describe(e)
           const positive = e.brainsDelta >= 0
           return (
-            <div key={e.id} className="flex items-center gap-3 rounded-2xl bg-surface px-4 py-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface2 text-lg">
-                {icon}
+            <div key={e.id} className="animate-msg-in flex items-center gap-3 rounded-2xl bg-surface px-4 py-3 ring-1 ring-border">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface2 text-muted">
+                <Icon size={18} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-ink">{label}</div>

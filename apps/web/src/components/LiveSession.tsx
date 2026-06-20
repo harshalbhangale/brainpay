@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/auth'
 import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../lib/liveRt'
 import { startCamera, captureJpeg, type CameraHandle } from '../lib/camera'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../lib/liveAudio'
+import { Sparkles, Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ShoppingBag } from 'lucide-react'
 
 const FRAME_INTERVAL_MS = 1000
 const FRAME_MAX_WIDTH = 480
@@ -198,7 +199,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
               />
               <div className="absolute h-44 w-44 rounded-full bg-accent/10" />
               <div className="relative flex h-40 w-40 items-center justify-center rounded-full bg-gradient-to-br from-[#3ddc84] to-[#16a07f] shadow-[0_0_70px_rgba(61,220,132,0.45)]">
-                <span className="text-5xl">✨</span>
+                <Sparkles size={52} strokeWidth={2} className="text-white" />
               </div>
             </div>
           </div>
@@ -209,7 +210,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
       <div className="relative flex items-center gap-3 p-4">
         <div
           className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-extrabold tracking-wide backdrop-blur ${
-            phase === 'live' ? 'bg-accent text-black' : 'bg-black/60 text-ink'
+            phase === 'live' ? 'bg-accent text-on-accent' : 'bg-black/60 text-ink'
           }`}
         >
           {phase === 'live' && <span className="h-2 w-2 rounded-full bg-black" />}
@@ -232,7 +233,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
           <div className="text-sm text-ink">{error ?? 'Something went wrong.'}</div>
           <button
             onClick={onClose}
-            className="mt-3 rounded-full bg-accent px-5 py-2 text-sm font-bold text-black active:scale-95"
+            className="mt-3 rounded-full bg-accent px-5 py-2 text-sm font-bold text-on-accent active:scale-95"
           >
             Close
           </button>
@@ -294,7 +295,7 @@ function ControlButton({
     <button onClick={onClick} className="flex flex-col items-center gap-1.5 active:scale-95">
       <span
         className={`flex h-16 w-16 items-center justify-center rounded-full backdrop-blur ${
-          active ? 'bg-accent text-black' : 'border border-white/15 bg-black/60 text-ink'
+          active ? 'bg-accent text-on-accent' : 'border border-white/15 bg-black/60 text-ink'
         }`}
       >
         {children}
@@ -345,9 +346,9 @@ function IconVolumeOff() {
 }
 
 const VERDICTS = {
-  great: { color: '#3ddc84', label: 'Great pick', icon: '🟢' },
-  okay: { color: '#ffb627', label: 'Okay', icon: '🟡' },
-  avoid: { color: '#ff5c5c', label: 'Think twice', icon: '🔴' },
+  great: { color: '#12b76a', label: 'Great pick', Icon: CheckCircle2 },
+  okay: { color: '#f59e0b', label: 'Okay', Icon: AlertCircle },
+  avoid: { color: '#ff5c5c', label: 'Think twice', Icon: XCircle },
 } as const
 
 function VerdictPopup({ d }: { d: LiveDetection }) {
@@ -357,17 +358,30 @@ function VerdictPopup({ d }: { d: LiveDetection }) {
       className="animate-pop-in flex items-start gap-3 rounded-2xl bg-black/70 p-3 backdrop-blur"
       style={{ boxShadow: `inset 0 0 0 1.5px ${v.color}66` }}
     >
-      <span className="text-2xl">{d.emoji}</span>
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+        style={{ backgroundColor: `${v.color}26` }}
+      >
+        <ShoppingBag size={20} className="text-white" />
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-bold text-ink">{d.name}</span>
+          <span className="truncate text-sm font-bold text-white">{d.name}</span>
           {d.estimatedPrice && <span className="text-xs text-white/60">{d.estimatedPrice}</span>}
         </div>
-        <div className="mt-0.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: v.color }}>
-          {v.icon} {v.label}
+        <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide" style={{ color: v.color }}>
+          <v.Icon size={13} /> {v.label}
         </div>
-        {d.healthNote && <div className="mt-1 text-xs leading-snug text-white/80">🥦 {d.healthNote}</div>}
-        {d.budgetNote && <div className="mt-0.5 text-xs leading-snug text-white/80">💰 {d.budgetNote}</div>}
+        {d.healthNote && (
+          <div className="mt-1 flex items-start gap-1.5 text-xs leading-snug text-white/80">
+            <Apple size={13} className="mt-0.5 shrink-0" /> {d.healthNote}
+          </div>
+        )}
+        {d.budgetNote && (
+          <div className="mt-0.5 flex items-start gap-1.5 text-xs leading-snug text-white/80">
+            <Wallet size={13} className="mt-0.5 shrink-0" /> {d.budgetNote}
+          </div>
+        )}
       </div>
     </div>
   )

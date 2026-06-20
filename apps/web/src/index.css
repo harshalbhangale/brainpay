@@ -1,24 +1,59 @@
 @import "tailwindcss";
 
-/* CSS-first theme (Tailwind v4). These map the mobile app's design tokens to
-   utility classes: bg-canvas, bg-surface, text-ink, text-accent, etc. */
-@theme {
-  --color-canvas: #0b0b0f;
-  --color-surface: #16161d;
-  --color-surface2: #20202a;
-  --color-ink: #f5f5f7;
-  --color-muted: #9aa0aa;
-  --color-accent: #3ddc84;
-  --color-danger: #ff5c5c;
-  --color-warn: #ffb627;
+/* Dark mode is class-driven: we toggle `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
 
-  --radius-pill: 999px;
-
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+/*
+  BrainPal design tokens — a clean, friendly, Greenlight-inspired system.
+  Light is the default; dark mirrors it. All values are runtime CSS variables
+  so the whole app re-themes instantly when `.dark` is toggled.
+*/
+:root {
+  --canvas: #f3f7f4;      /* page background — soft green-white */
+  --surface: #ffffff;     /* cards */
+  --surface-2: #e9f0eb;   /* insets, chips, tracks */
+  --ink: #0e2419;         /* primary text — deep green-black */
+  --muted: #5f7268;       /* secondary text */
+  --accent: #12b76a;      /* brand green */
+  --accent-soft: #d6f3e3; /* tinted green fill */
+  --on-accent: #ffffff;   /* text on green */
+  --danger: #e5484d;
+  --warn: #f59e0b;
+  --border: #e2eae5;
+  --shadow: 16px 36px 64px -32px rgba(16, 60, 40, 0.22);
 }
 
-:root {
-  color-scheme: dark;
+.dark {
+  --canvas: #0a120e;
+  --surface: #121d18;
+  --surface-2: #1d2a23;
+  --ink: #ecf3ee;
+  --muted: #8aa095;
+  --accent: #2be08a;
+  --accent-soft: #14271e;
+  --on-accent: #062014;
+  --danger: #ff6b6b;
+  --warn: #fbbf24;
+  --border: #243029;
+  --shadow: 16px 36px 64px -32px rgba(0, 0, 0, 0.6);
+}
+
+/* Map semantic tokens to Tailwind color utilities (bg-canvas, text-ink, …). */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-border: var(--border);
+
+  --radius-pill: 999px;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 html,
@@ -29,10 +64,17 @@ body,
 
 body {
   margin: 0;
-  background-color: var(--color-canvas);
-  color: var(--color-ink);
+  background-color: var(--canvas);
+  color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Smooth, subtle theme transition. */
+body,
+.theme-tween {
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
 }
 
 button {
@@ -48,24 +90,24 @@ button {
   scrollbar-width: none;
 }
 
-/* ── Chat / agent animations ─────────────────────────────────────────── */
+/* ── Tasteful motion (restraint over flash) ──────────────────────────── */
 
-/* Message entrance: fade + rise + slight scale. */
 @keyframes msg-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .animate-msg-in {
-  animation: msg-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: msg-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Typing dots. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise {
+  animation: rise-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @keyframes dot-bounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
   40% { transform: translateY(-4px); opacity: 1; }
@@ -74,48 +116,38 @@ button {
   animation: dot-bounce 1.2s infinite ease-in-out;
 }
 
-/* Agent avatar "thinking" pulse ring. */
 @keyframes confer-pulse {
   0% { transform: scale(0.85); opacity: 0.7; }
-  50% { transform: scale(1.1); opacity: 0.25; }
+  50% { transform: scale(1.1); opacity: 0.3; }
   100% { transform: scale(0.85); opacity: 0.7; }
 }
 .animate-confer {
   animation: confer-pulse 1.4s infinite ease-in-out;
 }
 
-/* Shimmer sweep for processing surfaces. */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+@keyframes pop-in {
+  0% { opacity: 0; transform: translateY(8px) scale(0.96); }
+  60% { transform: translateY(-1px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-.animate-shimmer {
-  background-image: linear-gradient(
-    100deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.08) 45%,
-    rgba(255, 255, 255, 0.14) 50%,
-    rgba(255, 255, 255, 0.08) 55%,
-    transparent 80%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.6s infinite linear;
+.animate-pop-in {
+  animation: pop-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Slow spin for the orchestrator orb aura. */
 @keyframes spin-slow {
   to { transform: rotate(360deg); }
 }
 .animate-spin-slow {
-  animation: spin-slow 8s linear infinite;
+  animation: spin-slow 9s linear infinite;
 }
 
-/* Detection popup pop-in. */
-@keyframes pop-in {
-  0% { opacity: 0; transform: translateY(8px) scale(0.9); }
-  60% { transform: translateY(-2px) scale(1.02); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-.animate-pop-in {
-  animation: pop-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

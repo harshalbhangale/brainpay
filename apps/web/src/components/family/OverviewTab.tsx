@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Clock, Plus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { aud, audSigned, relativeTime } from '../../lib/format'
@@ -65,9 +66,9 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
 
       <button
         onClick={() => setTopup(true)}
-        className="w-full rounded-full bg-accent py-3.5 font-bold text-black active:scale-[0.99]"
+        className="flex w-full items-center justify-center gap-2 rounded-full bg-accent py-3.5 font-bold text-on-accent active:scale-[0.99]"
       >
-        Add money
+        <Plus size={18} /> Add money
       </button>
 
       <div className="grid grid-cols-2 gap-3">
@@ -153,7 +154,7 @@ function FamilyOverview({
           ))}
           {pending.map((p) => (
             <div key={p.id} className="rounded-2xl border border-dashed border-surface2 p-4 opacity-70">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface2 text-lg">⏳</span>
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface2 text-muted"><Clock size={18} /></span>
               <div className="mt-2 truncate font-bold text-ink">{p.name || 'Invited'}</div>
               <div className="text-xs text-muted">Waiting · {p.phone}</div>
             </div>

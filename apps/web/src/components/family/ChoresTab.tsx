@@ -125,7 +125,7 @@ function ChoreRow({
           <button
             onClick={onApprove}
             disabled={busy}
-            className="flex-1 rounded-full bg-accent py-2 text-sm font-bold text-black active:scale-[0.98] disabled:opacity-50"
+            className="flex-1 rounded-full bg-accent py-2 text-sm font-bold text-on-accent active:scale-[0.98] disabled:opacity-50"
           >
             Approve &amp; pay
           </button>

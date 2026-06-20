@@ -23,8 +23,8 @@ export function AvatarRail({
         label="You"
         active={familyActive}
         onClick={() => onSelect({ kind: 'family' })}
-        content={<span className="text-lg font-extrabold text-black">{initial(parentName)}</span>}
-        bg="#FCE17B"
+        content={<span className="text-lg font-extrabold text-on-accent">{initial(parentName)}</span>}
+        bg="var(--color-accent)"
       />
       {kids.map((k) => {
         const active = subject.kind === 'kid' && subject.accountId === k.accountId
@@ -35,7 +35,7 @@ export function AvatarRail({
             active={active}
             onClick={() => onSelect({ kind: 'kid', accountId: k.accountId })}
             content={<span className="text-lg font-extrabold text-ink">{initial(kidName(k))}</span>}
-            bg="#20202a"
+            bg="var(--color-surface2)"
           />
         )
       })}
@@ -62,7 +62,7 @@ function RailItem({
         className="flex h-14 w-14 items-center justify-center rounded-full transition"
         style={{
           backgroundColor: bg,
-          boxShadow: active ? '0 0 0 2.5px #3ddc84, 0 0 0 5px rgba(61,220,132,0.25)' : 'none',
+          boxShadow: active ? '0 0 0 2.5px var(--color-accent), 0 0 0 5px var(--color-accent-soft)' : 'none',
         }}
       >
         {content}

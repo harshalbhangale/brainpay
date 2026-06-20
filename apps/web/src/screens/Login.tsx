@@ -125,7 +125,7 @@ export function Login() {
             <button
               type="submit"
               disabled={loading || !phoneValid}
-              className="mt-5 h-14 w-full rounded-full bg-accent font-bold text-black transition active:scale-[0.98] disabled:opacity-40"
+              className="mt-5 h-14 w-full rounded-full bg-accent font-bold text-on-accent transition active:scale-[0.98] disabled:opacity-40"
             >
               {loading ? 'Sending…' : 'Continue'}
             </button>
@@ -149,7 +149,7 @@ export function Login() {
             <button
               type="submit"
               disabled={loading || code.trim().length < 4}
-              className="mt-5 h-14 w-full rounded-full bg-accent font-bold text-black transition active:scale-[0.98] disabled:opacity-40"
+              className="mt-5 h-14 w-full rounded-full bg-accent font-bold text-on-accent transition active:scale-[0.98] disabled:opacity-40"
             >
               {loading ? 'Verifying…' : 'Verify'}
             </button>

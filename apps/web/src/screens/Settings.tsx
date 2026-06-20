@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import { Sun, Moon, X, LogOut, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuthStore } from '../stores/auth'
+import { useTheme } from '../lib/theme'
 
 /**
  * Settings — a full-screen overlay reachable from the Home top bar.
@@ -30,6 +32,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const account = useAuthStore((s) => s.account)
   const logout = useAuthStore((s) => s.logout)
+  const { theme, setTheme } = useTheme()
 
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
   const [clearing, setClearing] = useState(false)
@@ -80,10 +83,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <h1 className="text-lg font-extrabold text-ink">Settings</h1>
         <button
           onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-surface text-muted hover:text-ink"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-surface2 text-muted transition hover:text-ink active:scale-95"
           aria-label="Close settings"
         >
-          ✕
+          <X size={18} />
         </button>
       </div>
 
@@ -101,6 +104,21 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {/* Appearance */}
+        <Section title="Appearance">
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <span className="text-sm font-medium text-ink">Theme</span>
+            <div className="flex rounded-full bg-surface2 p-1">
+              <SegBtn active={theme === 'light'} onClick={() => setTheme('light')}>
+                <Sun size={15} /> Light
+              </SegBtn>
+              <SegBtn active={theme === 'dark'} onClick={() => setTheme('dark')}>
+                <Moon size={15} /> Dark
+              </SegBtn>
+            </div>
+          </div>
+        </Section>
+
         {/* Preferences */}
         <Section title="Preferences">
           <ToggleRow label="Sound effects" on={prefs.sound} onToggle={() => setPref({ sound: !prefs.sound })} />
@@ -113,10 +131,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <button
             onClick={clearChat}
             disabled={clearing}
-            className="flex w-full items-center justify-between px-4 py-3.5 text-left active:bg-surface2 disabled:opacity-50"
+            className="flex w-full items-center justify-between px-4 py-3.5 text-left transition active:bg-surface2 disabled:opacity-50"
           >
-            <span className="text-sm font-medium text-ink">Clear PAL chat history</span>
-            <span className="text-sm text-muted">{cleared ? 'Cleared ✓' : clearing ? '…' : '›'}</span>
+            <span className="flex items-center gap-3 text-sm font-medium text-ink">
+              <Trash2 size={18} className="text-muted" /> Clear PAL chat history
+            </span>
+            <span className="text-sm text-muted">{cleared ? 'Cleared' : clearing ? '…' : ''}</span>
           </button>
         </Section>
 
@@ -137,9 +157,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={signOut}
-          className="mt-6 w-full rounded-2xl bg-danger/10 py-3.5 text-sm font-bold text-danger active:scale-[0.99]"
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-danger/10 py-3.5 text-sm font-bold text-danger transition active:scale-[0.99]"
         >
-          Sign out
+          <LogOut size={16} /> Sign out
         </button>
 
         <div className="h-[env(safe-area-inset-bottom)]" />
@@ -182,5 +202,18 @@ function ToggleRow({ label, on, onToggle }: { label: string; on: boolean; onTogg
         />
       </button>
     </div>
+  )
+}
+
+function SegBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
+        active ? 'bg-accent text-on-accent' : 'text-muted'
+      }`}
+    >
+      {children}
+    </button>
   )
 }

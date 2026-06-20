@@ -20,24 +20,7 @@ import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from '../services/study-reward
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 export const study = new Hono<{ Variables: AuthVars }>()
-
-// ── Auth middleware — skip nudge-check (cron endpoint) ────────────────
-study.use('*', async (c, next) => {
-  const url = c.req.url
-  if (url.includes('/nudge-check')) return next()
-  return requireAuth(c, next)
-})
-
-// ── Public/cron endpoint ──────────────────────────────────────────────
-study.post('/study/nudge-check', async (c) => {
-  const cronKey = c.req.header('X-Cron-Key')
-  if (cronKey !== 'brainpal-internal-cron-2024') {
-    return c.json({ error: 'unauthorized' }, 401)
-  }
-  const { checkAndSendStudyNudges } = await import('../services/study-nudges')
-  const count = await checkAndSendStudyNudges()
-  return c.json({ ok: true, nudgesSent: count })
-})
+study.use('*', requireAuth)
 
 // ─── Helper: get familyId ─────────────────────────────────────────────
 async function getFamilyId(accountId: string): Promise<string | null> {

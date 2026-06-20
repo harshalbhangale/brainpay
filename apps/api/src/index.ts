@@ -71,6 +71,25 @@ const server = createServer((req, res) => {
     return
   }
 
+  // Study nudge cron (bypasses Hono auth)
+  if (pathname === '/study/nudge-check' && req.method === 'POST') {
+    setCors()
+    if (req.headers['x-cron-key'] !== 'brainpal-internal-cron-2024') {
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'unauthorized' }))
+      return
+    }
+    import('./services/study-nudges').then(async ({ checkAndSendStudyNudges }) => {
+      const count = await checkAndSendStudyNudges()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, nudgesSent: count }))
+    }).catch(() => {
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'internal' }))
+    })
+    return
+  }
+
   // OAuth discovery
   if (pathname === '/.well-known/oauth-protected-resource' || pathname === '/.well-known/oauth-protected-resource/mcp') {
     setCors()

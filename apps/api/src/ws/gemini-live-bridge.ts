@@ -1,7 +1,12 @@
 import type { WebSocket } from 'ws'
 import type { Session, LiveServerMessage } from '@google/genai'
 import { connectLiveSession, type LiveMode } from '../services/gemini-live'
+import { streamTts } from '../services/elevenlabs-tts'
+import { loadEnv } from '../env'
 import { logger } from '../logger'
+
+const env = loadEnv()
+const USE_ELEVEN = env.COMPANION_VOICE_PROVIDER === 'elevenlabs'
 
 /**
  * Gemini Live bridge — /live-rt
@@ -40,7 +45,14 @@ type SessionState = {
   speakerOn: boolean
   starting: boolean
   mode: LiveMode
+  // ElevenLabs TTS pipeline (companion voice).
+  ttsBuf: string
+  ttsGen: number
+  ttsChain: Promise<void>
+  ttsAbort: AbortController | null
 }
+
+const TAG_OUT_MP3 = 0x05
 
 const sessions = new WeakMap<WebSocket, SessionState>()
 
@@ -66,9 +78,72 @@ function send(ws: WebSocket, obj: unknown) {
 }
 
 export function onGeminiLiveConnect(ws: WebSocket) {
-  sessions.set(ws, { live: null, micOn: true, speakerOn: true, starting: false, mode: 'shop' })
+  sessions.set(ws, {
+    live: null,
+    micOn: true,
+    speakerOn: true,
+    starting: false,
+    mode: 'shop',
+    ttsBuf: '',
+    ttsGen: 0,
+    ttsChain: Promise.resolve(),
+    ttsAbort: null,
+  })
   logger.info('gemini_live.connected')
   send(ws, { type: 'session.connected' })
+}
+
+/** Stop any in-flight speech and drop queued audio (barge-in / new turn). */
+function cancelSpeech(state: SessionState) {
+  state.ttsGen++
+  state.ttsBuf = ''
+  try {
+    state.ttsAbort?.abort()
+  } catch {
+    /* ignore */
+  }
+  state.ttsAbort = null
+}
+
+/** Synthesise one sentence and stream its MP3 to the client, in order. */
+function speakSentence(ws: WebSocket, state: SessionState, text: string) {
+  const sentence = text.trim()
+  if (!sentence) return
+  const gen = state.ttsGen
+  state.ttsChain = state.ttsChain
+    .then(async () => {
+      if (gen !== state.ttsGen || !state.speakerOn) return
+      const ac = new AbortController()
+      state.ttsAbort = ac
+      const parts: Buffer[] = []
+      try {
+        await streamTts(sentence, (c) => parts.push(c), ac.signal)
+      } catch {
+        /* aborted or failed */
+      }
+      if (gen !== state.ttsGen || !state.speakerOn) return
+      const mp3 = Buffer.concat(parts)
+      if (mp3.length && ws.readyState === ws.OPEN) {
+        const tagged = Buffer.alloc(1 + mp3.length)
+        tagged[0] = TAG_OUT_MP3
+        mp3.copy(tagged, 1)
+        ws.send(tagged)
+      }
+    })
+    .catch(() => undefined)
+}
+
+/** Buffer streamed text; flush complete sentences to TTS as they form. */
+function pushText(ws: WebSocket, state: SessionState, delta: string) {
+  state.ttsBuf += delta
+  for (;;) {
+    const m = state.ttsBuf.match(/[.!?…]+["')\]]*(\s|$)/)
+    if (!m) break
+    const end = (m.index ?? 0) + m[0].length
+    const sentence = state.ttsBuf.slice(0, end)
+    state.ttsBuf = state.ttsBuf.slice(end)
+    speakSentence(ws, state, sentence)
+  }
 }
 
 export async function onGeminiLiveMessage(ws: WebSocket, data: Buffer) {
@@ -124,10 +199,11 @@ export async function onGeminiLiveMessage(ws: WebSocket, data: Buffer) {
       break
     case 'speaker':
       state.speakerOn = msg.on !== false
+      if (!state.speakerOn && USE_ELEVEN) cancelSpeech(state)
       break
     case 'interrupt':
-      // Gemini handles barge-in automatically when mic audio arrives; this is
-      // an explicit client tap. No-op server-side beyond telling client to stop.
+      // Explicit client tap: stop speaking now + drop queued audio.
+      if (USE_ELEVEN) cancelSpeech(state)
       send(ws, { type: 'interrupted' })
       break
     case 'session.end':
@@ -212,20 +288,28 @@ function handleLiveMessage(ws: WebSocket, state: SessionState, m: LiveServerMess
   if (!sc) return
 
   if (sc.interrupted) {
+    if (USE_ELEVEN) cancelSpeech(state)
     send(ws, { type: 'interrupted' })
   }
 
   if (sc.inputTranscription?.text) {
     send(ws, { type: 'transcript.user', text: sc.inputTranscription.text })
   }
+
+  // Gemini audio path: forward its spoken transcript as captions.
   if (sc.outputTranscription?.text) {
     send(ws, { type: 'reply.delta', text: sc.outputTranscription.text })
   }
 
-  // PAL audio out — PCM16 @ 24 kHz. Skip entirely when speaker muted.
-  if (state.speakerOn) {
-    const parts = sc.modelTurn?.parts ?? []
-    for (const part of parts) {
+  // Collect the model's TEXT (ElevenLabs path) or AUDIO (Gemini path) parts.
+  const parts = sc.modelTurn?.parts ?? []
+  for (const part of parts) {
+    if (USE_ELEVEN) {
+      if (part.text) {
+        send(ws, { type: 'reply.delta', text: part.text })
+        if (state.speakerOn) pushText(ws, state, part.text)
+      }
+    } else if (state.speakerOn) {
       const inline = part.inlineData
       if (inline?.data && inline.mimeType?.startsWith('audio/')) {
         const pcm = Buffer.from(inline.data, 'base64')
@@ -238,6 +322,12 @@ function handleLiveMessage(ws: WebSocket, state: SessionState, m: LiveServerMess
   }
 
   if (sc.turnComplete) {
+    // Flush any trailing text without sentence punctuation.
+    if (USE_ELEVEN && state.ttsBuf.trim()) {
+      const tail = state.ttsBuf
+      state.ttsBuf = ''
+      speakSentence(ws, state, tail)
+    }
     send(ws, { type: 'turn.complete' })
   }
 }

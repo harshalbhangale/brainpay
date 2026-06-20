@@ -24,6 +24,7 @@ import { env } from './env'
 const TAG_FRAME = 0x01
 const TAG_MIC_AUDIO = 0x03
 const TAG_OUT_AUDIO = 0x04
+const TAG_OUT_MP3 = 0x05
 
 export type LiveRole = 'parent' | 'kid'
 export type LiveMode = 'assist' | 'shop'
@@ -49,6 +50,7 @@ export type LiveRtHandlers = {
   onTurnComplete?: () => void
   onInterrupted?: () => void
   onPalAudio?: (pcm: Int16Array) => void
+  onPalAudioMp3?: (mp3: ArrayBuffer) => void
   onDetection?: (d: LiveDetection) => void
   onError?: (message: string) => void
   onClose?: () => void
@@ -87,6 +89,9 @@ export function connectLiveRt(handlers: LiveRtHandlers, token?: string | null): 
         const payload = view.slice(1)
         const pcm = new Int16Array(payload.buffer, 0, payload.byteLength >> 1)
         handlers.onPalAudio?.(pcm)
+      } else if (view.length > 1 && view[0] === TAG_OUT_MP3) {
+        // ElevenLabs MP3 for one sentence — hand the raw bytes to the player.
+        handlers.onPalAudioMp3?.(view.slice(1).buffer)
       }
       return
     }

@@ -84,6 +84,11 @@ const EnvSchema = z.object({
   XAI_API_KEY: z.string().min(1).optional(),
   ELEVENLABS_API_KEY: z.string().min(1),
   ELEVENLABS_VOICE_ID: z.string().min(1),
+  // Companion (Mika) voice: when COMPANION_VOICE_PROVIDER='elevenlabs', the live
+  // camera/voice routes Gemini's TEXT through ElevenLabs TTS using this voice.
+  ELEVENLABS_COMPANION_VOICE_ID: z.string().min(1).optional(),
+  ELEVENLABS_TTS_MODEL: z.string().default('eleven_flash_v2_5'),
+  COMPANION_VOICE_PROVIDER: z.enum(['gemini', 'elevenlabs']).default('gemini'),
 
   // Stripe (payments)
   STRIPE_SECRET_KEY: z.string().min(1),

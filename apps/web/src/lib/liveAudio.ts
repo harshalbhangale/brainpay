@@ -163,6 +163,30 @@ export class PcmPlayer {
     src.onended = () => this.sources.delete(src)
   }
 
+  /**
+   * Decode an encoded audio clip (e.g. MP3 from ElevenLabs) and schedule it
+   * gaplessly after whatever is already queued. Routed through the analyser so
+   * lip-sync (getLevel) works for this source too.
+   */
+  async enqueueEncoded(data: ArrayBuffer): Promise<void> {
+    const ctx = this.ctx
+    if (!ctx || data.byteLength === 0) return
+    let buffer: AudioBuffer
+    try {
+      buffer = await ctx.decodeAudioData(data.slice(0))
+    } catch {
+      return
+    }
+    const src = ctx.createBufferSource()
+    src.buffer = buffer
+    src.connect(this.analyser ?? ctx.destination)
+    const start = Math.max(ctx.currentTime + 0.03, this.nextTime)
+    src.start(start)
+    this.nextTime = start + buffer.duration
+    this.sources.add(src)
+    src.onended = () => this.sources.delete(src)
+  }
+
   /** Stop everything immediately (barge-in / mute). */
   clear(): void {
     for (const src of this.sources) {

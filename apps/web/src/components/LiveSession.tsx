@@ -101,6 +101,9 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
           onPalAudio: (pcm) => {
             if (speakerOnRef.current) playerRef.current?.enqueue(pcm)
           },
+          onPalAudioMp3: (mp3) => {
+            if (speakerOnRef.current) void playerRef.current?.enqueueEncoded(mp3)
+          },
           onDetection: (d) => {
             setDetections((prev) => {
               // de-dupe by product name; newest wins, keep last 3

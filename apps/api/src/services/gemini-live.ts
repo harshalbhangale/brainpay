@@ -190,25 +190,32 @@ export async function connectLiveSession(
 ): Promise<Session> {
   const ai = getClient()
   const model = liveModel()
-  logger.info({ role, mode, model, backend: env.GEMINI_API_KEY ? 'dev-api' : 'vertex' }, 'gemini_live.connecting')
+  const useEleven = env.COMPANION_VOICE_PROVIDER === 'elevenlabs'
+  logger.info(
+    { role, mode, model, backend: env.GEMINI_API_KEY ? 'dev-api' : 'vertex', voice: useEleven ? 'elevenlabs' : 'gemini' },
+    'gemini_live.connecting',
+  )
 
   return ai.live.connect({
     model,
     config: {
-      responseModalities: [Modality.AUDIO],
+      // ElevenLabs path: Gemini returns TEXT, we synthesize the voice ourselves.
+      // Gemini path: Gemini speaks directly (AUDIO).
+      responseModalities: useEleven ? [Modality.TEXT] : [Modality.AUDIO],
       systemInstruction: buildInstructions(role, mode),
-      // Cute, youthful companion voice for Mika. Gemini's prebuilt voices —
-      // "Leda" is the youngest/sweetest; override via GEMINI_LIVE_VOICE.
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: env.GEMINI_LIVE_VOICE },
-        },
-      },
+      // Cute, youthful companion voice for Mika (Gemini path only).
+      ...(useEleven
+        ? {}
+        : {
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: env.GEMINI_LIVE_VOICE } },
+            },
+          }),
       // report_item drives the on-screen health + budget verdict popups. Both
       // the scanner ('shop') and the in-chat camera ('assist') use it.
       tools: [REPORT_ITEM_TOOL],
       inputAudioTranscription: {},
-      outputAudioTranscription: {},
+      ...(useEleven ? {} : { outputAudioTranscription: {} }),
       // Server-side VAD: the model decides when the user stopped speaking.
       realtimeInputConfig: {
         automaticActivityDetection: { disabled: false },

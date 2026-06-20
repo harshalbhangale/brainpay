@@ -20,7 +20,20 @@ import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from '../services/study-reward
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 export const study = new Hono<{ Variables: AuthVars }>()
-study.use('*', requireAuth)
+
+// ── Public/cron endpoints (no auth) ───────────────────────────────────
+study.post('/study/nudge-check', async (c) => {
+  const cronKey = c.req.header('X-Cron-Key')
+  if (cronKey !== 'brainpal-internal-cron-2024') {
+    return c.json({ error: 'unauthorized' }, 401)
+  }
+  const { checkAndSendStudyNudges } = await import('../services/study-nudges')
+  const count = await checkAndSendStudyNudges()
+  return c.json({ ok: true, nudgesSent: count })
+})
+
+// ── Auth-gated endpoints ──────────────────────────────────────────────
+study.use('/study/*', requireAuth)
 
 // ─── Helper: get familyId ─────────────────────────────────────────────
 async function getFamilyId(accountId: string): Promise<string | null> {
@@ -444,18 +457,6 @@ study.post('/study/interviews/:id/complete', async (c) => {
 // ═══════════════════════════════════════════════════════════════════════
 // NUDGE CHECK (cron endpoint)
 // ═══════════════════════════════════════════════════════════════════════
-
-study.post('/study/nudge-check', async (c) => {
-  // Auth: cron key or valid JWT
-  const cronKey = c.req.header('X-Cron-Key')
-  const authHeader = c.req.header('Authorization')
-  if (cronKey !== 'brainpal-internal-cron-2024' && !authHeader?.startsWith('Bearer ')) {
-    return c.json({ error: 'unauthorized' }, 401)
-  }
-  const { checkAndSendStudyNudges } = await import('../services/study-nudges')
-  const count = await checkAndSendStudyNudges()
-  return c.json({ ok: true, nudgesSent: count })
-})
 
 // ═══════════════════════════════════════════════════════════════════════
 // TUTOR VOICE (ElevenLabs TTS)

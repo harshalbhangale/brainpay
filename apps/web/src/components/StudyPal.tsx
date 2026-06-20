@@ -225,98 +225,127 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
     queryFn: () => api<{ cards: ConceptCard[] }>(`/study/topics/${topicId}/cards`),
   })
 
-  // Refetch cards whenever a document finishes processing
   const readyDocCount = (data?.documents ?? []).filter((d: any) => d.processingStatus === 'ready').length
   useEffect(() => { refetch() }, [readyDocCount, refetch])
 
   const cards = cardsData?.cards ?? []
   const [current, setCurrent] = useState(0)
-  const [flipped, setFlipped] = useState(false)
+  const [done, setDone] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [notes, setNotes] = useState('')
 
+  // Swipe gesture state
+  const [drag, setDrag] = useState(0)
+  const [leaving, setLeaving] = useState<'left' | 'right' | null>(null)
+  const startX = useRef<number | null>(null)
+
   const reviewMut = useMutation({
-    mutationFn: ({ cardId, quality }: { cardId: string; quality: number }) =>
-      api(`/study/cards/${cardId}/review`, { method: 'POST', body: JSON.stringify({ quality }) }),
+    mutationFn: (cardId: string) =>
+      api(`/study/cards/${cardId}/review`, { method: 'POST', body: JSON.stringify({ quality: 4 }) }),
   })
 
   const card = cards[current]
 
-  const rate = (quality: number) => {
+  const advance = (dir: 'left' | 'right') => {
     if (!card) return
-    reviewMut.mutate({ cardId: card.id, quality })
-    setFlipped(false)
-    if (current < cards.length - 1) setCurrent((c) => c + 1)
+    reviewMut.mutate(card.id) // silently mark as reviewed (no rating asked)
+    setLeaving(dir)
+    setTimeout(() => {
+      setLeaving(null)
+      setDrag(0)
+      if (current < cards.length - 1) setCurrent((c) => c + 1)
+      else { setDone(true); qc.invalidateQueries({ queryKey: ['study-stats'] }) }
+    }, 280)
+  }
+
+  // Pointer drag handlers
+  const onPointerDown = (e: React.PointerEvent) => { startX.current = e.clientX }
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (startX.current === null) return
+    setDrag(e.clientX - startX.current)
+  }
+  const onPointerUp = () => {
+    if (startX.current === null) return
+    if (Math.abs(drag) > 100) advance(drag > 0 ? 'right' : 'left')
+    else setDrag(0)
+    startX.current = null
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
-
-    // For images: convert to base64 and send as content
     if (file.type.startsWith('image/')) {
       const reader = new FileReader()
       reader.onload = async () => {
         const base64 = reader.result as string
-        await api(`/study/topics/${topicId}/documents`, {
-          method: 'POST',
-          body: JSON.stringify({
-            title: file.name,
-            fileUrl: base64,
-            fileType: 'image',
-            content: `[Image uploaded: ${file.name}. Extract all text, formulas, diagrams and concepts from this image.]`,
-          }),
-        })
-        setUploading(false)
-        setShowUpload(false)
+        await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: file.name, fileUrl: base64, fileType: 'image', content: `[Image: ${file.name}. Extract all text, formulas, diagrams and concepts.]` }) })
+        setUploading(false); setShowUpload(false)
         setTimeout(() => { refetch(); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }, 3000)
       }
       reader.readAsDataURL(file)
       return
     }
-
-    // For PDFs: read as text (basic) or send URL
     if (file.type === 'application/pdf') {
       const text = await file.text().catch(() => '')
-      await api(`/study/topics/${topicId}/documents`, {
-        method: 'POST',
-        body: JSON.stringify({
-          title: file.name,
-          fileUrl: `local://${file.name}`,
-          fileType: 'pdf',
-          content: text.length > 100 ? text.slice(0, 15000) : `[PDF uploaded: ${file.name}. Generate concepts from a ${file.name} document for this subject.]`,
-        }),
-      })
-      setUploading(false)
-      setShowUpload(false)
+      await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: file.name, fileUrl: `local://${file.name}`, fileType: 'pdf', content: text.length > 100 ? text.slice(0, 15000) : `[PDF: ${file.name}. Generate concepts for this subject.]` }) })
+      setUploading(false); setShowUpload(false)
       setTimeout(() => { refetch(); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }, 3000)
       return
     }
-
-    // Text files
     const text = await file.text()
-    await api(`/study/topics/${topicId}/documents`, {
-      method: 'POST',
-      body: JSON.stringify({ title: file.name, fileUrl: `local://${file.name}`, fileType: 'text', content: text.slice(0, 15000) }),
-    })
-    setUploading(false)
-    setShowUpload(false)
+    await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: file.name, fileUrl: `local://${file.name}`, fileType: 'text', content: text.slice(0, 15000) }) })
+    setUploading(false); setShowUpload(false)
     setTimeout(() => { refetch(); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }, 3000)
   }
 
   const handleNotesSubmit = async () => {
     if (!notes.trim()) return
     setUploading(true)
-    await api(`/study/topics/${topicId}/documents`, {
-      method: 'POST',
-      body: JSON.stringify({ title: 'My notes', fileUrl: 'text://inline', fileType: 'text', content: notes.trim() }),
-    })
-    setNotes('')
-    setUploading(false)
-    setShowUpload(false)
+    await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: 'My notes', fileUrl: 'text://inline', fileType: 'text', content: notes.trim() }) })
+    setNotes(''); setUploading(false); setShowUpload(false)
     setTimeout(() => { refetch(); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }, 3000)
+  }
+
+  // ─── DONE / CELEBRATION SCREEN ──────────────────────────────────────
+  if (done) {
+    return (
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        {/* Confetti burst */}
+        <Confetti />
+
+        <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
+          <div className="animate-trophy mb-6 flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-emerald-400 shadow-2xl">
+            <span className="text-5xl">🏆</span>
+          </div>
+          <h2 className="animate-rise text-3xl font-extrabold text-[var(--ink)]">Brilliant!</h2>
+          <p className="animate-rise mt-2 text-base text-[var(--muted)]" style={{ animationDelay: '0.1s' }}>
+            You reviewed all {cards.length} concepts in<br/>{data?.topic?.emoji} {data?.topic?.title}
+          </p>
+
+          {/* Token of appreciation */}
+          <div className="animate-rise mt-6 flex items-center gap-2 rounded-full bg-[var(--accent-soft)] px-5 py-2.5" style={{ animationDelay: '0.2s' }}>
+            <span className="text-lg">🧠</span>
+            <span className="font-bold text-[var(--accent)]">+10 Brains earned</span>
+          </div>
+        </div>
+
+        {/* Revealed actions — quiz/interview only AFTER finishing */}
+        <div className="animate-rise border-t border-[var(--border)] px-5 py-5" style={{ animationDelay: '0.35s' }}>
+          <p className="mb-3 text-center text-sm font-semibold text-[var(--ink)]">Ready to test yourself?</p>
+          <div className="flex gap-3">
+            <button onClick={onQuiz} className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] py-4 font-bold text-white shadow-lg transition hover:scale-[1.02]">
+              <Sparkles size={18} /> Take Quiz
+            </button>
+            <button className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[var(--surface)] py-4 font-semibold text-[var(--accent)] shadow transition hover:scale-[1.02]">
+              <Mic size={18} /> Interview
+            </button>
+          </div>
+          <button onClick={onBack} className="mt-3 w-full py-2 text-sm font-medium text-[var(--muted)]">Back to subjects</button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -328,46 +357,37 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
         <button onClick={() => setShowUpload(!showUpload)} className="text-[var(--accent)]"><Upload size={18} /></button>
       </div>
 
+      {/* Progress bar */}
+      {cards.length > 0 && (
+        <div className="px-5 pt-3">
+          <div className="h-1.5 rounded-full bg-[var(--surface-2)]">
+            <div className="h-1.5 rounded-full bg-[var(--accent)] transition-all duration-300" style={{ width: `${((current) / cards.length) * 100}%` }} />
+          </div>
+          <p className="mt-1.5 text-center text-xs text-[var(--muted)]">{current + 1} of {cards.length}</p>
+        </div>
+      )}
+
       {/* Upload panel */}
       {showUpload && (
         <div className="border-b border-[var(--border)] bg-[var(--surface)] px-5 py-4">
           <p className="mb-3 text-xs font-bold uppercase tracking-wide text-[var(--muted)]">Add your own material</p>
-          <div className="mb-3 flex gap-2">
-            <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[var(--accent-soft)] py-3 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent)] hover:text-white">
-              <Upload size={14} /> PDF / Image
-              <input type="file" accept=".pdf,image/*,.txt,.md" className="hidden" onChange={handleFileUpload} />
-            </label>
-          </div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            placeholder="Or paste/type notes, textbook content, formulas..."
-            className="mb-2 w-full resize-none rounded-xl bg-[var(--canvas)] px-3 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-          />
-          {notes.trim() && (
-            <button onClick={handleNotesSubmit} disabled={uploading} className="w-full rounded-xl bg-[var(--accent)] py-2.5 text-sm font-bold text-white disabled:opacity-50">
-              {uploading ? 'Processing...' : 'Generate cards from this'}
-            </button>
-          )}
-          {uploading && <p className="mt-2 text-center text-xs text-[var(--muted)]">⏳ Processing... new cards will appear shortly</p>}
-
-          {/* Uploaded materials list */}
+          <label className="mb-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[var(--accent-soft)] py-3 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent)] hover:text-white">
+            <Upload size={14} /> Upload PDF / Image
+            <input type="file" accept=".pdf,image/*,.txt,.md" className="hidden" onChange={handleFileUpload} />
+          </label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Or paste notes, textbook content, formulas..." className="mb-2 w-full resize-none rounded-xl bg-[var(--canvas)] px-3 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          {notes.trim() && <button onClick={handleNotesSubmit} disabled={uploading} className="w-full rounded-xl bg-[var(--accent)] py-2.5 text-sm font-bold text-white disabled:opacity-50">{uploading ? 'Processing...' : 'Generate cards'}</button>}
+          {uploading && <p className="mt-2 text-center text-xs text-[var(--muted)]">⏳ Processing...</p>}
           {(data?.documents?.length ?? 0) > 0 && (
             <div className="mt-4 border-t border-[var(--border)] pt-3">
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--muted)]">
-                Uploaded Materials ({data!.documents.length})
-              </p>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--muted)]">Materials ({data!.documents.length})</p>
               <div className="flex flex-col gap-1.5">
                 {data!.documents.map((doc: any) => (
                   <div key={doc.id} className="flex items-center gap-2.5 rounded-lg bg-[var(--canvas)] px-3 py-2">
                     <span className="text-base">{docIcon(doc.fileType)}</span>
                     <div className="flex-1 overflow-hidden">
                       <p className="truncate text-sm font-medium text-[var(--ink)]">{doc.title}</p>
-                      <p className="text-[10px] text-[var(--muted)]">
-                        {doc.fileType.toUpperCase()}
-                        {doc.processingStatus === 'ready' && doc.chunkCount > 0 && ` · ${doc.chunkCount} sections`}
-                      </p>
+                      <p className="text-[10px] text-[var(--muted)]">{doc.fileType.toUpperCase()}{doc.processingStatus === 'ready' && doc.chunkCount > 0 && ` · ${doc.chunkCount} sections`}</p>
                     </div>
                     <DocStatus status={doc.processingStatus} />
                   </div>
@@ -378,47 +398,79 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
         </div>
       )}
 
-      {/* Concept card */}
+      {/* Concept card — shows BOTH concept + explanation, swipe to advance */}
       {card ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-6">
-          <button
-            onClick={() => setFlipped(!flipped)}
-            className="flex h-72 w-full max-w-md flex-col items-center justify-center rounded-3xl p-8 shadow-lg transition"
-            style={{ backgroundColor: flipped ? 'var(--accent-soft)' : 'var(--surface)' }}
-          >
-            <span className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">{flipped ? 'Explanation' : 'Concept'}</span>
-            <p className="text-center text-lg font-semibold leading-relaxed text-[var(--ink)]">{flipped ? card.back : card.front}</p>
-            <span className="mt-auto text-[10px] text-[var(--muted)]">{flipped ? 'How well did you know this?' : 'Tap to see explanation'}</span>
-          </button>
+        <div className="flex flex-1 flex-col items-center justify-center px-6 py-4">
+          {/* Card stack */}
+          <div className="relative w-full max-w-md" style={{ height: 'min(60vh, 460px)' }}>
+            {/* Next card peeking behind */}
+            {cards[current + 1] && (
+              <div className="absolute inset-0 scale-95 rounded-3xl bg-[var(--surface)] opacity-50 shadow" style={{ top: 12 }} />
+            )}
+            {/* Active card */}
+            <div
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerUp}
+              className="absolute inset-0 flex cursor-grab touch-none select-none flex-col rounded-3xl bg-[var(--surface)] p-7 shadow-xl active:cursor-grabbing"
+              style={{
+                transform: leaving
+                  ? `translateX(${leaving === 'right' ? 600 : -600}px) rotate(${leaving === 'right' ? 20 : -20}deg)`
+                  : `translateX(${drag}px) rotate(${drag * 0.04}deg)`,
+                transition: leaving || startX.current === null ? 'transform 0.28s ease-out' : 'none',
+                opacity: leaving ? 0 : 1,
+              }}
+            >
+              <span className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">Concept</span>
+              <p className="text-xl font-bold leading-snug text-[var(--ink)]">{card.front}</p>
 
-          {/* Rating */}
-          {flipped && (
-            <div className="mt-4 flex w-full max-w-md gap-2">
-              <button onClick={() => rate(1)} className="flex-1 rounded-xl bg-red-500 py-3 text-sm font-bold text-white">Didn't know</button>
-              <button onClick={() => rate(3)} className="flex-1 rounded-xl bg-blue-500 py-3 text-sm font-bold text-white">Knew it</button>
-              <button onClick={() => rate(5)} className="flex-1 rounded-xl bg-[var(--accent)] py-3 text-sm font-bold text-white">Easy</button>
+              <div className="my-4 h-px bg-[var(--border)]" />
+
+              <span className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">Explanation</span>
+              <p className="flex-1 overflow-y-auto text-[15px] leading-relaxed text-[var(--ink)]">{card.back}</p>
             </div>
-          )}
+          </div>
 
-          {/* Card counter */}
-          <p className="mt-3 text-xs text-[var(--muted)]">{current + 1} of {cards.length} concepts</p>
+          {/* Next button + hint */}
+          <button
+            onClick={() => advance('right')}
+            className="mt-6 flex items-center gap-2 rounded-full bg-[var(--accent)] px-8 py-3.5 font-bold text-white shadow-lg transition hover:scale-[1.03]"
+          >
+            {current < cards.length - 1 ? 'Got it — Next' : 'Finish'} <ChevronRight size={18} />
+          </button>
+          <p className="mt-3 text-xs text-[var(--muted)]">or swipe the card →</p>
         </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8">
-          <Brain size={40} className="text-[var(--accent)]" />
-          <p className="text-center text-sm text-[var(--muted)]">Concepts are being generated...<br/>Check back in a moment or upload your own material above.</p>
+          <Brain size={40} className="animate-pulse text-[var(--accent)]" />
+          <p className="text-center text-sm text-[var(--muted)]">Generating your concepts...<br/>This takes a few seconds. Or upload your own material above.</p>
         </div>
       )}
+    </div>
+  )
+}
 
-      {/* Bottom actions */}
-      <div className="flex gap-3 border-t border-[var(--border)] px-5 py-4">
-        <button onClick={onQuiz} className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] py-3.5 font-bold text-white">
-          <Sparkles size={16} /> Take Quiz
-        </button>
-        <button className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[var(--surface)] py-3.5 font-semibold text-[var(--accent)]">
-          <Mic size={16} /> Interview
-        </button>
-      </div>
+// Confetti burst for the celebration screen
+function Confetti() {
+  const pieces = Array.from({ length: 40 })
+  const colors = ['#12b76a', '#2be08a', '#FACC15', '#FB923C', '#A855F7', '#3B82F6']
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {pieces.map((_, i) => {
+        const left = Math.random() * 100
+        const delay = Math.random() * 0.5
+        const dur = 1.5 + Math.random() * 1.5
+        const color = colors[i % colors.length]
+        const size = 6 + Math.random() * 8
+        return (
+          <span
+            key={i}
+            className="animate-confetti absolute top-0 rounded-sm"
+            style={{ left: `${left}%`, width: size, height: size, backgroundColor: color, animationDelay: `${delay}s`, animationDuration: `${dur}s` }}
+          />
+        )
+      })}
     </div>
   )
 }

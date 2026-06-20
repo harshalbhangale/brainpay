@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { House, Camera, Sparkle, CreditCard, ClipboardText, ShieldCheck, MapPin } from 'phosphor-react-native'
+import { House, Camera, Sparkle, CreditCard, ClipboardText, ShieldCheck, MapPin, BookOpen } from 'phosphor-react-native'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
 import { haptic } from '@/lib/haptics'
 
@@ -24,7 +24,7 @@ export function HotstarTabBar({ state, navigation, accent, light }: Props) {
   const tabs: { key: string; label: string; Icon: PhosphorIcon; route?: string; push?: string }[] = kid
     ? [
         { key: 'home', label: 'Home', Icon: House, route: 'index' },
-        { key: 'find', label: 'Find', Icon: MapPin, push: '/(app)/family-safety' },
+        { key: 'study', label: 'Study', Icon: BookOpen, push: '/(app)/study-home' },
         { key: 'pals', label: 'Pals', Icon: Sparkle, route: 'pal' },
         { key: 'missions', label: 'Missions', Icon: ClipboardText, push: '/(app)/chores' },
         { key: 'scan', label: 'Scan', Icon: Camera, push: '/(app)/camera' },

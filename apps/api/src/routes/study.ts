@@ -11,6 +11,7 @@ import {
 } from '../db/study-schema'
 import { authedAccountId, requireAuth, type AuthVars } from '../middleware/auth'
 import { processDocument } from '../services/study-pipeline'
+import { generateTutorSpeech } from '../services/study-tutor-voice'
 
 export const study = new Hono<{ Variables: AuthVars }>()
 study.use('*', requireAuth)
@@ -310,3 +311,21 @@ async function updateStreak(accountId: string) {
     updatedAt: new Date(),
   }).where(eq(studyStreaks.id, existing.id))
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// TUTOR VOICE (ElevenLabs TTS)
+// ═══════════════════════════════════════════════════════════════════════
+
+// POST /study/tts — generate tutor speech for card reading or feedback
+study.post('/study/tts', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  const text = (body as { text?: string }).text
+  if (!text || text.length > 500) return c.json({ error: 'text required (max 500 chars)' }, 400)
+
+  try {
+    const { audio, contentType } = await generateTutorSpeech(text)
+    return new Response(audio, { headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=3600' } })
+  } catch (err) {
+    return c.json({ error: 'tts_failed' }, 500)
+  }
+})

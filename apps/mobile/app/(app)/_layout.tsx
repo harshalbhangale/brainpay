@@ -30,6 +30,10 @@ export default function AppLayout() {
       <Stack.Screen name="parent-chores" />
       <Stack.Screen name="invite-send" />
       <Stack.Screen name="feed" />
+      <Stack.Screen name="study-home" />
+      <Stack.Screen name="study-topic" />
+      <Stack.Screen name="study-new-topic" />
+      <Stack.Screen name="study-review" />
     </Stack>
   )
 }

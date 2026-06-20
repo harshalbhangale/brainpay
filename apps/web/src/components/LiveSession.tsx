@@ -4,7 +4,7 @@ import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../lib/liv
 import { startCamera, captureJpeg, type CameraHandle } from '../lib/camera'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../lib/liveAudio'
 import { avatarSrc, useAvatar } from '../lib/avatar'
-import { Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ShoppingBag, ZoomIn, ZoomOut, ChevronUp, ChevronDown, GripHorizontal } from 'lucide-react'
+import { Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ShoppingBag, ZoomIn, ZoomOut, ChevronUp, ChevronDown, GripHorizontal, ShoppingCart, Plus, Check, Trash2, X } from 'lucide-react'
 import { VrmCompanion, type CompanionMood } from './VrmCompanion'
 
 const FRAME_INTERVAL_MS = 1000
@@ -33,7 +33,8 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
   const [error, setError] = useState<string | null>(null)
   const [detections, setDetections] = useState<LiveDetection[]>([])
   const [cart, setCart] = useState<LiveDetection[]>([])
-  const [sheet, setSheet] = useState<'none' | 'scanned' | 'cart'>('none')
+  const [sheet, setSheet] = useState<'none' | 'cart'>('none')
+  const [expanded, setExpanded] = useState<LiveDetection | null>(null)
   const [transcript, setTranscript] = useState<Line[]>([])
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [zoom, setZoom] = useState(1)
@@ -264,6 +265,18 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
       ? 'happy'
       : 'neutral'
 
+  function inCart(d: LiveDetection) {
+    return cart.some((c) => c.name.toLowerCase() === d.name.toLowerCase())
+  }
+  function toggleCart(d: LiveDetection) {
+    setCart((prev) =>
+      prev.some((c) => c.name.toLowerCase() === d.name.toLowerCase())
+        ? prev.filter((c) => c.name.toLowerCase() !== d.name.toLowerCase())
+        : [...prev, d],
+    )
+  }
+  const cartTotal = cart.reduce((s, c) => s + (c.coinDelta || 0), 0)
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black text-ink">
       {/* Background */}
@@ -315,6 +328,20 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
         </div>
         <div className="font-bold drop-shadow">{title}</div>
         <div className="flex-1" />
+        {withCamera && (
+          <button
+            onClick={() => setSheet('cart')}
+            className="relative flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-2 text-sm font-bold text-ink backdrop-blur active:scale-95"
+            aria-label="Cart"
+          >
+            <ShoppingCart size={16} />
+            {cart.length > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-extrabold text-on-accent">
+                {cart.length}
+              </span>
+            )}
+          </button>
+        )}
         <button
           onClick={onClose}
           aria-label="Close"
@@ -337,11 +364,11 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
         </div>
       )}
 
-      {/* Verdict popups (multiple items) — top-left column */}
+      {/* Scanned items — small coin circles (tap to expand) */}
       {withCamera && detections.length > 0 && (
-        <div className="absolute left-3 right-16 top-20 z-20 flex max-h-[40%] flex-col gap-2 overflow-y-auto">
+        <div className="absolute left-3 top-24 z-20 flex flex-col gap-2.5">
           {detections.map((d) => (
-            <VerdictPopup key={d.detectionId} d={d} />
+            <ItemCoin key={d.detectionId} d={d} inCart={inCart(d)} onClick={() => setExpanded(d)} />
           ))}
         </div>
       )}
@@ -419,6 +446,21 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
         )}
       </div>
 
+      {/* Expanded item card */}
+      {expanded && (
+        <ExpandedCard
+          d={expanded}
+          inCart={inCart(expanded)}
+          onToggleCart={() => toggleCart(expanded)}
+          onClose={() => setExpanded(null)}
+        />
+      )}
+
+      {/* Cart sheet */}
+      {sheet === 'cart' && (
+        <CartSheet cart={cart} total={cartTotal} onRemove={toggleCart} onClose={() => setSheet('none')} />
+      )}
+
       {/* Controls */}
       <div className="relative z-30 flex items-center justify-center gap-5 p-6">
         <ControlButton active={micOn} onClick={toggleMic} label={micOn ? 'Mic on' : 'Muted'}>
@@ -466,30 +508,136 @@ const VERDICTS = {
   avoid: { color: '#ff5c5c', label: 'Think twice', Icon: XCircle },
 } as const
 
-function VerdictPopup({ d }: { d: LiveDetection }) {
+function pts(n: number): string {
+  return `${n >= 0 ? '+' : '−'}${Math.abs(n)}`
+}
+
+/* Small tappable coin: colour = verdict, shows the points delta. */
+function ItemCoin({ d, inCart, onClick }: { d: LiveDetection; inCart: boolean; onClick: () => void }) {
   const v = VERDICTS[d.verdict] ?? VERDICTS.okay
   return (
-    <div className="animate-pop-in flex items-start gap-3 rounded-2xl bg-black/70 p-3 backdrop-blur" style={{ boxShadow: `inset 0 0 0 1.5px ${v.color}66` }}>
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: `${v.color}26` }}>
-        <ShoppingBag size={20} className="text-white" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-bold text-white">{d.name}</span>
-          {d.estimatedPrice && <span className="shrink-0 text-xs text-white/60">{d.estimatedPrice}</span>}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide" style={{ color: v.color }}>
-          <v.Icon size={13} /> {v.label}
+    <button
+      onClick={onClick}
+      className="animate-pop-in relative flex h-14 w-14 flex-col items-center justify-center rounded-full text-white shadow-lg active:scale-90"
+      style={{ background: `radial-gradient(circle at 50% 35%, ${v.color}, ${v.color}cc)`, boxShadow: `0 0 0 2px ${v.color}, 0 6px 16px ${v.color}55` }}
+      title={d.name}
+    >
+      <span className="text-sm font-extrabold leading-none">{pts(d.coinDelta)}</span>
+      <span className="text-[8px] font-semibold uppercase opacity-80">pts</span>
+      {inCart && (
+        <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-black ring-2" style={{ '--tw-ring-color': v.color } as React.CSSProperties}>
+          <Check size={12} strokeWidth={3} />
+        </span>
+      )}
+    </button>
+  )
+}
+
+/* Full card for a tapped item, with add/remove from cart. */
+function ExpandedCard({ d, inCart, onToggleCart, onClose }: { d: LiveDetection; inCart: boolean; onToggleCart: () => void; onClose: () => void }) {
+  const v = VERDICTS[d.verdict] ?? VERDICTS.okay
+  const good = d.verdict === 'great'
+  return (
+    <div className="absolute inset-0 z-40 flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div onClick={(e) => e.stopPropagation()} className="animate-rise relative w-full max-w-md rounded-t-3xl bg-surface p-5 pb-8 text-ink" style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-surface2" />
+        <div className="flex items-start gap-3">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white" style={{ background: v.color }}>
+            <span className="text-base font-extrabold">{pts(d.coinDelta)}</span>
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-lg font-extrabold">{d.name}</span>
+              {d.estimatedPrice && <span className="shrink-0 text-sm text-muted">{d.estimatedPrice}</span>}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1 text-xs font-bold uppercase tracking-wide" style={{ color: v.color }}>
+              <v.Icon size={14} /> {v.label} · {pts(d.coinDelta)} pts
+            </div>
+          </div>
         </div>
         {d.healthNote && (
-          <div className="mt-1 flex items-start gap-1.5 text-xs leading-snug text-white/80">
-            <Apple size={13} className="mt-0.5 shrink-0" /> {d.healthNote}
+          <div className="mt-3 flex items-start gap-2 rounded-2xl bg-surface2 p-3 text-sm">
+            <Apple size={16} className="mt-0.5 shrink-0 text-accent" /> {d.healthNote}
           </div>
         )}
         {d.budgetNote && (
-          <div className="mt-0.5 flex items-start gap-1.5 text-xs leading-snug text-white/80">
-            <Wallet size={13} className="mt-0.5 shrink-0" /> {d.budgetNote}
+          <div className="mt-2 flex items-start gap-2 rounded-2xl bg-surface2 p-3 text-sm">
+            <Wallet size={16} className="mt-0.5 shrink-0 text-warn" /> {d.budgetNote}
           </div>
+        )}
+        <button
+          onClick={onToggleCart}
+          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold active:scale-[0.99] ${
+            inCart ? 'bg-surface2 text-ink' : good ? 'bg-accent text-on-accent' : 'bg-warn/20 text-warn'
+          }`}
+        >
+          {inCart ? <><Trash2 size={16} /> Remove from cart</> : <><Plus size={16} /> {good ? 'Add to cart' : 'Add anyway'}</>}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CartSheet({ cart, total, onRemove, onClose }: { cart: LiveDetection[]; total: number; onRemove: (d: LiveDetection) => void; onClose: () => void }) {
+  const [done, setDone] = useState(false)
+  async function checkout() {
+    // Apple Pay / Google Pay via the Payment Request API where available.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const PR: any = (window as any).PaymentRequest
+      if (PR) {
+        const req = new PR(
+          [{ supportedMethods: 'https://apple.com/apple-pay', data: { version: 3, merchantIdentifier: 'merchant.com.brainpal.pay', merchantCapabilities: ['supports3DS'], supportedNetworks: ['visa', 'mastercard'], countryCode: 'AU' } }],
+          { total: { label: 'BrainPal', amount: { currency: 'AUD', value: '0.00' } } },
+        )
+        await req.show().then((r: any) => r.complete('success')).catch(() => undefined)
+      }
+    } catch {
+      /* ignore — fall through to demo success */
+    }
+    setDone(true)
+    setTimeout(onClose, 1400)
+  }
+  return (
+    <div className="absolute inset-0 z-40 flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div onClick={(e) => e.stopPropagation()} className="animate-rise relative w-full max-w-md rounded-t-3xl bg-surface p-5 text-ink" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-surface2" />
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-lg font-extrabold">Your cart</h3>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-surface2 text-muted"><X size={16} /></button>
+        </div>
+        {done ? (
+          <div className="py-10 text-center">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-on-accent"><Check size={28} strokeWidth={3} /></div>
+            <div className="font-bold">Paid! Great choices 🎉</div>
+          </div>
+        ) : cart.length === 0 ? (
+          <div className="py-10 text-center text-sm text-muted">Nothing in the cart yet. Scan items and add the good ones!</div>
+        ) : (
+          <>
+            <div className="max-h-[40vh] space-y-2 overflow-y-auto">
+              {cart.map((c) => {
+                const v = VERDICTS[c.verdict] ?? VERDICTS.okay
+                return (
+                  <div key={c.detectionId} className="flex items-center gap-3 rounded-2xl bg-surface2 p-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-extrabold text-white" style={{ background: v.color }}>{pts(c.coinDelta)}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{c.name}</span>
+                    {c.estimatedPrice && <span className="text-xs text-muted">{c.estimatedPrice}</span>}
+                    <button onClick={() => onRemove(c)} className="text-muted hover:text-danger"><Trash2 size={16} /></button>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mt-3 flex items-center justify-between rounded-2xl bg-surface2 px-4 py-3">
+              <span className="text-sm font-semibold text-muted">Health points</span>
+              <span className="text-lg font-extrabold" style={{ color: total >= 0 ? 'var(--color-accent)' : 'var(--color-danger)' }}>{pts(total)}</span>
+            </div>
+            <button onClick={checkout} className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-ink py-3.5 font-bold text-canvas active:scale-[0.99]">
+               Pay
+            </button>
+          </>
         )}
       </div>
     </div>

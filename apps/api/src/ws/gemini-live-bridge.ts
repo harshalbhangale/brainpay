@@ -233,6 +233,17 @@ async function handleStart(ws: WebSocket, state: SessionState, role: 'parent' | 
       },
     })
     logger.info({ role, mode }, 'gemini_live.session_started')
+    // In onboarding, Mika speaks first — kick off her greeting + first question.
+    if (mode === 'onboard_parent' || mode === 'onboard_kid') {
+      try {
+        state.live.sendClientContent({
+          turns: [{ role: 'user', parts: [{ text: '(Onboarding just started. Warmly greet me and ask your very first question now.)' }] }],
+          turnComplete: true,
+        })
+      } catch (err) {
+        logger.warn({ err: String(err) }, 'onboard.kickoff_failed')
+      }
+    }
   } catch (err) {
     logger.error({ err: String(err) }, 'gemini_live.start_failed')
     send(ws, { type: 'error', message: 'Could not start live session' })

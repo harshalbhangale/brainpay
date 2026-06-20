@@ -211,11 +211,12 @@ function HomeView({ stats, topics, onSelect, onSetup }: { stats?: Stats | null; 
 // ═══════════════════════════════════════════════════════════════════════
 
 function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: () => void; onQuiz: () => void }) {
+  const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ['study-topic', topicId],
-    queryFn: () => api<{ topic: Topic; cardsDue: number }>(`/study/topics/${topicId}`),
+    queryFn: () => api<{ topic: Topic; cardsDue: number; documents: any[] }>(`/study/topics/${topicId}`),
   })
-  const { data: cardsData } = useQuery({
+  const { data: cardsData, refetch } = useQuery({
     queryKey: ['study-cards', topicId],
     queryFn: () => api<{ cards: ConceptCard[] }>(`/study/topics/${topicId}/cards`),
   })
@@ -223,6 +224,9 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
   const cards = cardsData?.cards ?? []
   const [current, setCurrent] = useState(0)
   const [flipped, setFlipped] = useState(false)
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [notes, setNotes] = useState('')
 
   const reviewMut = useMutation({
     mutationFn: ({ cardId, quality }: { cardId: string; quality: number }) =>
@@ -238,14 +242,109 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
     if (current < cards.length - 1) setCurrent((c) => c + 1)
   }
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+
+    // For images: convert to base64 and send as content
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = async () => {
+        const base64 = reader.result as string
+        await api(`/study/topics/${topicId}/documents`, {
+          method: 'POST',
+          body: JSON.stringify({
+            title: file.name,
+            fileUrl: base64,
+            fileType: 'image',
+            content: `[Image uploaded: ${file.name}. Extract all text, formulas, diagrams and concepts from this image.]`,
+          }),
+        })
+        setUploading(false)
+        setShowUpload(false)
+        setTimeout(() => { refetch(); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }, 3000)
+      }
+      reader.readAsDataURL(file)
+      return
+    }
+
+    // For PDFs: read as text (basic) or send URL
+    if (file.type === 'application/pdf') {
+      const text = await file.text().catch(() => '')
+      await api(`/study/topics/${topicId}/documents`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: file.name,
+          fileUrl: `local://${file.name}`,
+          fileType: 'pdf',
+          content: text.length > 100 ? text.slice(0, 15000) : `[PDF uploaded: ${file.name}. Generate concepts from a ${file.name} document for this subject.]`,
+        }),
+      })
+      setUploading(false)
+      setShowUpload(false)
+      setTimeout(() => { refetch(); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }, 3000)
+      return
+    }
+
+    // Text files
+    const text = await file.text()
+    await api(`/study/topics/${topicId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ title: file.name, fileUrl: `local://${file.name}`, fileType: 'text', content: text.slice(0, 15000) }),
+    })
+    setUploading(false)
+    setShowUpload(false)
+    setTimeout(() => { refetch(); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }, 3000)
+  }
+
+  const handleNotesSubmit = async () => {
+    if (!notes.trim()) return
+    setUploading(true)
+    await api(`/study/topics/${topicId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'My notes', fileUrl: 'text://inline', fileType: 'text', content: notes.trim() }),
+    })
+    setNotes('')
+    setUploading(false)
+    setShowUpload(false)
+    setTimeout(() => { refetch(); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }, 3000)
+  }
+
   return (
     <div className="flex flex-1 flex-col">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-3">
         <button onClick={onBack} className="text-[var(--muted)]"><ChevronLeft size={20} /></button>
         <h2 className="flex-1 text-center font-bold text-[var(--ink)]">{data?.topic?.emoji} {data?.topic?.title}</h2>
-        <span className="text-xs text-[var(--muted)]">{current + 1}/{cards.length}</span>
+        <button onClick={() => setShowUpload(!showUpload)} className="text-[var(--accent)]"><Upload size={18} /></button>
       </div>
+
+      {/* Upload panel */}
+      {showUpload && (
+        <div className="border-b border-[var(--border)] bg-[var(--surface)] px-5 py-4">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-[var(--muted)]">Add your own material</p>
+          <div className="mb-3 flex gap-2">
+            <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[var(--accent-soft)] py-3 text-sm font-semibold text-[var(--accent)] transition hover:bg-[var(--accent)] hover:text-white">
+              <Upload size={14} /> PDF / Image
+              <input type="file" accept=".pdf,image/*,.txt,.md" className="hidden" onChange={handleFileUpload} />
+            </label>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            placeholder="Or paste/type notes, textbook content, formulas..."
+            className="mb-2 w-full resize-none rounded-xl bg-[var(--canvas)] px-3 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+          />
+          {notes.trim() && (
+            <button onClick={handleNotesSubmit} disabled={uploading} className="w-full rounded-xl bg-[var(--accent)] py-2.5 text-sm font-bold text-white disabled:opacity-50">
+              {uploading ? 'Processing...' : 'Generate cards from this'}
+            </button>
+          )}
+          {uploading && <p className="mt-2 text-center text-xs text-[var(--muted)]">⏳ Processing... new cards will appear shortly</p>}
+        </div>
+      )}
 
       {/* Concept card */}
       {card ? (
@@ -268,11 +367,14 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
               <button onClick={() => rate(5)} className="flex-1 rounded-xl bg-[var(--accent)] py-3 text-sm font-bold text-white">Easy</button>
             </div>
           )}
+
+          {/* Card counter */}
+          <p className="mt-3 text-xs text-[var(--muted)]">{current + 1} of {cards.length} concepts</p>
         </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8">
           <Brain size={40} className="text-[var(--accent)]" />
-          <p className="text-center text-sm text-[var(--muted)]">Concepts are being generated... Check back in a moment.</p>
+          <p className="text-center text-sm text-[var(--muted)]">Concepts are being generated...<br/>Check back in a moment or upload your own material above.</p>
         </div>
       )}
 

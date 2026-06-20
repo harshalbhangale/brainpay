@@ -3,6 +3,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { Login } from './screens/Login'
 import { RoleSelect } from './screens/RoleSelect'
 import { ParentOnboarding } from './screens/ParentOnboarding'
+import { KidOnboarding } from './screens/KidOnboarding'
 import { Home } from './screens/Home'
 
 /**
@@ -26,6 +27,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ParentOnboarding />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/onboarding-kid"
+        element={
+          <ProtectedRoute>
+            <KidOnboarding />
           </ProtectedRoute>
         }
       />

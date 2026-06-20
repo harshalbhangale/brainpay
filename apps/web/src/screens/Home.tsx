@@ -66,6 +66,19 @@ export function Home() {
         </button>
       </div>
 
+      {/* Onboarding reminder for users who haven't set up their persona */}
+      {account && account.accountType && !(account.persona as Record<string, unknown> | null)?.onboarded && (
+        <button
+          onClick={() => navigate(account.accountType === 'kid' ? '/onboarding-kid' : '/onboarding')}
+          className="flex items-center justify-between gap-3 border-b border-border bg-accent-soft px-4 py-2.5 text-left active:opacity-90"
+        >
+          <span className="text-sm font-semibold text-ink">
+            Finish setting up your profile so {account.accountType === 'kid' ? 'your companion' : 'PAL'} knows you better.
+          </span>
+          <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-bold text-on-accent">Set up →</span>
+        </button>
+      )}
+
       {/* Swipeable panes */}
       <div
         ref={scrollerRef}

@@ -78,6 +78,7 @@ export function ParentOnboarding() {
       style: palStyle,
       kid_situation: kidSituation,
       primary_goal: primaryGoal,
+      onboarded: true,
     }
     try {
       const res = await api<{ account: Account }>('/me', {

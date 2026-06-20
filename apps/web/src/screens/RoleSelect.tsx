@@ -25,7 +25,7 @@ export function RoleSelect() {
         body: JSON.stringify({ accountType: 'kid' }),
       })
       updateAccount(res.account)
-      navigate('/', { replace: true })
+      navigate('/onboarding-kid', { replace: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
       setBusy(false)

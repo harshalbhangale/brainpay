@@ -15,6 +15,7 @@ import { twilioVoice } from './twilio-voice'
 import { voiceAgent } from './voice-agent'
 import { voiceOnboarding } from './voice-onboarding'
 import { wallet } from './wallet'
+import { study } from './study'
 
 export const routes = new Hono()
 routes.route('/', health)
@@ -37,3 +38,4 @@ routes.route('/', chat)
 routes.route('/', voiceAgent)
 routes.route('/', voiceOnboarding)
 routes.route('/', realtime)
+routes.route('/', study)

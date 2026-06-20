@@ -30,7 +30,7 @@ export async function streamTts(
   const voiceId = env.ELEVENLABS_COMPANION_VOICE_ID || env.ELEVENLABS_VOICE_ID
   const url =
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream` +
-    `?output_format=mp3_22050_32&optimize_streaming_latency=3`
+    `?output_format=mp3_44100_128&optimize_streaming_latency=2`
 
   const res = await fetch(url, {
     method: 'POST',

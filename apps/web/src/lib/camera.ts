@@ -10,6 +10,10 @@
 export type CameraHandle = {
   stream: MediaStream
   stop: () => void
+  /** Real camera zoom range if the device/track supports it. */
+  zoomCaps: { min: number; max: number; step: number } | null
+  /** Apply real (optical/sensor) zoom. Returns true if applied on the track. */
+  setZoom: (z: number) => boolean
 }
 
 export async function startCamera(video: HTMLVideoElement): Promise<CameraHandle> {
@@ -25,10 +29,30 @@ export async function startCamera(video: HTMLVideoElement): Promise<CameraHandle
   video.muted = true
   video.setAttribute('playsinline', 'true')
   await video.play().catch(() => undefined)
+
+  const track = stream.getVideoTracks()[0]
+  // Some devices (notably Android rear cameras) expose a real `zoom` capability.
+  const caps = (track?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & {
+    zoom?: { min: number; max: number; step: number }
+  }
+  const zoomCaps = caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1 } : null
+
   return {
     stream,
+    zoomCaps,
+    setZoom: (z) => {
+      if (!zoomCaps || !track) return false
+      const clamped = Math.max(zoomCaps.min, Math.min(zoomCaps.max, z))
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        track.applyConstraints({ advanced: [{ zoom: clamped } as any] })
+        return true
+      } catch {
+        return false
+      }
+    },
     stop: () => {
-      for (const track of stream.getTracks()) track.stop()
+      for (const t of stream.getTracks()) t.stop()
       video.srcObject = null
     },
   }

@@ -64,21 +64,27 @@ export function VrmCompanion({
     scene.add(rim)
     scene.add(new THREE.AmbientLight(0xffffff, 1.5))
 
-    // Frame the whole avatar (top of hair → mid-shin) centred in the canvas.
+    // Frame the upper body: top of hair → hips, so the face reads clearly
+    // while the arms/hands stay in shot for visible movement.
     function fitView() {
       if (!vrm) return
+      vrm.scene.updateMatrixWorld(true)
       const box = new THREE.Box3().setFromObject(vrm.scene)
       const size = new THREE.Vector3()
-      const center = new THREE.Vector3()
       box.getSize(size)
-      box.getCenter(center)
-      // Show roughly the top 80% (head to upper legs) for a friendly portrait.
-      const viewHeight = size.y * 0.82
+      const head = vrm.humanoid?.getNormalizedBoneNode('head')
+      const hips = vrm.humanoid?.getNormalizedBoneNode('hips')
+      const topY = box.max.y
+      const hipsY = hips ? hips.getWorldPosition(new THREE.Vector3()).y : box.min.y + size.y * 0.45
+      const viewTop = topY + size.y * 0.04
+      const viewBottom = hipsY - size.y * 0.02
+      const viewHeight = Math.max(0.4, viewTop - viewBottom)
       const fov = (camera.fov * Math.PI) / 180
-      const dist = (viewHeight / 2 / Math.tan(fov / 2)) * 1.05
-      const targetY = box.max.y - viewHeight / 2
-      camera.position.set(center.x, targetY, (center.z || 0) + dist)
-      camera.lookAt(center.x, targetY, center.z || 0)
+      const dist = (viewHeight / 2 / Math.tan(fov / 2)) * 1.04
+      const cx = head ? head.getWorldPosition(new THREE.Vector3()).x : 0
+      const centerY = (viewTop + viewBottom) / 2
+      camera.position.set(cx, centerY, dist)
+      camera.lookAt(cx, centerY, 0)
       camera.updateProjectionMatrix()
     }
 
@@ -99,6 +105,8 @@ export function VrmCompanion({
     let blink = 0
     let nextGlance = 3 + Math.random() * 4
     let glance = 0
+    let nextGesture = 3 + Math.random() * 3
+    let gesture = 0
     const expr = { happy: 0, sad: 0, surprised: 0, aa: 0 }
 
     // Rest pose offsets (radians) to bring arms down from the T-pose.
@@ -136,32 +144,42 @@ export function VrmCompanion({
       const t = clock.elapsedTime
 
       if (vrm) {
-        // ── Arms: rest down + gentle sway ──
+        // ── Periodic gesture: every few seconds raise/relax the forearms ──
+        nextGesture -= dt
+        if (nextGesture <= 0) {
+          gesture = 1
+          nextGesture = 5 + Math.random() * 5
+        }
+        gesture = Math.max(0, gesture - dt * 0.8)
+        const gWave = Math.sin(gesture * Math.PI) // 0→1→0 over the gesture
+
+        // ── Arms: rest down + sway + gesture lift ──
         const lUp = bone('leftUpperArm')
         const rUp = bone('rightUpperArm')
         const lLow = bone('leftLowerArm')
         const rLow = bone('rightLowerArm')
-        const sway = Math.sin(t * 0.9) * 0.05
-        const breathe = Math.sin(t * 1.6) * 0.025
+        const sway = Math.sin(t * 1.1) * 0.1
+        const breathe = Math.sin(t * 1.6) * 0.03
         if (lUp) {
-          lUp.rotation.z = -REST.upperArmZ - sway
-          lUp.rotation.x = REST.upperArmX + breathe
+          lUp.rotation.z = -REST.upperArmZ - sway - gWave * 0.25
+          lUp.rotation.x = REST.upperArmX + breathe + gWave * 0.15
         }
         if (rUp) {
-          rUp.rotation.z = REST.upperArmZ + sway
-          rUp.rotation.x = REST.upperArmX + breathe
+          rUp.rotation.z = REST.upperArmZ + sway + gWave * 0.25
+          rUp.rotation.x = REST.upperArmX + breathe + gWave * 0.15
         }
-        if (lLow) lLow.rotation.z = -REST.lowerArmZ - Math.max(0, Math.sin(t * 0.7)) * 0.12
-        if (rLow) rLow.rotation.z = REST.lowerArmZ + Math.max(0, Math.sin(t * 0.7 + 1)) * 0.12
+        // Elbows bend, and bend more during a gesture (hands come up/forward).
+        if (lLow) lLow.rotation.z = -REST.lowerArmZ - 0.1 - gWave * 0.7 - Math.max(0, Math.sin(t * 0.8)) * 0.1
+        if (rLow) rLow.rotation.z = REST.lowerArmZ + 0.1 + gWave * 0.7 + Math.max(0, Math.sin(t * 0.8 + 1)) * 0.1
 
         // ── Body: breathing + slow weight shift ──
         const spine = bone('spine')
         if (spine) {
-          spine.rotation.x = Math.sin(t * 1.6) * 0.02
-          spine.rotation.z = Math.sin(t * 0.45) * 0.03
+          spine.rotation.x = Math.sin(t * 1.6) * 0.025
+          spine.rotation.z = Math.sin(t * 0.45) * 0.04
         }
         const chest = bone('chest')
-        if (chest) chest.rotation.x = Math.sin(t * 1.6 + 0.5) * 0.015
+        if (chest) chest.rotation.x = Math.sin(t * 1.6 + 0.5) * 0.02
 
         // ── Head: subtle motion + occasional glance ──
         nextGlance -= dt

@@ -10,8 +10,8 @@ import { VrmCompanion, type CompanionMood } from './VrmCompanion'
 const FRAME_INTERVAL_MS = 1000
 const FRAME_MAX_WIDTH = 480
 const MAX_ZOOM = 4
-const COMP_W = 190
-const COMP_H = 300
+const COMP_W = 240
+const COMP_H = 360
 const POS_KEY = 'brainpal.companionPos'
 
 type Phase = 'connecting' | 'live' | 'error' | 'no_permission'
@@ -35,6 +35,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
   const [transcript, setTranscript] = useState<Line[]>([])
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [zoom, setZoom] = useState(1)
+  const [realZoom, setRealZoom] = useState(false)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -96,6 +97,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
       if (withCamera && videoRef.current) {
         try {
           cameraRef.current = await startCamera(videoRef.current)
+          setRealZoom(!!cameraRef.current.zoomCaps)
         } catch {
           setError('Camera access was blocked. Allow camera access and try again.')
           setPhase('no_permission')
@@ -213,7 +215,15 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
   function changeZoom(delta: number) {
     setZoom((z) => {
       const next = Math.max(1, Math.min(MAX_ZOOM, Math.round((z + delta) * 2) / 2))
-      zoomRef.current = next
+      const cam = cameraRef.current
+      if (cam?.zoomCaps) {
+        // Real camera zoom — map 1..MAX to the track's native range.
+        const { min, max } = cam.zoomCaps
+        cam.setZoom(min + ((next - 1) / (MAX_ZOOM - 1)) * (max - min))
+        zoomRef.current = 1 // frames already zoomed by the sensor
+      } else {
+        zoomRef.current = next // digital zoom (crop on capture + scale preview)
+      }
       return next
     })
   }
@@ -263,7 +273,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
             muted
             playsInline
             className="absolute inset-0 h-full w-full object-cover transition-transform duration-200"
-            style={{ transform: `scale(${zoom})` }}
+            style={{ transform: `scale(${realZoom ? 1 : zoom})` }}
           />
           <canvas ref={canvasRef} className="hidden" />
           <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/60" />

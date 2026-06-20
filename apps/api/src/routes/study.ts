@@ -23,7 +23,8 @@ export const study = new Hono<{ Variables: AuthVars }>()
 
 // ── Auth middleware — skip nudge-check (cron endpoint) ────────────────
 study.use('*', async (c, next) => {
-  if (c.req.path.endsWith('/nudge-check')) return next()
+  const url = c.req.url
+  if (url.includes('/nudge-check')) return next()
   return requireAuth(c, next)
 })
 

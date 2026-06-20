@@ -4,6 +4,7 @@ import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../lib/liv
 import { startCamera, captureJpeg, type CameraHandle } from '../lib/camera'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../lib/liveAudio'
 import { avatarSrc, useAvatar } from '../lib/avatar'
+import { appendVoiceLines } from '../lib/voiceHistory'
 import { Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ShoppingBag, ZoomIn, ZoomOut, ChevronUp, ChevronDown, GripHorizontal, ShoppingCart, Plus, Check, Trash2, X } from 'lucide-react'
 import { VrmCompanion, type CompanionMood } from './VrmCompanion'
 
@@ -137,13 +138,12 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
             const u = pendingUserRef.current.trim()
             const r = replyBufRef.current.trim()
             if (u || r) {
-              setTranscript((prev) =>
-                [
-                  ...prev,
-                  ...(u ? [{ id: lineId++, role: 'you' as const, text: u }] : []),
-                  ...(r ? [{ id: lineId++, role: 'mika' as const, text: r }] : []),
-                ].slice(-60),
-              )
+              const lines = [
+                ...(u ? [{ id: lineId++, role: 'you' as const, text: u }] : []),
+                ...(r ? [{ id: lineId++, role: 'mika' as const, text: r }] : []),
+              ]
+              setTranscript((prev) => [...prev, ...lines].slice(-60))
+              appendVoiceLines(lines.map((l) => ({ role: l.role, text: l.text })))
             }
             pendingUserRef.current = ''
             replyBufRef.current = ''
@@ -558,8 +558,8 @@ function ItemCoin({ d, inCart, onClick }: { d: LiveDetection; inCart: boolean; o
   )
 }
 
-/* Full card for a tapped item, with add/remove from cart. */
-function ExpandedCard({ d, inCart, onToggleCart, onClose }: { d: LiveDetection; inCart: boolean; onToggleCart: () => void; onClose: () => void }) {
+/* Full card for a tapped item, with facts + add/dismiss. */
+function ExpandedCard({ d, inCart, onAdd, onDismiss, onClose }: { d: LiveDetection; inCart: boolean; onAdd: () => void; onDismiss: () => void; onClose: () => void }) {
   const v = VERDICTS[d.verdict] ?? VERDICTS.okay
   const good = d.verdict === 'great'
   return (
@@ -581,6 +581,15 @@ function ExpandedCard({ d, inCart, onToggleCart, onClose }: { d: LiveDetection; 
             </div>
           </div>
         </div>
+
+        {d.facts && d.facts.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {d.facts.map((f, i) => (
+              <span key={i} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-ink">{f}</span>
+            ))}
+          </div>
+        )}
+
         {d.healthNote && (
           <div className="mt-3 flex items-start gap-2 rounded-2xl bg-surface2 p-3 text-sm">
             <Apple size={16} className="mt-0.5 shrink-0 text-accent" /> {d.healthNote}
@@ -591,14 +600,20 @@ function ExpandedCard({ d, inCart, onToggleCart, onClose }: { d: LiveDetection; 
             <Wallet size={16} className="mt-0.5 shrink-0 text-warn" /> {d.budgetNote}
           </div>
         )}
-        <button
-          onClick={onToggleCart}
-          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold active:scale-[0.99] ${
-            inCart ? 'bg-surface2 text-ink' : good ? 'bg-accent text-on-accent' : 'bg-warn/20 text-warn'
-          }`}
-        >
-          {inCart ? <><Trash2 size={16} /> Remove from cart</> : <><Plus size={16} /> {good ? 'Add to cart' : 'Add anyway'}</>}
-        </button>
+
+        <div className="mt-4 flex gap-2">
+          <button onClick={onDismiss} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-surface2 py-3.5 text-sm font-bold text-ink active:scale-[0.99]">
+            <X size={16} /> Skip
+          </button>
+          <button
+            onClick={onAdd}
+            className={`flex flex-[1.4] items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold active:scale-[0.99] ${
+              inCart ? 'bg-surface2 text-ink' : good ? 'bg-accent text-on-accent' : 'bg-warn/20 text-warn'
+            }`}
+          >
+            <Plus size={16} /> {good ? 'Add to cart' : 'Add anyway'}
+          </button>
+        </div>
       </div>
     </div>
   )

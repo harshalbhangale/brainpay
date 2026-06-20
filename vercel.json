@@ -1,5 +1,5 @@
 {
-  "framework": "vite",
+  "framework": null,
   "buildCommand": "pnpm turbo run build --filter=@brainpal/web",
   "installCommand": "pnpm install --no-frozen-lockfile",
   "outputDirectory": "apps/web/dist",

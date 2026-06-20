@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Sun, Moon, X, LogOut, Trash2, MessageSquareText, ChevronRight } from 'lucide-react'
+import { Sun, Moon, X, LogOut, Trash2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuthStore } from '../stores/auth'
 import { useTheme } from '../lib/theme'
 import { AVATARS, useAvatar } from '../lib/avatar'
-import { loadVoiceHistory, clearVoiceHistory, type VoiceLine } from '../lib/voiceHistory'
 
 /**
  * Settings — a full-screen overlay reachable from the Home top bar.
@@ -40,7 +39,6 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
   const [clearing, setClearing] = useState(false)
   const [cleared, setCleared] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
 
   const name = (account?.persona?.name as string) || 'You'
   const role = account?.accountType === 'kid' ? 'Kid' : 'Parent'
@@ -154,16 +152,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </Section>
 
         {/* Data */}
-        <Section title="Conversation">
-          <button
-            onClick={() => setHistoryOpen(true)}
-            className="flex w-full items-center justify-between px-4 py-3.5 text-left transition active:bg-surface2"
-          >
-            <span className="flex items-center gap-3 text-sm font-medium text-ink">
-              <MessageSquareText size={18} className="text-muted" /> Conversation history
-            </span>
-            <ChevronRight size={18} className="text-muted" />
-          </button>
+        <Section title="Data">
           <button
             onClick={clearChat}
             disabled={clearing}
@@ -200,8 +189,6 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
         <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
-
-      {historyOpen && <VoiceHistoryView onClose={() => setHistoryOpen(false)} />}
     </div>
   )
 }
@@ -253,71 +240,5 @@ function SegBtn({ active, onClick, children }: { active: boolean; onClick: () =>
     >
       {children}
     </button>
-  )
-}
-
-function VoiceHistoryView({ onClose }: { onClose: () => void }) {
-  const [lines, setLines] = useState<VoiceLine[]>(() => loadVoiceHistory())
-
-  function groupByDay(items: VoiceLine[]) {
-    const groups: { day: string; items: VoiceLine[] }[] = []
-    for (const l of items) {
-      const day = new Date(l.at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-      const last = groups[groups.length - 1]
-      if (last && last.day === day) last.items.push(l)
-      else groups.push({ day, items: [l] })
-    }
-    return groups
-  }
-
-  return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-canvas">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
-        <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-surface2 text-muted active:scale-95" aria-label="Back">
-          <X size={18} />
-        </button>
-        <h1 className="text-base font-extrabold text-ink">Conversation history</h1>
-        <button
-          onClick={() => {
-            clearVoiceHistory()
-            setLines([])
-          }}
-          className="text-sm font-semibold text-danger disabled:opacity-40"
-          disabled={lines.length === 0}
-        >
-          Clear
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        {lines.length === 0 ? (
-          <div className="mt-16 text-center text-sm text-muted">
-            No conversations yet.
-            <br />
-            Talk to your companion from the chat and it'll show up here.
-          </div>
-        ) : (
-          groupByDay(lines).map((g, gi) => (
-            <div key={gi} className="mb-5">
-              <div className="mb-2 text-center text-[11px] font-bold uppercase tracking-wide text-muted">{g.day}</div>
-              <div className="space-y-2">
-                {g.items.map((l, i) => (
-                  <div key={i} className={l.role === 'you' ? 'text-right' : ''}>
-                    <span
-                      className={`inline-block max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${
-                        l.role === 'you' ? 'bg-accent text-on-accent' : 'bg-surface text-ink ring-1 ring-border'
-                      }`}
-                    >
-                      {l.text}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-        <div className="h-[env(safe-area-inset-bottom)]" />
-      </div>
-    </div>
   )
 }

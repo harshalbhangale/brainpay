@@ -3,6 +3,8 @@ import { api } from '../lib/api'
 import { aud } from '../lib/format'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../lib/agents'
 import { BrandLogo } from './BrandLogo'
+import { ConversationHistory } from './ConversationHistory'
+import { SquarePen, History as HistoryIcon } from 'lucide-react'
 
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
 
@@ -56,7 +58,19 @@ export function Chat() {
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [live, setLive] = useState<{ camera: boolean } | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  async function newChat() {
+    setMessages([])
+    setPendingIntent(null)
+    setInput('')
+    try {
+      await api('/chat/history', { method: 'DELETE' })
+    } catch {
+      /* ignore */
+    }
+  }
 
   // Initial history load (oldest → newest).
   useEffect(() => {
@@ -152,8 +166,9 @@ export function Chat() {
           <LiveSession withCamera={live.camera} onClose={() => setLive(null)} />
         </Suspense>
       )}
+      {showHistory && <ConversationHistory onClose={() => setShowHistory(false)} />}
       <div className="flex h-full flex-col bg-canvas">
-        <ChatHeader />
+        <ChatHeader onNewChat={newChat} onHistory={() => setShowHistory(true)} />
 
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
           {empty && <EmptyState onPick={sendText} />}
@@ -185,7 +200,7 @@ export function Chat() {
 }
 
 /* ── Header: orchestrator orb + specialist roster ────────────────────── */
-function ChatHeader() {
+function ChatHeader({ onNewChat, onHistory }: { onNewChat: () => void; onHistory: () => void }) {
   return (
     <div className="flex items-center gap-3 border-b border-border px-4 py-3">
       <BrandLogo size={34} />
@@ -199,9 +214,22 @@ function ChatHeader() {
           ))}
         </div>
       </div>
-      <span className="flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-accent">
-        <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Live
-      </span>
+      <button
+        onClick={onHistory}
+        aria-label="Conversation history"
+        title="History"
+        className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface2 hover:text-ink"
+      >
+        <HistoryIcon size={19} />
+      </button>
+      <button
+        onClick={onNewChat}
+        aria-label="New chat"
+        title="New chat"
+        className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface2 hover:text-ink"
+      >
+        <SquarePen size={19} />
+      </button>
     </div>
   )
 }

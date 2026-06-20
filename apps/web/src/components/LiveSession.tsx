@@ -161,10 +161,10 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
             if (speakerOnRef.current) void playerRef.current?.enqueueEncoded(mp3)
           },
           onDetection: (d) => {
+            const stamped = { ...d, seenAt: Date.now() }
             setDetections((prev) => {
-              // Keep distinct items (by name); refresh existing, cap at 5.
               const rest = prev.filter((p) => p.name.toLowerCase() !== d.name.toLowerCase())
-              return [...rest, d].slice(-5)
+              return [...rest, stamped].slice(-6)
             })
           },
           onError: (m) => {
@@ -214,6 +214,15 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
       if (timer) clearTimeout(timer)
     }
   }, [withCamera, phase])
+
+  // Expire coins that haven't been re-seen recently so stale ones disappear.
+  useEffect(() => {
+    const t = setInterval(() => {
+      const cutoff = Date.now() - 9000
+      setDetections((prev) => prev.filter((d) => (d.seenAt ?? 0) > cutoff))
+    }, 2000)
+    return () => clearInterval(t)
+  }, [])
 
   function changeZoom(delta: number) {
     setZoom((z) => {
@@ -274,6 +283,9 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
         ? prev.filter((c) => c.name.toLowerCase() !== d.name.toLowerCase())
         : [...prev, d],
     )
+  }
+  function dismissDetection(id: string) {
+    setDetections((prev) => prev.filter((d) => d.detectionId !== id))
   }
   const cartTotal = cart.reduce((s, c) => s + (c.coinDelta || 0), 0)
 
@@ -364,14 +376,19 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
         </div>
       )}
 
-      {/* Scanned items — small coin circles (tap to expand) */}
-      {withCamera && detections.length > 0 && (
-        <div className="absolute left-3 top-24 z-20 flex flex-col gap-2.5">
-          {detections.map((d) => (
-            <ItemCoin key={d.detectionId} d={d} inCart={inCart(d)} onClick={() => setExpanded(d)} />
-          ))}
-        </div>
-      )}
+      {/* Scanned items — coins pinned on the item (tap to expand) */}
+      {withCamera &&
+        detections.map((d, i) => {
+          const anchored = d.anchor && d.anchor.x != null && d.anchor.y != null
+          const style: React.CSSProperties = anchored
+            ? { left: `${d.anchor!.x * 100}%`, top: `${d.anchor!.y * 100}%`, transform: 'translate(-50%, -50%)' }
+            : { left: 14, top: 96 + i * 64 }
+          return (
+            <div key={d.detectionId} className="absolute z-20" style={style}>
+              <ItemCoin d={d} inCart={inCart(d)} onClick={() => setExpanded(d)} />
+            </div>
+          )
+        })}
 
       {/* Permission / error */}
       {(phase === 'no_permission' || phase === 'error') && (
@@ -451,7 +468,15 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
         <ExpandedCard
           d={expanded}
           inCart={inCart(expanded)}
-          onToggleCart={() => toggleCart(expanded)}
+          onAdd={() => {
+            toggleCart(expanded)
+            dismissDetection(expanded.detectionId)
+            setExpanded(null)
+          }}
+          onDismiss={() => {
+            dismissDetection(expanded.detectionId)
+            setExpanded(null)
+          }}
           onClose={() => setExpanded(null)}
         />
       )}

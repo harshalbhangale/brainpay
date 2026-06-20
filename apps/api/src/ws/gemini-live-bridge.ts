@@ -252,6 +252,8 @@ function handleLiveMessage(ws: WebSocket, state: SessionState, m: LiveServerMess
           verdict?: string
           healthNote?: string
           budgetNote?: string
+          facts?: string[]
+          anchor?: { x?: number; y?: number }
           estimatedPrice?: string
           healthScore?: number
           confidence?: number
@@ -264,6 +266,8 @@ function handleLiveMessage(ws: WebSocket, state: SessionState, m: LiveServerMess
             : (args.healthScore ?? 0) <= -5
               ? 'avoid'
               : 'okay'
+        const ax = typeof args.anchor?.x === 'number' ? Math.max(0, Math.min(1, args.anchor.x)) : null
+        const ay = typeof args.anchor?.y === 'number' ? Math.max(0, Math.min(1, args.anchor.y)) : null
         send(ws, {
           type: 'detection',
           detectionId: crypto.randomUUID(),
@@ -272,9 +276,11 @@ function handleLiveMessage(ws: WebSocket, state: SessionState, m: LiveServerMess
           verdict,
           healthNote: args.healthNote ?? '',
           budgetNote: args.budgetNote ?? '',
-          estimatedPrice: args.estimatedPrice ?? '',
+          facts: Array.isArray(args.facts) ? args.facts.slice(0, 4).map((f) => String(f)) : [],
+          anchor: ax !== null && ay !== null ? { x: ax, y: ay } : null,
           coinDelta: Math.round(args.healthScore ?? 0),
           emoji: emojiFor(category),
+          estimatedPrice: args.estimatedPrice ?? '',
           confidence: args.confidence ?? 0,
         })
       }

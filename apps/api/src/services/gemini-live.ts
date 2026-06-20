@@ -103,7 +103,9 @@ PRODUCT POPUPS — IMPORTANT
   book, clothing, stationery, household item), call the report_item tool immediately — do NOT wait
   to be asked. This is your primary job: tell the kid whether it's worth buying.
 - Call report_item once per distinct product, every time a new product appears. Always fill in
-  verdict (great/okay/avoid), a one-line healthNote, a one-line budgetNote, and estimatedPrice.
+  verdict (great/okay/avoid), a one-line healthNote, a one-line budgetNote, estimatedPrice,
+  2-4 concrete facts (e.g. "38g sugar", "190 kcal", "12g protein"), and anchor — the item's
+  centre position in the frame as x,y in 0..1 (so the app can pin the badge on the item).
 - Also say a short, cute spoken line about it. The popup is IN ADDITION to your voice.
 
 TONE
@@ -162,6 +164,19 @@ const REPORT_ITEM_TOOL = {
           },
           healthNote: { type: Type.STRING, description: 'One short sentence on the health angle.' },
           budgetNote: { type: Type.STRING, description: 'One short sentence on value/budget.' },
+          facts: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "2-4 concrete facts, e.g. ['38g sugar', '190 kcal', '12g protein', 'lots of additives'].",
+          },
+          anchor: {
+            type: Type.OBJECT,
+            description: 'Normalized center position of the item in the frame (0..1).',
+            properties: {
+              x: { type: Type.NUMBER, description: 'left→right, 0..1' },
+              y: { type: Type.NUMBER, description: 'top→bottom, 0..1' },
+            },
+          },
           estimatedPrice: { type: Type.STRING, description: 'Rough price with $ if you can tell, else empty.' },
           healthScore: {
             type: Type.INTEGER,

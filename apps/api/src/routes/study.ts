@@ -21,7 +21,13 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 export const study = new Hono<{ Variables: AuthVars }>()
 
-// ── Public/cron endpoints (no auth) ───────────────────────────────────
+// ── Auth middleware — skip nudge-check (cron endpoint) ────────────────
+study.use('*', async (c, next) => {
+  if (c.req.path.endsWith('/nudge-check')) return next()
+  return requireAuth(c, next)
+})
+
+// ── Public/cron endpoint ──────────────────────────────────────────────
 study.post('/study/nudge-check', async (c) => {
   const cronKey = c.req.header('X-Cron-Key')
   if (cronKey !== 'brainpal-internal-cron-2024') {
@@ -31,9 +37,6 @@ study.post('/study/nudge-check', async (c) => {
   const count = await checkAndSendStudyNudges()
   return c.json({ ok: true, nudgesSent: count })
 })
-
-// ── Auth-gated endpoints ──────────────────────────────────────────────
-study.use('/study/*', requireAuth)
 
 // ─── Helper: get familyId ─────────────────────────────────────────────
 async function getFamilyId(accountId: string): Promise<string | null> {

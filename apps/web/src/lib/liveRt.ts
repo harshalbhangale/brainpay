@@ -36,10 +36,13 @@ export type LiveDetection = {
   verdict: 'great' | 'okay' | 'avoid'
   healthNote: string
   budgetNote: string
+  facts?: string[]
+  anchor?: { x: number; y: number } | null
   estimatedPrice: string
   emoji: string
   coinDelta: number
   confidence: number
+  seenAt?: number
 }
 
 export type LiveRtHandlers = {

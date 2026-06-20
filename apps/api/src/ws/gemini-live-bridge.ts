@@ -128,6 +128,9 @@ function speakSentence(ws: WebSocket, state: SessionState, text: string) {
         tagged[0] = TAG_OUT_MP3
         mp3.copy(tagged, 1)
         ws.send(tagged)
+        logger.info({ bytes: mp3.length, chars: sentence.length }, 'tts.spoke')
+      } else if (!mp3.length) {
+        logger.warn({ chars: sentence.length }, 'tts.empty')
       }
     })
     .catch(() => undefined)

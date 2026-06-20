@@ -115,11 +115,31 @@ export class PcmPlayer {
   private ctx: AudioContext | null = null
   private nextTime = 0
   private sources = new Set<AudioBufferSourceNode>()
+  private analyser: AnalyserNode | null = null
+  private freqData: Uint8Array | null = null
 
   /** Create/resume the output context. Must run after a user gesture. */
   async resume(): Promise<void> {
-    if (!this.ctx) this.ctx = new AudioContext()
+    if (!this.ctx) {
+      this.ctx = new AudioContext()
+      this.analyser = this.ctx.createAnalyser()
+      this.analyser.fftSize = 256
+      this.analyser.smoothingTimeConstant = 0.6
+      this.analyser.connect(this.ctx.destination)
+      this.freqData = new Uint8Array(this.analyser.frequencyBinCount)
+    }
     if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => undefined)
+  }
+
+  /** Current output loudness 0..1 — drives the companion's mouth (lip-sync). */
+  getLevel(): number {
+    if (!this.analyser || !this.freqData) return 0
+    this.analyser.getByteFrequencyData(this.freqData)
+    let sum = 0
+    for (let i = 0; i < this.freqData.length; i++) sum += this.freqData[i]
+    const avg = sum / this.freqData.length / 255
+    // Emphasise speech band a touch and clamp.
+    return Math.min(1, avg * 1.8)
   }
 
   enqueue(pcm: Int16Array): void {
@@ -132,7 +152,7 @@ export class PcmPlayer {
 
     const src = ctx.createBufferSource()
     src.buffer = buffer
-    src.connect(ctx.destination)
+    src.connect(this.analyser ?? ctx.destination)
 
     // Small lead-in keeps the first chunk from being scheduled in the past.
     const start = Math.max(ctx.currentTime + 0.03, this.nextTime)

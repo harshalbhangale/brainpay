@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { api } from '../lib/api'
 import { aud } from '../lib/format'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../lib/agents'
-import { LiveSession } from './LiveSession'
+import { BrandLogo } from './BrandLogo'
+
+const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
 
 type Pal = { palId: string; line: string }
 type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' } & Record<string, unknown>
@@ -145,7 +147,11 @@ export function Chat() {
 
   return (
     <>
-      {live && <LiveSession withCamera={live.camera} onClose={() => setLive(null)} />}
+      {live && (
+        <Suspense fallback={<div className="fixed inset-0 z-50 bg-black" />}>
+          <LiveSession withCamera={live.camera} onClose={() => setLive(null)} />
+        </Suspense>
+      )}
       <div className="flex h-full flex-col bg-canvas">
         <ChatHeader />
 
@@ -180,26 +186,22 @@ export function Chat() {
 
 /* ── Header: orchestrator orb + specialist roster ────────────────────── */
 function ChatHeader() {
-  const pal = AGENTS.pal
   return (
-    <div className="flex items-center gap-3 border-b border-surface2 px-4 py-3">
-      <AgentOrb agent={pal} size={40} aura />
+    <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+      <BrandLogo size={34} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 font-bold leading-tight">
-          PAL
-          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">
-            AI council
-          </span>
-        </div>
-        <div className="mt-0.5 flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {SPECIALISTS.map((a) => (
-            <span key={a.id} className="flex items-center gap-1 text-[11px] text-muted">
+            <span key={a.id} className="flex items-center gap-1 text-[11px] font-medium text-muted">
               <a.Icon size={12} style={{ color: a.color }} />
               {a.name.replace('PAL', '')}
             </span>
           ))}
         </div>
       </div>
+      <span className="flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-accent">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Live
+      </span>
     </div>
   )
 }

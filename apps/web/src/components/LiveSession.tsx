@@ -3,7 +3,8 @@ import { useAuthStore } from '../stores/auth'
 import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../lib/liveRt'
 import { startCamera, captureJpeg, type CameraHandle } from '../lib/camera'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../lib/liveAudio'
-import { Sparkles, Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ShoppingBag } from 'lucide-react'
+import { Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ShoppingBag } from 'lucide-react'
+import { VrmCompanion, type CompanionMood } from './VrmCompanion'
 
 const FRAME_INTERVAL_MS = 1000
 const FRAME_MAX_WIDTH = 480
@@ -181,28 +182,45 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
   const title = withCamera ? 'Point & Ask' : 'Talk to PAL'
   const hint = withCamera ? 'Point at anything and ask PAL about it…' : 'Say something — PAL is listening…'
 
+  // Mika's face follows the latest verdict; otherwise she's lively while speaking.
+  const lastDet = detections[detections.length - 1]
+  const companionMood: CompanionMood = lastDet
+    ? lastDet.verdict === 'great'
+      ? 'happy'
+      : lastDet.verdict === 'avoid'
+        ? 'sad'
+        : 'surprised'
+    : speaking
+      ? 'happy'
+      : 'neutral'
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black text-ink">
-      {/* Background: camera feed or voice orb */}
+      {/* Background: camera feed or soft gradient */}
       {withCamera ? (
         <>
           <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 h-full w-full object-cover" />
           <canvas ref={canvasRef} className="hidden" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/70" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70" />
+          {/* Mika stands on the feed, lower-right */}
+          <VrmCompanion
+            getLevel={() => playerRef.current?.getLevel() ?? 0}
+            mood={companionMood}
+            className="absolute bottom-0 right-0 h-[78%] w-[62%]"
+          />
         </>
       ) : (
         <div className="absolute inset-0 bg-gradient-to-b from-[#06100d] to-[#0b0b0f]">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative flex items-center justify-center">
-              <div
-                className={`absolute h-60 w-60 rounded-full bg-accent/20 ${speaking ? 'animate-ping' : 'animate-pulse'}`}
-              />
-              <div className="absolute h-44 w-44 rounded-full bg-accent/10" />
-              <div className="relative flex h-40 w-40 items-center justify-center rounded-full bg-gradient-to-br from-[#3ddc84] to-[#16a07f] shadow-[0_0_70px_rgba(61,220,132,0.45)]">
-                <Sparkles size={52} strokeWidth={2} className="text-white" />
-              </div>
-            </div>
-          </div>
+          <div
+            className={`absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/15 blur-2xl ${
+              speaking ? 'animate-pulse' : ''
+            }`}
+          />
+          <VrmCompanion
+            getLevel={() => playerRef.current?.getLevel() ?? 0}
+            mood={companionMood}
+            className="absolute inset-0"
+          />
         </div>
       )}
 

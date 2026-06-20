@@ -61,6 +61,8 @@ const EnvSchema = z.object({
   // Fargate). Takes priority over GEMINI_API_KEY.
   GOOGLE_SA_JSON: z.string().min(1).optional(),
   GEMINI_LIVE_MODEL: z.string().default('gemini-live-2.5-flash'),
+  // Companion voice — a Gemini prebuilt voice. "Leda" is youthful/sweet.
+  GEMINI_LIVE_VOICE: z.string().default('Leda'),
   // Gemini Developer API key. When set, the Live API uses this instead of
   // Vertex AI/ADC — required for Fargate, which has no GCP credentials.
   GEMINI_API_KEY: z.string().min(1).optional(),

@@ -215,11 +215,19 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
   const { data } = useQuery({
     queryKey: ['study-topic', topicId],
     queryFn: () => api<{ topic: Topic; cardsDue: number; documents: any[] }>(`/study/topics/${topicId}`),
+    refetchInterval: (q) => {
+      const docs = (q.state.data as { documents?: any[] } | undefined)?.documents ?? []
+      return docs.some((d) => d.processingStatus === 'pending' || d.processingStatus === 'processing') ? 3000 : false
+    },
   })
   const { data: cardsData, refetch } = useQuery({
     queryKey: ['study-cards', topicId],
     queryFn: () => api<{ cards: ConceptCard[] }>(`/study/topics/${topicId}/cards`),
   })
+
+  // Refetch cards whenever a document finishes processing
+  const readyDocCount = (data?.documents ?? []).filter((d: any) => d.processingStatus === 'ready').length
+  useEffect(() => { refetch() }, [readyDocCount, refetch])
 
   const cards = cardsData?.cards ?? []
   const [current, setCurrent] = useState(0)
@@ -343,6 +351,30 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
             </button>
           )}
           {uploading && <p className="mt-2 text-center text-xs text-[var(--muted)]">⏳ Processing... new cards will appear shortly</p>}
+
+          {/* Uploaded materials list */}
+          {(data?.documents?.length ?? 0) > 0 && (
+            <div className="mt-4 border-t border-[var(--border)] pt-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--muted)]">
+                Uploaded Materials ({data!.documents.length})
+              </p>
+              <div className="flex flex-col gap-1.5">
+                {data!.documents.map((doc: any) => (
+                  <div key={doc.id} className="flex items-center gap-2.5 rounded-lg bg-[var(--canvas)] px-3 py-2">
+                    <span className="text-base">{docIcon(doc.fileType)}</span>
+                    <div className="flex-1 overflow-hidden">
+                      <p className="truncate text-sm font-medium text-[var(--ink)]">{doc.title}</p>
+                      <p className="text-[10px] text-[var(--muted)]">
+                        {doc.fileType.toUpperCase()}
+                        {doc.processingStatus === 'ready' && doc.chunkCount > 0 && ` · ${doc.chunkCount} sections`}
+                      </p>
+                    </div>
+                    <DocStatus status={doc.processingStatus} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -507,4 +539,21 @@ function subjectEmoji(subject: string): string {
     Accountancy: '📊', Economics: '💹',
   }
   return map[subject] ?? '📚'
+}
+
+function docIcon(fileType: string): string {
+  if (fileType === 'pdf') return '📄'
+  if (fileType === 'image') return '🖼️'
+  return '📝'
+}
+
+function DocStatus({ status }: { status: string }) {
+  if (status === 'ready') return <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--accent)]">Ready</span>
+  if (status === 'failed') return <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-500">Failed</span>
+  return (
+    <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+      Processing
+    </span>
+  )
 }

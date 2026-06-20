@@ -54,8 +54,8 @@ export function Home() {
       >
         <div className="flex rounded-full bg-surface p-1">
           <Tab label="AI" active={pane === 0} onClick={() => goTo(0)} />
-          <Tab label="Family" active={pane === 1} onClick={() => goTo(1)} />
-          <Tab label="Study" active={pane === 2} onClick={() => goTo(2)} />
+          <Tab label="MoneyPal" active={pane === 1} onClick={() => goTo(1)} />
+          <Tab label="StudyPal" active={pane === 2} onClick={() => goTo(2)} />
         </div>
         <button
           onClick={() => setSettingsOpen(true)}

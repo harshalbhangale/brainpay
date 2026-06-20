@@ -1,17 +1,23 @@
 import { Hono } from 'hono'
 import { and, desc, eq, lte, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import OpenAI from 'openai'
 import { db } from '../db'
-import { memberships } from '../db/schema'
+import { accounts, ledger, memberships } from '../db/schema'
 import {
   studyCards,
   studyDocuments,
+  studyInterviews,
+  studyQuizzes,
   studyStreaks,
   studyTopics,
 } from '../db/study-schema'
 import { authedAccountId, requireAuth, type AuthVars } from '../middleware/auth'
 import { processDocument } from '../services/study-pipeline'
 import { generateTutorSpeech } from '../services/study-tutor-voice'
+import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from '../services/study-rewards'
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 export const study = new Hono<{ Variables: AuthVars }>()
 study.use('*', requireAuth)
@@ -236,6 +242,20 @@ study.post('/study/cards/:id/review', async (c) => {
   // Update streak
   await updateStreak(accountId)
 
+  // Award brains for review session milestone (10+ cards in a session = same day)
+  const familyId = await getFamilyId(accountId)
+  if (familyId) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const [reviewed] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(studyCards)
+      .where(and(eq(studyCards.accountId, accountId), sql`${studyCards.lastReviewedAt} >= ${today}`))
+    if (reviewed?.count === 10) {
+      await awardStudyBrains(accountId, familyId, 'study_review_session', STUDY_REWARD_AMOUNTS.study_review_session, { reviewedToday: 10 })
+    }
+  }
+
   return c.json({ ok: true, nextReviewAt, interval, status })
 })
 
@@ -310,7 +330,126 @@ async function updateStreak(accountId: string) {
     lastStudyDate: new Date(),
     updatedAt: new Date(),
   }).where(eq(studyStreaks.id, existing.id))
+
+  // Award brains for 7-day streak milestone
+  if (newStreak === 7 || (newStreak > 7 && newStreak % 7 === 0)) {
+    const familyId = await getFamilyId(accountId)
+    if (familyId) {
+      await awardStudyBrains(accountId, familyId, 'study_streak', STUDY_REWARD_AMOUNTS.study_streak, { streak: newStreak })
+    }
+  }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// INTERVIEWS (voice study tutor)
+// ═══════════════════════════════════════════════════════════════════════
+
+study.post('/study/topics/:id/interview', async (c) => {
+  const accountId = authedAccountId(c)
+  const topicId = c.req.param('id')
+
+  const [topic] = await db
+    .select()
+    .from(studyTopics)
+    .where(and(eq(studyTopics.id, topicId), eq(studyTopics.accountId, accountId)))
+    .limit(1)
+  if (!topic) return c.json({ error: 'topic_not_found' }, 404)
+
+  // Get weak concepts (cards not yet mastered)
+  const weakCards = await db
+    .select({ front: studyCards.front, back: studyCards.back })
+    .from(studyCards)
+    .where(and(eq(studyCards.topicId, topicId), sql`${studyCards.status} != 'mastered'`))
+    .limit(20)
+
+  const focusAreas = weakCards.map((c) => c.front)
+
+  const [interview] = await db.insert(studyInterviews).values({
+    topicId,
+    accountId,
+    focusAreas,
+  }).returning()
+
+  const conceptList = weakCards.map((c) => `- Q: ${c.front}\n  A: ${c.back}`).join('\n')
+
+  const systemPrompt = `You are a friendly, encouraging study tutor helping a kid review "${topic.title}". Your job is to ask them to explain concepts in their own words, then probe deeper with follow-up questions. Be conversational, use simple language, and celebrate when they get things right. If they struggle, give gentle hints rather than the answer directly.
+
+Focus on these concepts the kid hasn't mastered yet:
+${conceptList || '(No specific weak areas — do a general review of the topic)'}
+
+Rules:
+- Ask ONE question at a time
+- Wait for their response before asking the next
+- Keep responses short (2-3 sentences max)
+- Use encouraging language ("Great thinking!", "Almost there!")
+- After 3-5 questions, wrap up with a brief summary of how they did`
+
+  return c.json({ interviewId: interview.id, systemPrompt }, 201)
+})
+
+study.post('/study/interviews/:id/complete', async (c) => {
+  const accountId = authedAccountId(c)
+  const interviewId = c.req.param('id')
+
+  const [interview] = await db
+    .select()
+    .from(studyInterviews)
+    .where(and(eq(studyInterviews.id, interviewId), eq(studyInterviews.accountId, accountId)))
+    .limit(1)
+  if (!interview) return c.json({ error: 'not_found' }, 404)
+  if (interview.status === 'completed') return c.json({ error: 'already_completed' }, 400)
+
+  const body = await c.req.json().catch(() => ({}))
+  const parsed = z.object({
+    transcript: z.array(z.object({ role: z.string(), text: z.string() })).default([]),
+    score: z.number().int().min(1).max(10).optional(),
+    durationSecs: z.number().int().min(0).default(0),
+  }).safeParse(body)
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+
+  const brainsEarned = Math.max(5, Math.min(25, (parsed.data.score ?? 5) * 3))
+
+  await db.update(studyInterviews).set({
+    status: 'completed',
+    transcript: parsed.data.transcript,
+    score: parsed.data.score ?? null,
+    durationSecs: parsed.data.durationSecs,
+    brainsEarned,
+    completedAt: new Date(),
+  }).where(eq(studyInterviews.id, interviewId))
+
+  // Award brains
+  const familyId = await getFamilyId(accountId)
+  if (familyId) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(accounts)
+        .set({ cachedBalance: sql`${accounts.cachedBalance} + ${brainsEarned}` })
+        .where(eq(accounts.id, accountId))
+      await tx.insert(ledger).values({
+        familyId,
+        accountId,
+        actorId: accountId,
+        kind: 'study_interview',
+        brainsDelta: brainsEarned,
+        balanceAfter: sql`(select cached_balance from accounts where id = ${accountId})`,
+        metadata: { interviewId, topicId: interview.topicId },
+      })
+    })
+  }
+
+  return c.json({ ok: true, brainsEarned, score: parsed.data.score })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// NUDGE CHECK (cron endpoint)
+// ═══════════════════════════════════════════════════════════════════════
+
+study.post('/study/nudge-check', async (c) => {
+  const { checkAndSendStudyNudges } = await import('../services/study-nudges')
+  const count = await checkAndSendStudyNudges()
+  return c.json({ ok: true, nudgesSent: count })
+})
 
 // ═══════════════════════════════════════════════════════════════════════
 // TUTOR VOICE (ElevenLabs TTS)
@@ -328,4 +467,126 @@ study.post('/study/tts', async (c) => {
   } catch (err) {
     return c.json({ error: 'tts_failed' }, 500)
   }
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// QUIZZES
+// ═══════════════════════════════════════════════════════════════════════
+
+// POST /study/topics/:id/quiz — generate a quiz from the topic's cards
+study.post('/study/topics/:id/quiz', async (c) => {
+  const accountId = authedAccountId(c)
+  const topicId = c.req.param('id')
+
+  const [topic] = await db
+    .select()
+    .from(studyTopics)
+    .where(and(eq(studyTopics.id, topicId), eq(studyTopics.accountId, accountId)))
+    .limit(1)
+  if (!topic) return c.json({ error: 'topic_not_found' }, 404)
+
+  const cards = await db
+    .select({ front: studyCards.front, back: studyCards.back })
+    .from(studyCards)
+    .where(eq(studyCards.topicId, topicId))
+    .limit(30)
+
+  if (cards.length < 3) return c.json({ error: 'not_enough_cards', message: 'Need at least 3 cards to generate a quiz' }, 400)
+
+  const cardContent = cards.map((c) => `Q: ${c.front}\nA: ${c.back}`).join('\n\n')
+
+  const res = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: `Generate a multiple-choice quiz for a student based on their study cards. Return JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":"A","concept":"..."}]}. Generate 5-10 questions. Each question has exactly 4 options labeled by the option text. correctAnswer must be the exact text of the correct option. concept is a short label of what the question tests.`,
+      },
+      { role: 'user', content: cardContent },
+    ],
+    response_format: { type: 'json_object' },
+    max_tokens: 3000,
+  })
+
+  let questions: { question: string; options: string[]; correctAnswer: string; concept: string }[] = []
+  try {
+    const parsed = JSON.parse(res.choices[0]?.message?.content ?? '{}')
+    questions = Array.isArray(parsed.questions) ? parsed.questions : []
+  } catch {
+    return c.json({ error: 'generation_failed' }, 500)
+  }
+
+  if (questions.length === 0) return c.json({ error: 'generation_failed' }, 500)
+
+  const [quiz] = await db.insert(studyQuizzes).values({
+    topicId,
+    accountId,
+    questionCount: questions.length,
+    questions: questions.map((q) => ({ ...q, kidAnswer: null, isCorrect: null })),
+    status: 'in_progress',
+  }).returning()
+
+  return c.json({ quiz: { ...quiz, questions } }, 201)
+})
+
+// POST /study/quizzes/:id/submit — grade a completed quiz
+study.post('/study/quizzes/:id/submit', async (c) => {
+  const accountId = authedAccountId(c)
+  const quizId = c.req.param('id')
+
+  const [quiz] = await db
+    .select()
+    .from(studyQuizzes)
+    .where(and(eq(studyQuizzes.id, quizId), eq(studyQuizzes.accountId, accountId)))
+    .limit(1)
+  if (!quiz) return c.json({ error: 'not_found' }, 404)
+  if (quiz.status === 'completed') return c.json({ error: 'already_submitted' }, 400)
+
+  const body = await c.req.json().catch(() => ({}))
+  const parsed = z.object({
+    answers: z.array(z.object({ questionIndex: z.number().int().min(0), answer: z.string() })),
+  }).safeParse(body)
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+
+  const questions = quiz.questions as { question: string; options: string[]; correctAnswer: string; concept: string; kidAnswer: string | null; isCorrect: boolean | null }[]
+  let correctCount = 0
+  const weakConcepts: string[] = []
+
+  for (const { questionIndex, answer } of parsed.data.answers) {
+    if (questionIndex >= questions.length) continue
+    const q = questions[questionIndex]
+    const isCorrect = q.correctAnswer === answer
+    q.kidAnswer = answer
+    q.isCorrect = isCorrect
+    if (isCorrect) correctCount++
+    else if (q.concept && !weakConcepts.includes(q.concept)) weakConcepts.push(q.concept)
+  }
+
+  const scorePct = Math.round((correctCount / quiz.questionCount) * 100)
+
+  // Calculate brains earned
+  let brainsEarned = 0
+  if (scorePct === 100) brainsEarned = STUDY_REWARD_AMOUNTS.study_quiz_perfect
+  else if (scorePct >= 80) brainsEarned = STUDY_REWARD_AMOUNTS.study_quiz_pass
+
+  await db.update(studyQuizzes).set({
+    correctCount,
+    scorePct,
+    weakConcepts,
+    brainsEarned,
+    questions,
+    status: 'completed',
+    completedAt: new Date(),
+  }).where(eq(studyQuizzes.id, quizId))
+
+  // Award brains
+  if (brainsEarned > 0) {
+    const familyId = await getFamilyId(accountId)
+    if (familyId) {
+      const kind = scorePct === 100 ? 'study_quiz_perfect' as const : 'study_quiz_pass' as const
+      await awardStudyBrains(accountId, familyId, kind, brainsEarned, { quizId, scorePct })
+    }
+  }
+
+  return c.json({ ok: true, correctCount, scorePct, brainsEarned, weakConcepts, questions })
 })

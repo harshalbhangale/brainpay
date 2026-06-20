@@ -37,6 +37,7 @@ import { useChores } from '@/hooks/useChores'
 import { api } from '@/lib/api'
 import { useWallet } from '@/hooks/useWallet'
 import { ActionButton } from '@/components/ActionButton'
+import { BrainHealth } from '@/components/BrainHealth'
 import { PayCard, heroColors } from '@/components/dashboard'
 import { FadeIn } from '@/components/ui'
 import { TAB_BAR_TOTAL_HEIGHT } from '@/components/TabBar'
@@ -56,6 +57,11 @@ export default function KidHome() {
     queryKey: ['goals'],
     queryFn: () => api<{ goals: Goal[] }>('/goals'),
     staleTime: 10_000,
+  })
+  const { data: studyStats } = useQuery({
+    queryKey: ['study-stats'],
+    queryFn: () => api<{ topicsActive: number }>('/study/stats'),
+    staleTime: 30_000,
   })
 
   const me = famData?.members.find((m) => m.accountId === accountId)
@@ -162,6 +168,9 @@ export default function KidHome() {
             onPress={() => router.push('/(app)/transactions')}
           />
         </FadeIn>
+
+        {/* Brain Health widget */}
+        {(studyStats?.topicsActive ?? 0) > 0 && <BrainHealth />}
 
         {/* Today's progress */}
         <Text style={s.section}>TODAY'S PROGRESS</Text>

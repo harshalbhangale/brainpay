@@ -1,8 +1,10 @@
 import { eq, sql } from 'drizzle-orm'
 import OpenAI from 'openai'
 import { db } from '../db'
+import { memberships } from '../db/schema'
 import { studyCards, studyDocuments, studyTopics } from '../db/study-schema'
 import { logger } from '../logger'
+import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from './study-rewards'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -60,6 +62,16 @@ export async function processDocument(documentId: string, rawContent?: string) {
       totalCards: sql`${studyTopics.totalCards} + ${cards.length}`,
       cardsDue: sql`${studyTopics.cardsDue} + ${cards.length}`,
     }).where(eq(studyTopics.id, doc.topicId))
+
+    // Award brains for successful document upload
+    const [membership] = await db
+      .select({ familyId: memberships.familyId })
+      .from(memberships)
+      .where(eq(memberships.accountId, doc.accountId))
+      .limit(1)
+    if (membership?.familyId) {
+      await awardStudyBrains(doc.accountId, membership.familyId, 'study_upload', STUDY_REWARD_AMOUNTS.study_upload, { documentId })
+    }
 
     logger.info({ documentId, chunks: chunks.length, cards: cards.length }, 'study.document_processed')
   } catch (err) {

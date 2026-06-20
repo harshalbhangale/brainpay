@@ -32,6 +32,8 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
   const [speaking, setSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [detections, setDetections] = useState<LiveDetection[]>([])
+  const [cart, setCart] = useState<LiveDetection[]>([])
+  const [sheet, setSheet] = useState<'none' | 'scanned' | 'cart'>('none')
   const [transcript, setTranscript] = useState<Line[]>([])
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [zoom, setZoom] = useState(1)

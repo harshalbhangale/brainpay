@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import { useAuthStore, type Account } from '../stores/auth'
 import { Chat } from '../components/Chat'
 import { FamilyView } from '../components/family/FamilyView'
+import { StudyPal } from '../components/StudyPal'
 import { Settings } from './Settings'
 
 /**
@@ -54,6 +55,7 @@ export function Home() {
         <div className="flex rounded-full bg-surface p-1">
           <Tab label="AI" active={pane === 0} onClick={() => goTo(0)} />
           <Tab label="Family" active={pane === 1} onClick={() => goTo(1)} />
+          <Tab label="Study" active={pane === 2} onClick={() => goTo(2)} />
         </div>
         <button
           onClick={() => setSettingsOpen(true)}
@@ -75,6 +77,9 @@ export function Home() {
         </section>
         <section className="h-full w-full flex-none snap-start">
           <FamilyView />
+        </section>
+        <section className="h-full w-full flex-none snap-start">
+          <StudyPal />
         </section>
       </div>
 

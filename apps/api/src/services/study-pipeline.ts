@@ -43,18 +43,25 @@ export async function processDocument(documentId: string, rawContent?: string) {
     // Step 2: Chunk semantically
     const chunks = chunkText(text)
 
-    // Step 3: Embed chunks and store in S3 Vectors
+    // Step 3: Embed chunks and store in S3 Vectors (non-fatal — cards are
+    // the primary output; vector storage is for future RAG/quiz retrieval).
+    let storedChunks = 0
     for (const chunk of chunks) {
-      await embedAndStore(chunk, doc.topicId, documentId, doc.accountId)
+      try {
+        await embedAndStore(chunk, doc.topicId, documentId, doc.accountId)
+        storedChunks++
+      } catch (embErr) {
+        logger.warn({ err: String(embErr).slice(0, 120), documentId }, 'study.embed_skipped')
+      }
     }
 
-    // Step 4: Generate flashcards
+    // Step 4: Generate flashcards (the main output the kid sees)
     const cards = await generateCards(text, doc.topicId, doc.accountId, documentId)
 
     // Step 5: Update document + topic stats
     await db.update(studyDocuments).set({
       processingStatus: 'ready',
-      chunkCount: chunks.length,
+      chunkCount: storedChunks,
       processedAt: new Date(),
     }).where(eq(studyDocuments.id, documentId))
 
@@ -140,9 +147,11 @@ function chunkText(text: string): string[] {
 // ─── Embedding + S3 Vectors storage ──────────────────────────────────
 
 async function embedAndStore(content: string, topicId: string, documentId: string, accountId: string) {
+  // text-embedding-3-small caps at 8192 tokens (~32k chars). Truncate to be safe.
+  const input = content.slice(0, 24000)
   const embRes = await openai.embeddings.create({
     model: 'text-embedding-3-small',
-    input: content,
+    input,
   })
   const embedding = embRes.data[0].embedding
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { BookOpen, Brain, ChevronLeft, ChevronRight, GraduationCap, Mic, Sparkles, Upload, Check, X } from 'lucide-react'
 import { api } from '../lib/api'

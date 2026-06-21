@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { MapPin } from 'lucide-react'
+import { MapPin, Maximize2, X } from 'lucide-react'
+import { staticMapUrl, embedMapUrl } from '../lib/maps'
 
 /**
  * BrainPal design system — clean, Greenlight-style primitives.
@@ -133,35 +135,43 @@ function mockLatLng(seed: string): { lat: number; lng: number; place: string } {
   return { lat, lng, place: places[h % places.length] }
 }
 
-export function KidMapCard({ name, accountId, onClick }: { name: string; accountId: string; onClick?: () => void }) {
+export function KidMapCard({ name, accountId }: { name: string; accountId: string; onClick?: () => void }) {
   const { lat, lng, place } = mockLatLng(accountId)
-  const z = 14
-  const src = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${z}&size=600x320&markers=${lat},${lng},lightgreen`
+  const [expanded, setExpanded] = useState(false)
+  const thumb = staticMapUrl([{ lat, lng }], { width: 640, height: 280, zoom: 15 })
+
   return (
-    <Card onClick={onClick} className="overflow-hidden">
-      <div className="relative h-32 w-full bg-surface2">
-        <img
-          src={src}
-          alt={`${name} location`}
-          className="h-full w-full object-cover"
-          loading="lazy"
-          onError={(e) => {
-            ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-          }}
-        />
-        {/* Fallback / overlay pin */}
-        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full">
-          <MapPin size={26} className="text-accent drop-shadow" fill="currentColor" />
-        </span>
-        <span className="absolute left-3 top-3 rounded-full bg-canvas/90 px-2.5 py-1 text-xs font-bold text-ink shadow-soft">
-          {name}
-        </span>
-      </div>
-      <div className="flex items-center gap-2 px-4 py-3">
-        <MapPin size={15} className="text-accent" />
-        <span className="text-sm font-semibold text-ink">{place}</span>
-        <span className="ml-auto text-xs text-muted">just now</span>
-      </div>
-    </Card>
+    <>
+      <Card className="overflow-hidden">
+        <button onClick={() => setExpanded(true)} className="press relative block h-32 w-full">
+          <img src={thumb} alt={`${name} location`} className="h-full w-full object-cover" loading="lazy" />
+          <span className="absolute left-3 top-3 rounded-full bg-canvas/90 px-2.5 py-1 text-xs font-bold text-ink shadow-soft">{name}</span>
+          <span className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-canvas/90 text-ink shadow-soft">
+            <Maximize2 size={15} />
+          </span>
+        </button>
+        <div className="flex items-center gap-2 px-4 py-3">
+          <MapPin size={15} className="text-accent" />
+          <span className="text-sm font-semibold text-ink">{place}</span>
+          <span className="ml-auto text-xs text-muted">just now</span>
+        </div>
+      </Card>
+
+      {expanded && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-canvas">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+            <div className="flex items-center gap-2">
+              <MapPin size={18} className="text-accent" />
+              <span className="font-extrabold text-ink">{name}</span>
+              <span className="text-sm text-muted">· {place}</span>
+            </div>
+            <button onClick={() => setExpanded(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-surface2 text-muted active:scale-95" aria-label="Close map">
+              <X size={18} />
+            </button>
+          </div>
+          <iframe title={`${name} map`} className="flex-1 border-0" src={embedMapUrl({ lat, lng }, 16)} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" />
+        </div>
+      )}
+    </>
   )
 }

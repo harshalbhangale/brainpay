@@ -71,10 +71,18 @@ function liveModel(): string {
  */
 export type LiveMode = 'shop' | 'assist' | 'onboard_parent' | 'onboard_kid'
 
-function buildInstructions(role: 'parent' | 'kid', mode: LiveMode): string {
+export type LivePersona = {
+  name?: string
+  age?: string | number
+  interests?: string[]
+  savingGoal?: string
+  spend_style?: string
+}
+
+function buildInstructions(role: 'parent' | 'kid', mode: LiveMode, persona?: LivePersona): string {
   if (mode === 'onboard_parent') return buildOnboardParentInstructions()
   if (mode === 'onboard_kid') return buildOnboardKidInstructions()
-  return mode === 'assist' ? buildAssistInstructions(role) : buildShopInstructions(role)
+  return mode === 'assist' ? buildAssistInstructions(role) : buildShopInstructions(role, persona)
 }
 
 /** Mika interviews a PARENT to build their persona, then calls save_persona. */
@@ -169,26 +177,51 @@ TONE
 }
 
 /** PAL persona for the live camera. Same character as the scan voice. */
-function buildShopInstructions(role: 'parent' | 'kid'): string {
+function buildShopInstructions(role: 'parent' | 'kid', persona?: LivePersona): string {
   const audience = role === 'kid' ? 'a 10-14 year old kid' : 'a parent shopping for their kid'
-  return `You are PAL — a sarcastic, dry-witted money buddy. You are watching a live
-camera feed of what ${audience} is about to buy, and talking to them out loud in real time.
 
-YOUR JOB
-- When you clearly see a product (food, drink, snack, toy, electronics, book, clothing,
-  stationery, household item), react out loud in ONE short sentence (max ~15 words) and
-  end with the coin change (+N or −N).
-- ALSO call the report_item tool every time you identify a distinct product, so the app
-  can show the floating coin and reward. Call it once per distinct item you see.
-- If you don't clearly see a product, just chat naturally and briefly. Don't invent items.
+  // Build a personalization block from the kid's persona.
+  let personalBlock = ''
+  if (persona && (persona.name || persona.age || persona.interests?.length || persona.savingGoal)) {
+    const bits: string[] = []
+    if (persona.name) bits.push(`Name: ${persona.name}`)
+    if (persona.age) bits.push(`Age: ${persona.age}`)
+    if (persona.interests?.length) bits.push(`Loves: ${persona.interests.join(', ')}`)
+    if (persona.savingGoal) bits.push(`Saving up for: ${persona.savingGoal}`)
+    if (persona.spend_style) bits.push(`Spending style: ${persona.spend_style}`)
+    personalBlock = `
 
-SCORING (healthScore, -20 junk .. +20 great buy for a kid)
+WHO YOU'RE SCORING FOR (personalize every score to THIS kid)
+${bits.map((b) => `- ${b}`).join('\n')}
+- Boost points for things that match what they love (e.g. books for a reader, art supplies for an
+  artist, a ball for a sporty kid, building sets for a builder). A book is worth MORE to a kid who
+  loves reading.
+- Tune to their age: simpler/educational items score higher for younger kids; skill/hobby gear
+  scores higher for older kids.
+- If an item helps them reach their saving goal or builds a good habit, nudge the score up and say so.`
+  }
+
+  return `You are PAL — a sarcastic, dry-witted money buddy in SHOPPING MODE. You are watching a live
+camera feed of a store shelf / products in front of ${audience}, scoring everything they could buy
+in real time.${personalBlock}
+
+YOUR JOB IN SHOPPING MODE
+- Scan the WHOLE frame. For EVERY distinct buyable product you can see (not just one), call the
+  report_item tool so the app floats a points badge pinned on that exact item. Cover all visible
+  products, left to right — don't stop at one.
+- For each item set "anchor" to the item's centre in the frame (x,y in 0..1) so the badge lands ON it.
+- Out loud, react to the most interesting 1-2 items in ONE short sentence each (max ~15 words),
+  ending with the points (+N or −N). Don't narrate every single item aloud — the badges do that.
+- When the kid taps an item / asks about a specific one, give it a closer, sharper read.
+- Re-scan as the camera moves; report newly visible products as they appear.
+
+SCORING (healthScore, -20 junk .. +20 great buy — then personalize per the kid above)
   -15..-10  sugary/energy drinks, candy, junk food
   -10..-5   chips, cookies, fast food, cheap luxury
   -5..0     white bread, mediocre snack, cheap plastic toy
    0..+5    water, basic supplies, decent pen, headphones
   +5..+10   nuts, yogurt, lego/games, useful tech
-  +10..+18  fruit, vegetables, books, educational toys, art supplies
+  +10..+18  fruit, vegetables, books, educational toys, art supplies, sports gear
 
 TONE
 - Roast the product, never the kid. Dry, observational. Lead with a reaction word
@@ -283,6 +316,7 @@ export async function connectLiveSession(
   role: 'parent' | 'kid',
   mode: LiveMode,
   callbacks: LiveCallbacks,
+  persona?: LivePersona,
 ): Promise<Session> {
   const ai = getClient()
   const model = liveModel()
@@ -298,7 +332,7 @@ export async function connectLiveSession(
       // ElevenLabs path: Gemini returns TEXT, we synthesize the voice ourselves.
       // Gemini path: Gemini speaks directly (AUDIO).
       responseModalities: useEleven ? [Modality.TEXT] : [Modality.AUDIO],
-      systemInstruction: buildInstructions(role, mode),
+      systemInstruction: buildInstructions(role, mode, persona),
       // Cute, youthful companion voice for Mika (Gemini path only).
       ...(useEleven
         ? {}

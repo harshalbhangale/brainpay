@@ -45,6 +45,7 @@ type SessionState = {
   speakerOn: boolean
   starting: boolean
   mode: LiveMode
+  persona?: Record<string, unknown>
   // ElevenLabs TTS pipeline (companion voice).
   ttsBuf: string
   ttsGen: number
@@ -197,6 +198,7 @@ export async function onGeminiLiveMessage(ws: WebSocket, data: Buffer) {
         (['assist', 'shop', 'onboard_parent', 'onboard_kid'].includes(msg.mode as string)
           ? (msg.mode as LiveMode)
           : 'shop'),
+        (msg.persona as Record<string, unknown> | undefined),
       )
       break
     case 'mic':
@@ -217,10 +219,11 @@ export async function onGeminiLiveMessage(ws: WebSocket, data: Buffer) {
   }
 }
 
-async function handleStart(ws: WebSocket, state: SessionState, role: 'parent' | 'kid', mode: LiveMode) {
+async function handleStart(ws: WebSocket, state: SessionState, role: 'parent' | 'kid', mode: LiveMode, persona?: Record<string, unknown>) {
   if (state.live || state.starting) return
   state.starting = true
   state.mode = mode
+  state.persona = persona
   try {
     state.live = await connectLiveSession(role, mode, {
       onmessage: (m) => handleLiveMessage(ws, state, m),
@@ -231,7 +234,7 @@ async function handleStart(ws: WebSocket, state: SessionState, role: 'parent' | 
       onclose: (e) => {
         logger.info({ reason: e?.reason }, 'gemini_live.session_closed')
       },
-    })
+    }, persona as Parameters<typeof connectLiveSession>[3])
     logger.info({ role, mode }, 'gemini_live.session_started')
     // In onboarding, Mika speaks first — kick off her greeting + first question.
     if (mode === 'onboard_parent' || mode === 'onboard_kid') {

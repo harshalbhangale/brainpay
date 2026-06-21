@@ -61,7 +61,7 @@ export type LiveRtHandlers = {
 }
 
 export type LiveRtSocket = {
-  start: (role: LiveRole, mode: LiveMode) => void
+  start: (role: LiveRole, mode: LiveMode, persona?: Record<string, unknown>) => void
   sendFrame: (jpeg: Uint8Array) => void
   sendMicPcm: (pcm: Int16Array) => void
   setMic: (on: boolean) => void
@@ -140,7 +140,7 @@ export function connectLiveRt(handlers: LiveRtHandlers, token?: string | null): 
   }
 
   return {
-    start: (role, mode) => sendJson({ type: 'session.start', role, mode }),
+    start: (role, mode, persona) => sendJson({ type: 'session.start', role, mode, persona }),
     sendFrame: (jpeg) => {
       if (ws.readyState !== WebSocket.OPEN) return
       const out = new Uint8Array(1 + jpeg.length)

@@ -20,10 +20,12 @@ type Line = { id: number; role: 'you' | 'mika'; text: string }
 
 let lineId = 1
 
-export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onClose: () => void }) {
+export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { withCamera: boolean; onClose: () => void; initialMode?: 'assist' | 'shop' }) {
   const account = useAuthStore((s) => s.account)
   const role: 'parent' | 'kid' = account?.accountType === 'kid' ? 'kid' : 'parent'
   const avatar = useAvatar((s) => s.avatar)
+
+  const [mode, setMode] = useState<'assist' | 'shop'>(initialMode)
 
   const [phase, setPhase] = useState<Phase>('connecting')
   const [palLine, setPalLine] = useState('')
@@ -122,7 +124,12 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
       const sock = connectLiveRt(
         {
           onOpen: () => {
-            sock.start(role, 'assist')
+            const p = (account?.persona ?? {}) as Record<string, unknown>
+            const persona = {
+              name: p.name, age: p.age, interests: p.interests,
+              savingGoal: p.savingGoal ?? p.saving_goal, spend_style: p.spend_style,
+            }
+            sock.start(role, mode, persona)
             setPhase('live')
           },
           onUserTranscript: (t) => {
@@ -187,7 +194,7 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
       playerRef.current?.close()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [mode])
 
   // ── Camera frame loop ───────────────────────────────────────────────
   useEffect(() => {
@@ -340,6 +347,22 @@ export function LiveSession({ withCamera, onClose }: { withCamera: boolean; onCl
         </div>
         <div className="font-bold drop-shadow">{title}</div>
         <div className="flex-1" />
+        {withCamera && (
+          <div className="flex rounded-full bg-black/60 p-1 backdrop-blur">
+            <button
+              onClick={() => { if (mode !== 'assist') { setMode('assist'); setPhase('connecting'); setDetections([]) } }}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${mode === 'assist' ? 'bg-accent text-on-accent' : 'text-white/70'}`}
+            >
+              Ask
+            </button>
+            <button
+              onClick={() => { if (mode !== 'shop') { setMode('shop'); setPhase('connecting'); setDetections([]) } }}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${mode === 'shop' ? 'bg-accent text-on-accent' : 'text-white/70'}`}
+            >
+              🛒 Shop
+            </button>
+          </div>
+        )}
         {withCamera && (
           <button
             onClick={() => setSheet('cart')}

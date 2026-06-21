@@ -4,6 +4,7 @@
  * safe to ship in the client bundle.
  */
 const KEY = (import.meta.env.VITE_GOOGLE_MAPS_KEY as string) || 'AIzaSyBYve0-aESs4eSl2_zRd1v0yRff9XvWc-U'
+export const MAPS_KEY = KEY
 
 export type LatLng = { lat: number; lng: number }
 

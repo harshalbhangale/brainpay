@@ -91,6 +91,8 @@ const EnvSchema = z.object({
   COMPANION_VOICE_PROVIDER: z.enum(['gemini', 'elevenlabs']).default('gemini'),
 
   // Stripe (payments)
+  // Google Maps server-side geocoding (reverse-geocode kid locations to place names).
+  GEOCODING_API_KEY: z.string().min(1).optional(),
   STRIPE_SECRET_KEY: z.string().min(1),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_MERCHANT_ID: z.string().default('merchant.com.brainpal.pay'),

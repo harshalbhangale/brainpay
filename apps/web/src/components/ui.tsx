@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { MapPin, Maximize2, X } from 'lucide-react'
+import { MapPin, Maximize2, X, Users } from 'lucide-react'
 import { staticMapUrl, embedMapUrl } from '../lib/maps'
+import { loadGoogleMaps } from '../lib/mapsJs'
 import { relativeTime } from '../lib/format'
 
 /**
@@ -143,14 +144,14 @@ export function KidMapCard({
 }: {
   name: string
   accountId: string
-  location?: { lat: number; lng: number; at?: string } | null
+  location?: { lat: number; lng: number; at?: string; place?: string | null } | null
   onClick?: () => void
 }) {
   const hasReal = !!location && typeof location.lat === 'number' && typeof location.lng === 'number'
   const mock = mockLatLng(accountId)
   const lat = hasReal ? location!.lat : mock.lat
   const lng = hasReal ? location!.lng : mock.lng
-  const place = hasReal ? 'Live location' : mock.place
+  const place = hasReal ? location!.place || 'Live location' : mock.place
   const when = hasReal && location!.at ? relativeTime(location!.at) : 'sample'
   const [expanded, setExpanded] = useState(false)
   const thumb = staticMapUrl([{ lat, lng }], { width: 640, height: 280, zoom: 15 })
@@ -188,5 +189,89 @@ export function KidMapCard({
         </div>
       )}
     </>
+  )
+}
+
+type KidPoint = { name: string; accountId: string; location?: { lat: number; lng: number; place?: string | null; at?: string } | null }
+
+/** Parent overview card: all kids on one map (tap to explore interactively). */
+export function FamilyMapCard({ kids }: { kids: KidPoint[] }) {
+  const [open, setOpen] = useState(false)
+  if (kids.length === 0) return null
+  const pts = kids.map((k) => {
+    const real = !!k.location && typeof k.location.lat === 'number'
+    const m = mockLatLng(k.accountId)
+    return { name: k.name, lat: real ? k.location!.lat : m.lat, lng: real ? k.location!.lng : m.lng, live: real }
+  })
+  const liveCount = pts.filter((p) => p.live).length
+  const thumb = staticMapUrl(pts.map((p) => ({ lat: p.lat, lng: p.lng })), { width: 640, height: 280 })
+
+  return (
+    <>
+      <Card className="overflow-hidden">
+        <button onClick={() => setOpen(true)} className="press relative block h-36 w-full">
+          <img src={thumb} alt="Family map" className="h-full w-full object-cover" loading="lazy" />
+          <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-canvas/90 px-2.5 py-1 text-xs font-bold text-ink shadow-soft">
+            <Users size={13} className="text-accent" /> Everyone
+          </span>
+          <span className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-canvas/90 text-ink shadow-soft">
+            <Maximize2 size={15} />
+          </span>
+        </button>
+        <div className="flex items-center gap-2 px-4 py-3">
+          <Users size={15} className="text-accent" />
+          <span className="text-sm font-semibold text-ink">
+            {liveCount > 0 ? `${liveCount} live now` : `${pts.length} ${pts.length === 1 ? 'kid' : 'kids'}`}
+          </span>
+          <span className="ml-auto text-xs text-muted">tap to explore</span>
+        </div>
+      </Card>
+
+      {open && <FamilyMap points={pts} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function FamilyMap({ points, onClose }: { points: { name: string; lat: number; lng: number }[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    let cancelled = false
+    loadGoogleMaps()
+      .then((google) => {
+        if (cancelled || !ref.current) return
+        const map = new google.maps.Map(ref.current, {
+          center: { lat: points[0].lat, lng: points[0].lng },
+          zoom: 13,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        })
+        const bounds = new google.maps.LatLngBounds()
+        points.forEach((p) => {
+          new google.maps.Marker({
+            position: { lat: p.lat, lng: p.lng },
+            map,
+            title: p.name,
+            label: { text: p.name.charAt(0).toUpperCase(), color: '#ffffff', fontWeight: '700' },
+          })
+          bounds.extend({ lat: p.lat, lng: p.lng })
+        })
+        if (points.length > 1) map.fitBounds(bounds, 64)
+        else map.setZoom(15)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [points])
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-canvas">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+        <span className="flex items-center gap-2 font-extrabold text-ink"><Users size={18} className="text-accent" /> Where everyone is</span>
+        <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-surface2 text-muted active:scale-95" aria-label="Close map"><X size={18} /></button>
+      </div>
+      <div ref={ref} className="flex-1" />
+    </div>
   )
 }

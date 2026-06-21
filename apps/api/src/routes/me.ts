@@ -4,6 +4,7 @@ import { db } from '../db'
 import { accounts, families, memberships } from '../db/schema'
 import { authedAccountId, requireAuth, type AuthVars } from '../middleware/auth'
 import { logger } from '../logger'
+import { reverseGeocode } from '../services/geocode'
 
 /**
  * GET  /me     → current account + active membership + family (if any)
@@ -102,9 +103,10 @@ me.post('/me/location', async (c) => {
     return c.json({ error: 'invalid_location' }, 400)
   }
   try {
+    const place = await reverseGeocode(lat, lng)
     await db
       .update(accounts)
-      .set({ lastLocation: { lat, lng, accuracy: accuracy ?? null, at: new Date().toISOString() } })
+      .set({ lastLocation: { lat, lng, accuracy: accuracy ?? null, place, at: new Date().toISOString() } })
       .where(eq(accounts.id, accountId))
     return c.json({ ok: true })
   } catch (err) {

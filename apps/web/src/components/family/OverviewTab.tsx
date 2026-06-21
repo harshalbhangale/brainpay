@@ -3,7 +3,7 @@ import { Clock, Plus, ListChecks, Receipt, Send, TrendingUp, TrendingDown, Walle
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { aud, audSigned, relativeTime } from '../../lib/format'
-import { Card, StatCard, ActionCircle, Avatar, SectionTitle, KidMapCard } from '../ui'
+import { Card, StatCard, ActionCircle, Avatar, SectionTitle, KidMapCard, FamilyMapCard } from '../ui'
 import { BalanceCard } from './BalanceCard'
 import { AddKidModal, TopupModal } from './modals'
 import {
@@ -150,6 +150,13 @@ function FamilyOverview({
         </div>
         <div className="text-xl font-extrabold text-ink">{aud(me?.cachedBalance ?? 0)}</div>
       </Card>
+
+      {kids.length > 0 && (
+        <section>
+          <SectionTitle>Where everyone is</SectionTitle>
+          <FamilyMapCard kids={kids.map((k) => ({ name: kidName(k), accountId: k.accountId, location: k.lastLocation }))} />
+        </section>
+      )}
 
       <section>
         <SectionTitle action={<button onClick={() => setAddKid(true)} className="flex items-center gap-1 text-sm font-bold text-accent"><Plus size={15} /> Add kid</button>}>

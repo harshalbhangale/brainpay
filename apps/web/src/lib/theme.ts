@@ -4,12 +4,11 @@ export type Theme = 'light' | 'dark'
 
 const KEY = 'brainpal.theme'
 
-function systemPref(): Theme {
-  if (typeof window === 'undefined') return 'light'
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-/** Read the saved theme, falling back to the OS preference (defaulting light). */
+/**
+ * Read the saved theme. Defaults to dark for every user; they can switch to
+ * light in Settings, which persists. System preference is not used as the
+ * default — dark is the brand default.
+ */
 export function initialTheme(): Theme {
   try {
     const saved = localStorage.getItem(KEY) as Theme | null
@@ -17,7 +16,7 @@ export function initialTheme(): Theme {
   } catch {
     /* ignore */
   }
-  return systemPref()
+  return 'dark'
 }
 
 /** Apply the theme to <html> + the browser UI colour. */

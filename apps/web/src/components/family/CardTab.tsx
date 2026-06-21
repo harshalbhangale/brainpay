@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, type LucideIcon } from 'lucide-react'
 import { useCardSettings } from '../../lib/card'
+import { Card, SectionTitle } from '../ui'
 import { aud } from '../../lib/format'
 import { PaymentCard } from './PaymentCard'
 import { kidName, type Member, type Subject } from './types'
@@ -52,7 +53,7 @@ export function CardTab({
       </div>
 
       {/* Status */}
-      <div className="flex items-center gap-3 rounded-2xl bg-surface p-4 ring-1 ring-border">
+      <Card className="flex items-center gap-3 p-4">
         <span
           className="h-2.5 w-2.5 rounded-full"
           style={{ backgroundColor: settings.frozen ? 'var(--color-danger)' : 'var(--color-accent)' }}
@@ -60,12 +61,12 @@ export function CardTab({
         <span className="text-sm font-semibold text-ink">
           {settings.frozen ? 'Card is frozen' : 'Card is active'}
         </span>
-      </div>
+      </Card>
 
       {/* Controls */}
       <section>
-        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Controls</h3>
-        <div className="overflow-hidden rounded-2xl bg-surface">
+        <SectionTitle>Controls</SectionTitle>
+        <Card className="divide-y divide-border overflow-hidden">
           <ToggleRow
             Icon={Globe}
             label="Online payments"
@@ -110,7 +111,7 @@ export function CardTab({
               </button>
             </div>
           </div>
-        </div>
+        </Card>
       </section>
 
       <button

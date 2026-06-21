@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { Plus, ListChecks } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
+import { Card, SectionTitle } from '../ui'
 import { AddChoreModal } from './modals'
 import { isKid, kidName, type Chore, type ChoresResponse, type Member, type Subject } from './types'
 
@@ -41,26 +43,26 @@ export function ChoresTab({ subject, members }: { subject: Subject; members: Mem
   const presetKidId = subject.kind === 'kid' ? subject.accountId : undefined
 
   return (
-    <div className="p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-muted">Chores</h2>
-        <button
-          onClick={() => setAddChore(true)}
-          disabled={kids.length === 0}
-          className="text-sm font-bold text-accent disabled:opacity-40"
-        >
-          + New chore
-        </button>
-      </div>
+    <div className="space-y-3 p-5">
+      <SectionTitle
+        action={
+          <button onClick={() => setAddChore(true)} disabled={kids.length === 0} className="flex items-center gap-1 text-sm font-bold text-accent disabled:opacity-40">
+            <Plus size={15} /> New chore
+          </button>
+        }
+      >
+        Chores
+      </SectionTitle>
 
       {q.isLoading && <p className="text-center text-sm text-muted">Loading…</p>}
       {!q.isLoading && chores.length === 0 && (
-        <p className="rounded-2xl bg-surface px-4 py-6 text-center text-sm text-muted">
-          {kids.length === 0 ? 'Add a kid first, then assign chores.' : 'No chores yet.'}
-        </p>
+        <Card className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent-soft text-accent"><ListChecks size={20} /></span>
+          <span className="text-sm text-muted">{kids.length === 0 ? 'Add a kid first, then assign chores.' : 'No chores yet.'}</span>
+        </Card>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2.5">
         {chores.map((ch) => (
           <ChoreRow
             key={ch.id}
@@ -94,7 +96,7 @@ function ChoreRow({
   const st = STATUS[chore.status] ?? { label: chore.status, color: '#9aa0aa' }
   const canReview = AWAITING.includes(chore.status)
   return (
-    <div className="rounded-2xl bg-surface p-4">
+    <Card className="p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate font-semibold text-ink">{chore.title}</div>
@@ -131,6 +133,6 @@ function ChoreRow({
           </button>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

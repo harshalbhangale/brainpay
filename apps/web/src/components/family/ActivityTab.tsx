@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, Banknote, ShoppingBag, SlidersHorizontal, Circle, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { audSigned, relativeTime } from '../../lib/format'
+import { Card, SectionTitle } from '../ui'
 import { kidName, type FeedResponse, type LedgerEntry, type Member, type Subject } from './types'
 
 function describe(entry: LedgerEntry): { Icon: LucideIcon; label: string } {
@@ -34,21 +35,21 @@ export function ActivityTab({ subject, members }: { subject: Subject; members: M
   const showWho = subject.kind === 'family'
 
   return (
-    <div className="p-5">
-      <h2 className="mb-4 text-xs font-bold uppercase tracking-wide text-muted">Activity</h2>
+    <div className="space-y-3 p-5">
+      <SectionTitle>Activity</SectionTitle>
 
       {q.isLoading && <p className="text-center text-sm text-muted">Loading…</p>}
       {!q.isLoading && entries.length === 0 && (
-        <p className="rounded-2xl bg-surface px-4 py-6 text-center text-sm text-muted">No transactions yet.</p>
+        <Card className="px-4 py-6 text-center text-sm text-muted">No transactions yet.</Card>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2.5">
         {entries.map((e) => {
           const { Icon, label } = describe(e)
           const positive = e.brainsDelta >= 0
           return (
-            <div key={e.id} className="animate-msg-in flex items-center gap-3 rounded-2xl bg-surface px-4 py-3 ring-1 ring-border">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface2 text-muted">
+            <Card key={e.id} className="animate-msg-in flex items-center gap-3 px-4 py-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent-soft text-accent">
                 <Icon size={18} />
               </span>
               <div className="min-w-0 flex-1">
@@ -61,7 +62,7 @@ export function ActivityTab({ subject, members }: { subject: Subject; members: M
               <div className={`text-sm font-bold ${positive ? 'text-accent' : 'text-danger'}`}>
                 {audSigned(e.brainsDelta)}
               </div>
-            </div>
+            </Card>
           )
         })}
       </div>

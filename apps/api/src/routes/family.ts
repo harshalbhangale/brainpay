@@ -67,6 +67,7 @@ family.get('/family', async (c) => {
       accountType: accounts.accountType,
       persona: accounts.persona,
       cachedBalance: accounts.cachedBalance,
+      lastLocation: accounts.lastLocation,
     })
     .from(memberships)
     .innerJoin(accounts, eq(accounts.id, memberships.accountId))
@@ -96,6 +97,7 @@ family.get('/family', async (c) => {
       persona: m.persona,
       cachedBalance: m.cachedBalance,
       todayEventCount: countMap.get(m.accountId) ?? 0,
+      lastLocation: m.lastLocation,
     })),
   })
 })

@@ -92,6 +92,27 @@ me.patch('/me', async (c) => {
   }
 })
 
+// ─── POST /me/location ────────────────────────────────────────────────
+// Stores the caller's latest device location (kid app reports periodically).
+me.post('/me/location', async (c) => {
+  const accountId = authedAccountId(c)
+  const body = (await c.req.json().catch(() => ({}))) as { lat?: number; lng?: number; accuracy?: number }
+  const { lat, lng, accuracy } = body
+  if (typeof lat !== 'number' || typeof lng !== 'number' || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return c.json({ error: 'invalid_location' }, 400)
+  }
+  try {
+    await db
+      .update(accounts)
+      .set({ lastLocation: { lat, lng, accuracy: accuracy ?? null, at: new Date().toISOString() } })
+      .where(eq(accounts.id, accountId))
+    return c.json({ ok: true })
+  } catch (err) {
+    logger.error({ err: String(err) }, 'me.location_failed')
+    return c.json({ error: 'update_failed' }, 500)
+  }
+})
+
 // ─── PATCH /me/push-token ─────────────────────────────────────────────
 // Stores the Expo push token for this account.
 // Called once on first app open after notification permission is granted.

@@ -82,7 +82,7 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
         <SectionTitle action={<button onClick={() => onGoTab('activity')} className="text-sm font-bold text-accent">See all</button>}>
           Where they are
         </SectionTitle>
-        <KidMapCard name={kidName(kid)} accountId={kid.accountId} />
+        <KidMapCard name={kidName(kid)} accountId={kid.accountId} location={kid.lastLocation} />
       </section>
 
       <section>
@@ -171,7 +171,7 @@ function FamilyOverview({
                 </div>
                 <div className="text-lg font-extrabold text-accent">{aud(k.cachedBalance)}</div>
               </Card>
-              <KidMapCard name={kidName(k)} accountId={k.accountId} onClick={() => onSelectSubject({ kind: 'kid', accountId: k.accountId })} />
+              <KidMapCard name={kidName(k)} accountId={k.accountId} location={k.lastLocation} onClick={() => onSelectSubject({ kind: 'kid', accountId: k.accountId })} />
             </div>
           ))}
 

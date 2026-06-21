@@ -5,6 +5,7 @@ export type Member = {
   persona: { name?: string } | null
   cachedBalance: number | null
   todayEventCount?: number
+  lastLocation?: { lat: number; lng: number; accuracy?: number | null; at: string } | null
 }
 
 export type Family = { id: string; name: string; avatar: string } | null

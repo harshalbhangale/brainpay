@@ -29,6 +29,7 @@ export const accounts = pgTable('accounts', {
   persona: jsonb('persona').notNull().default(sql`'{}'::jsonb`),
   cachedBalance: integer('cached_balance').default(0).notNull(),
   pushToken: text('push_token'), // Expo push token — set on first login
+  lastLocation: jsonb('last_location'), // { lat, lng, accuracy, at } — kid device location
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
 })

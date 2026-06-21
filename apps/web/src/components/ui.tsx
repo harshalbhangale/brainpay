@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { MapPin, Maximize2, X } from 'lucide-react'
 import { staticMapUrl, embedMapUrl } from '../lib/maps'
+import { relativeTime } from '../lib/format'
 
 /**
  * BrainPal design system — clean, Greenlight-style primitives.
@@ -135,8 +136,22 @@ function mockLatLng(seed: string): { lat: number; lng: number; place: string } {
   return { lat, lng, place: places[h % places.length] }
 }
 
-export function KidMapCard({ name, accountId }: { name: string; accountId: string; onClick?: () => void }) {
-  const { lat, lng, place } = mockLatLng(accountId)
+export function KidMapCard({
+  name,
+  accountId,
+  location,
+}: {
+  name: string
+  accountId: string
+  location?: { lat: number; lng: number; at?: string } | null
+  onClick?: () => void
+}) {
+  const hasReal = !!location && typeof location.lat === 'number' && typeof location.lng === 'number'
+  const mock = mockLatLng(accountId)
+  const lat = hasReal ? location!.lat : mock.lat
+  const lng = hasReal ? location!.lng : mock.lng
+  const place = hasReal ? 'Live location' : mock.place
+  const when = hasReal && location!.at ? relativeTime(location!.at) : 'sample'
   const [expanded, setExpanded] = useState(false)
   const thumb = staticMapUrl([{ lat, lng }], { width: 640, height: 280, zoom: 15 })
 
@@ -153,7 +168,7 @@ export function KidMapCard({ name, accountId }: { name: string; accountId: strin
         <div className="flex items-center gap-2 px-4 py-3">
           <MapPin size={15} className="text-accent" />
           <span className="text-sm font-semibold text-ink">{place}</span>
-          <span className="ml-auto text-xs text-muted">just now</span>
+          <span className="ml-auto text-xs text-muted">{when}</span>
         </div>
       </Card>
 

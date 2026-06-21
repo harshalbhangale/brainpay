@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuthStore, type Account } from '../stores/auth'
+import { useLocationReporter } from '../lib/useLocationReporter'
 import { Chat } from '../components/Chat'
 import { FamilyView } from '../components/family/FamilyView'
 import { StudyPal } from '../components/StudyPal'
@@ -21,6 +22,9 @@ export function Home() {
   const scrollerRef = useRef<HTMLDivElement>(null)
   const [pane, setPane] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Kids report their device location so parents can see them on the maps.
+  useLocationReporter(account?.accountType === 'kid')
 
   // Background sync of account (accountType / persona / balance).
   useEffect(() => {

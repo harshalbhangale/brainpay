@@ -13,9 +13,13 @@ import {
   studyTopics,
 } from '../db/study-schema'
 import { authedAccountId, requireAuth, type AuthVars } from '../middleware/auth'
+import { logger } from '../logger'
 import { processDocument } from '../services/study-pipeline'
 import { generateTutorSpeech } from '../services/study-tutor-voice'
 import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from '../services/study-rewards'
+import { createInterviewConversation, tavusConfigured } from '../services/tavus'
+import { completeInterview } from '../services/tavus-interview'
+import { loadEnv } from '../env'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -115,9 +119,9 @@ study.post('/study/topics/:id/documents', async (c) => {
   const parsed = z.object({
     title: z.string().min(1).max(200).trim(),
     fileUrl: z.string().min(1),
-    fileType: z.enum(['pdf', 'image', 'text']),
+    fileType: z.enum(['pdf', 'image', 'text', 'file']),
     fileSize: z.number().int().min(0).default(0),
-    content: z.string().optional(), // For 'text' type: raw content directly
+    content: z.string().optional(), // For 'text'/'file' type: raw content directly
   }).safeParse(body)
   if (!parsed.success) return c.json({ error: 'invalid_body', details: parsed.error.flatten() }, 400)
 
@@ -150,6 +154,121 @@ study.get('/study/topics/:id/documents', async (c) => {
   return c.json({ documents: docs })
 })
 
+// POST /study/topics/:id/regenerate — rebuild concepts from current materials.
+// Replaces non-bookmarked cards; bookmarked cards are preserved.
+study.post('/study/topics/:id/regenerate', async (c) => {
+  const accountId = authedAccountId(c)
+  const topicId = c.req.param('id')
+
+  const [topic] = await db
+    .select()
+    .from(studyTopics)
+    .where(and(eq(studyTopics.id, topicId), eq(studyTopics.accountId, accountId)))
+    .limit(1)
+  if (!topic) return c.json({ error: 'topic_not_found' }, 404)
+
+  // Drop all non-bookmarked cards for this topic (keep saved ones).
+  await db
+    .delete(studyCards)
+    .where(and(eq(studyCards.topicId, topicId), eq(studyCards.bookmarked, false)))
+
+  // Recount surviving (bookmarked) cards.
+  const [{ count: kept }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(studyCards)
+    .where(eq(studyCards.topicId, topicId))
+
+  await db
+    .update(studyTopics)
+    .set({ totalCards: kept, cardsDue: kept })
+    .where(eq(studyTopics.id, topicId))
+
+  // Re-process every ready document to regenerate fresh cards (async).
+  const docs = await db
+    .select()
+    .from(studyDocuments)
+    .where(eq(studyDocuments.topicId, topicId))
+
+  if (docs.length > 0) {
+    for (const doc of docs) {
+      processDocument(doc.id).catch(() => undefined)
+    }
+  } else {
+    // No materials — generate from the topic title alone.
+    const content = `Generate key concepts, important definitions, formulas, and study material for: ${topic.title}. Cover the most important topics a student should know.`
+    const [doc] = await db.insert(studyDocuments).values({
+      topicId,
+      accountId,
+      title: `${topic.title} concepts`,
+      fileUrl: 'text://inline',
+      fileType: 'text',
+      processingStatus: 'pending',
+    }).returning()
+    processDocument(doc.id, content).catch(() => undefined)
+  }
+
+  return c.json({ ok: true, keptBookmarked: kept })
+})
+
+// POST /study/topics/:id/chat — text chat grounded in this topic's concepts.
+study.post('/study/topics/:id/chat', async (c) => {
+  const accountId = authedAccountId(c)
+  const topicId = c.req.param('id')
+
+  const [topic] = await db
+    .select()
+    .from(studyTopics)
+    .where(and(eq(studyTopics.id, topicId), eq(studyTopics.accountId, accountId)))
+    .limit(1)
+  if (!topic) return c.json({ error: 'topic_not_found' }, 404)
+
+  const body = await c.req.json().catch(() => ({}))
+  const parsed = z.object({
+    message: z.string().min(1).max(2000),
+    history: z
+      .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }))
+      .max(20)
+      .default([]),
+  }).safeParse(body)
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+
+  // Ground the tutor in this topic's concept cards.
+  const cards = await db
+    .select({ front: studyCards.front, back: studyCards.back })
+    .from(studyCards)
+    .where(eq(studyCards.topicId, topicId))
+    .limit(40)
+
+  const conceptContext = cards.length
+    ? cards.map((c) => `- ${c.front}: ${c.back}`).join('\n')
+    : '(No concepts generated yet — answer from general knowledge of the topic.)'
+
+  const system = `You are a friendly, patient study tutor helping a student learn "${topic.title}".
+Answer their questions clearly and simply, like a kind teacher for an 8-14 year old.
+Prefer the study material below when relevant; you may add helpful context, but stay accurate.
+Keep answers concise (2-5 sentences) unless they ask for more. Encourage them.
+
+STUDY MATERIAL FOR THIS TOPIC:
+${conceptContext}`
+
+  try {
+    const resp = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: system },
+        ...parsed.data.history.map((m) => ({ role: m.role, content: m.content }) as const),
+        { role: 'user', content: parsed.data.message },
+      ],
+      max_tokens: 500,
+      temperature: 0.5,
+    })
+    const reply = resp.choices[0]?.message?.content?.trim() || "Hmm, I'm not sure — can you ask that another way?"
+    return c.json({ reply })
+  } catch {
+    return c.json({ error: 'chat_failed' }, 502)
+  }
+})
+
 // ═══════════════════════════════════════════════════════════════════════
 // CARDS (list + review)
 // ═══════════════════════════════════════════════════════════════════════
@@ -158,9 +277,11 @@ study.get('/study/topics/:id/cards', async (c) => {
   const accountId = authedAccountId(c)
   const topicId = c.req.param('id')
   const dueOnly = c.req.query('due') === 'true'
+  const bookmarkedOnly = c.req.query('bookmarked') === 'true'
 
   const conditions = [eq(studyCards.topicId, topicId), eq(studyCards.accountId, accountId)]
   if (dueOnly) conditions.push(lte(studyCards.nextReviewAt, new Date()))
+  if (bookmarkedOnly) conditions.push(eq(studyCards.bookmarked, true))
 
   const cards = await db
     .select()
@@ -170,6 +291,26 @@ study.get('/study/topics/:id/cards', async (c) => {
     .limit(50)
 
   return c.json({ cards })
+})
+
+// POST /study/cards/:id/bookmark — toggle (or set) a card's bookmark
+study.post('/study/cards/:id/bookmark', async (c) => {
+  const accountId = authedAccountId(c)
+  const cardId = c.req.param('id')
+
+  const [card] = await db
+    .select({ id: studyCards.id, bookmarked: studyCards.bookmarked })
+    .from(studyCards)
+    .where(and(eq(studyCards.id, cardId), eq(studyCards.accountId, accountId)))
+    .limit(1)
+  if (!card) return c.json({ error: 'not_found' }, 404)
+
+  const body = await c.req.json().catch(() => ({}))
+  const parsed = z.object({ bookmarked: z.boolean().optional() }).safeParse(body)
+  const next = parsed.success && typeof parsed.data.bookmarked === 'boolean' ? parsed.data.bookmarked : !card.bookmarked
+
+  await db.update(studyCards).set({ bookmarked: next }).where(eq(studyCards.id, cardId))
+  return c.json({ ok: true, bookmarked: next })
 })
 
 // GET /study/cards/due — all due cards across topics
@@ -341,8 +482,42 @@ async function updateStreak(accountId: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// INTERVIEWS (voice study tutor)
+// INTERVIEWS (Tavus video tutor — chapter-scoped)
 // ═══════════════════════════════════════════════════════════════════════
+
+// GET /study/topics/:id/chapters — concept chapters with progress, for the
+// chapter picker before an interview.
+study.get('/study/topics/:id/chapters', async (c) => {
+  const accountId = authedAccountId(c)
+  const topicId = c.req.param('id')
+
+  const [topic] = await db
+    .select({ id: studyTopics.id })
+    .from(studyTopics)
+    .where(and(eq(studyTopics.id, topicId), eq(studyTopics.accountId, accountId)))
+    .limit(1)
+  if (!topic) return c.json({ error: 'topic_not_found' }, 404)
+
+  const rows = await db
+    .select({
+      chapter: studyCards.chapter,
+      total: sql<number>`count(*)::int`,
+      due: sql<number>`count(*) filter (where ${studyCards.nextReviewAt} <= now())::int`,
+      mastered: sql<number>`count(*) filter (where ${studyCards.status} = 'mastered')::int`,
+    })
+    .from(studyCards)
+    .where(and(eq(studyCards.topicId, topicId), eq(studyCards.accountId, accountId)))
+    .groupBy(studyCards.chapter)
+
+  const chapters = rows.map((r) => ({
+    chapter: r.chapter ?? 'General',
+    total: r.total,
+    due: r.due,
+    mastered: r.mastered,
+  }))
+
+  return c.json({ chapters })
+})
 
 study.post('/study/topics/:id/interview', async (c) => {
   const accountId = authedAccountId(c)
@@ -355,90 +530,122 @@ study.post('/study/topics/:id/interview', async (c) => {
     .limit(1)
   if (!topic) return c.json({ error: 'topic_not_found' }, 404)
 
-  // Get weak concepts (cards not yet mastered)
-  const weakCards = await db
+  const body = await c.req.json().catch(() => ({}))
+  const parsed = z.object({
+    chapter: z.string().min(1).max(200).optional(),
+    conceptIds: z.array(z.string().uuid()).max(20).optional(),
+    proctor: z.boolean().optional(),
+  }).safeParse(body)
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+  const { chapter, conceptIds } = parsed.data
+
+  // Determine scope + select the concepts to probe.
+  const mode: 'chapter' | 'concept' | 'viva' = conceptIds?.length ? 'concept' : chapter ? 'chapter' : 'viva'
+  const conds = [eq(studyCards.topicId, topicId), eq(studyCards.accountId, accountId)]
+  if (chapter) conds.push(eq(studyCards.chapter, chapter))
+  if (mode === 'viva') conds.push(sql`${studyCards.status} != 'mastered'`)
+  if (conceptIds?.length) conds.push(sql`${studyCards.id} = ANY(${conceptIds})`)
+
+  const cards = await db
     .select({ front: studyCards.front, back: studyCards.back })
     .from(studyCards)
-    .where(and(eq(studyCards.topicId, topicId), sql`${studyCards.status} != 'mastered'`))
-    .limit(20)
+    .where(and(...conds))
+    .limit(mode === 'viva' ? 20 : 12)
 
-  const focusAreas = weakCards.map((c) => c.front)
+  const focusAreas = cards.map((cd) => cd.front)
+  // Proctor on for tests (chapter/viva) by default; off for quick concept practice.
+  const proctor = parsed.data.proctor ?? mode !== 'concept'
 
   const [interview] = await db.insert(studyInterviews).values({
     topicId,
     accountId,
     focusAreas,
+    chapter: chapter ?? null,
+    mode,
   }).returning()
 
-  const conceptList = weakCards.map((c) => `- Q: ${c.front}\n  A: ${c.back}`).join('\n')
+  // No Tavus configured → tell the client to use the legacy voice tutor.
+  if (!tavusConfigured()) {
+    return c.json({ interviewId: interview.id, provider: 'legacy', mode, chapter: chapter ?? null }, 201)
+  }
 
-  const systemPrompt = `You are a friendly, encouraging study tutor helping a kid review "${topic.title}". Your job is to ask them to explain concepts in their own words, then probe deeper with follow-up questions. Be conversational, use simple language, and celebrate when they get things right. If they struggle, give gentle hints rather than the answer directly.
+  // Pull the kid's name/grade for a personal greeting + context.
+  const [acct] = await db
+    .select({ persona: accounts.persona })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1)
+  const persona = (acct?.persona ?? {}) as Record<string, unknown>
+  const kidName = typeof persona.name === 'string' ? persona.name : null
+  const grade = typeof persona.grade === 'string' ? persona.grade : null
 
-Focus on these concepts the kid hasn't mastered yet:
-${conceptList || '(No specific weak areas — do a general review of the topic)'}
+  const env = loadEnv()
+  const callbackUrl = env.PUBLIC_BASE_URL
+    ? `${env.PUBLIC_BASE_URL.replace(/\/$/, '')}/study/tavus/webhook${env.TAVUS_WEBHOOK_SECRET ? `?key=${encodeURIComponent(env.TAVUS_WEBHOOK_SECRET)}` : ''}`
+    : undefined
 
-Rules:
-- Ask ONE question at a time
-- Wait for their response before asking the next
-- Keep responses short (2-3 sentences max)
-- Use encouraging language ("Great thinking!", "Almost there!")
-- After 3-5 questions, wrap up with a brief summary of how they did`
+  try {
+    const conv = await createInterviewConversation({
+      topicTitle: topic.title,
+      chapter: chapter ?? null,
+      kidName,
+      grade,
+      concepts: cards,
+      proctor,
+      maxDurationSecs: mode === 'viva' ? 480 : 360,
+      callbackUrl,
+    })
+    await db
+      .update(studyInterviews)
+      .set({ tavusConversationId: conv.conversationId, tavusConversationUrl: conv.conversationUrl })
+      .where(eq(studyInterviews.id, interview.id))
 
-  return c.json({ interviewId: interview.id, systemPrompt }, 201)
+    return c.json(
+      {
+        interviewId: interview.id,
+        provider: 'tavus',
+        conversationUrl: conv.conversationUrl,
+        conversationId: conv.conversationId,
+        token: conv.token ?? null,
+        mode,
+        chapter: chapter ?? null,
+        proctor,
+      },
+      201,
+    )
+  } catch (err) {
+    // Graceful fallback — never dead-end the kid; use the legacy voice tutor.
+    logger.warn({ err: String(err).slice(0, 200), interviewId: interview.id }, 'study.tavus_create_failed')
+    return c.json({ interviewId: interview.id, provider: 'legacy', mode, chapter: chapter ?? null }, 201)
+  }
 })
 
 study.post('/study/interviews/:id/complete', async (c) => {
   const accountId = authedAccountId(c)
   const interviewId = c.req.param('id')
 
-  const [interview] = await db
-    .select()
-    .from(studyInterviews)
-    .where(and(eq(studyInterviews.id, interviewId), eq(studyInterviews.accountId, accountId)))
-    .limit(1)
-  if (!interview) return c.json({ error: 'not_found' }, 404)
-  if (interview.status === 'completed') return c.json({ error: 'already_completed' }, 400)
-
   const body = await c.req.json().catch(() => ({}))
   const parsed = z.object({
     transcript: z.array(z.object({ role: z.string(), text: z.string() })).default([]),
     score: z.number().int().min(1).max(10).optional(),
     durationSecs: z.number().int().min(0).default(0),
+    summary: z.string().max(500).optional(),
+    keepPractising: z.array(z.string().max(200)).max(5).optional(),
+    focus: z
+      .object({
+        lookingPct: z.number().min(0).max(100).optional(),
+        flags: z.array(z.string().max(120)).max(10).optional(),
+        notes: z.string().max(500).optional(),
+      })
+      .optional(),
   }).safeParse(body)
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
 
-  const brainsEarned = Math.max(5, Math.min(25, (parsed.data.score ?? 5) * 3))
-
-  await db.update(studyInterviews).set({
-    status: 'completed',
-    transcript: parsed.data.transcript,
-    score: parsed.data.score ?? null,
-    durationSecs: parsed.data.durationSecs,
-    brainsEarned,
-    completedAt: new Date(),
-  }).where(eq(studyInterviews.id, interviewId))
-
-  // Award brains
-  const familyId = await getFamilyId(accountId)
-  if (familyId) {
-    await db.transaction(async (tx) => {
-      await tx
-        .update(accounts)
-        .set({ cachedBalance: sql`${accounts.cachedBalance} + ${brainsEarned}` })
-        .where(eq(accounts.id, accountId))
-      await tx.insert(ledger).values({
-        familyId,
-        accountId,
-        actorId: accountId,
-        kind: 'study_interview',
-        brainsDelta: brainsEarned,
-        balanceAfter: sql`(select cached_balance from accounts where id = ${accountId})`,
-        metadata: { interviewId, topicId: interview.topicId },
-      })
-    })
+  const result = await completeInterview(interviewId, accountId, parsed.data)
+  if ('error' in result) {
+    return c.json({ error: result.error }, result.error === 'not_found' ? 404 : 403)
   }
-
-  return c.json({ ok: true, brainsEarned, score: parsed.data.score })
+  return c.json(result)
 })
 
 // ═══════════════════════════════════════════════════════════════════════

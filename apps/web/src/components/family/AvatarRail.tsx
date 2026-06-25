@@ -24,7 +24,7 @@ export function AvatarRail({
         active={familyActive}
         onClick={() => onSelect({ kind: 'family' })}
         content={<span className="text-lg font-extrabold text-on-accent">{initial(parentName)}</span>}
-        bg="var(--color-accent)"
+        bg="accent"
       />
       {kids.map((k) => {
         const active = subject.kind === 'kid' && subject.accountId === k.accountId
@@ -35,7 +35,7 @@ export function AvatarRail({
             active={active}
             onClick={() => onSelect({ kind: 'kid', accountId: k.accountId })}
             content={<span className="text-lg font-extrabold text-ink">{initial(kidName(k))}</span>}
-            bg="var(--color-surface2)"
+            bg="surface"
           />
         )
       })}
@@ -57,12 +57,13 @@ function RailItem({
   bg: string
 }) {
   return (
-    <button onClick={onClick} className="flex shrink-0 flex-col items-center gap-1">
+    <button onClick={onClick} className="press flex shrink-0 flex-col items-center gap-1">
       <span
         className="flex h-14 w-14 items-center justify-center rounded-full transition"
         style={{
-          backgroundColor: bg,
-          boxShadow: active ? '0 0 0 2.5px var(--color-accent), 0 0 0 5px var(--color-accent-soft)' : 'none',
+          backgroundImage: bg === 'accent' ? 'var(--grad-accent-bright)' : undefined,
+          backgroundColor: bg === 'accent' ? undefined : 'var(--surface-2)',
+          boxShadow: active ? '0 0 0 2.5px var(--accent), 0 0 14px -2px rgba(43,217,138,0.7)' : bg === 'accent' ? 'var(--glow-accent)' : 'inset 0 0 0 1px var(--border)',
         }}
       >
         {content}

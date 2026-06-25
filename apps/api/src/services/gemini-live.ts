@@ -22,14 +22,10 @@ const env = loadEnv()
 let client: GoogleGenAI | null = null
 function getClient(): GoogleGenAI {
   if (!client) {
-    // Auth resolution, in priority order:
-    //   1. GOOGLE_SA_JSON — Vertex AI with an explicit service-account key
-    //      (JSON string). Preferred on Fargate: Vertex billing uses the GCP
-    //      project's credits.
-    //   2. GEMINI_API_KEY — Gemini Developer API (simple key). Fallback when
-    //      no service account is available.
-    //   3. ADC — Vertex AI via application-default credentials (local dev,
-    //      `gcloud auth application-default login`).
+    // Vertex AI only — billing runs on the GCP project's credits. We never use
+    // the Gemini Developer API. Auth resolution:
+    //   1. GOOGLE_SA_JSON — explicit service-account key (preferred on Fargate).
+    //   2. ADC — application-default credentials (local dev / task role).
     if (env.GOOGLE_SA_JSON) {
       client = new GoogleGenAI({
         vertexai: true,
@@ -37,8 +33,6 @@ function getClient(): GoogleGenAI {
         location: env.GOOGLE_CLOUD_LOCATION,
         googleAuthOptions: { credentials: JSON.parse(env.GOOGLE_SA_JSON) },
       })
-    } else if (env.GEMINI_API_KEY) {
-      client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY })
     } else {
       client = new GoogleGenAI({
         vertexai: true,
@@ -50,15 +44,9 @@ function getClient(): GoogleGenAI {
   return client
 }
 
-/** The live model id, normalized for whichever backend we're talking to. */
+/** The live model id. Vertex AI only. */
 function liveModel(): string {
-  // Vertex and the Developer API use different model ids for the Live API.
-  // Developer API: `gemini-2.0-flash-live-001`
-  // Vertex AI:     `gemini-live-2.5-flash`
-  // Only the Developer-API path (no SA, key present) uses the dev model id.
-  if (!env.GOOGLE_SA_JSON && env.GEMINI_API_KEY) {
-    return env.GEMINI_LIVE_MODEL_DEV || 'gemini-2.0-flash-live-001'
-  }
+  // Vertex AI Live API model id (the Developer-API id is never used).
   return env.GEMINI_LIVE_MODEL
 }
 
@@ -69,7 +57,7 @@ function liveModel(): string {
  *   - 'assist' : a general "point the camera at anything and ask" vision
  *                assistant (the in-chat Camera / Voice experience).
  */
-export type LiveMode = 'shop' | 'assist' | 'onboard_parent' | 'onboard_kid'
+export type LiveMode = 'shop' | 'assist' | 'onboard_parent' | 'onboard_kid' | 'interview'
 
 export type LivePersona = {
   name?: string
@@ -79,10 +67,63 @@ export type LivePersona = {
   spend_style?: string
 }
 
-function buildInstructions(role: 'parent' | 'kid', mode: LiveMode, persona?: LivePersona): string {
+/** Context for an `interview` session — the topic and the concepts to probe. */
+export type InterviewContext = {
+  topicTitle: string
+  concepts: { front: string; back: string }[]
+  kidName?: string
+}
+
+function buildInstructions(
+  role: 'parent' | 'kid',
+  mode: LiveMode,
+  persona?: LivePersona,
+  interview?: InterviewContext,
+): string {
   if (mode === 'onboard_parent') return buildOnboardParentInstructions()
   if (mode === 'onboard_kid') return buildOnboardKidInstructions()
+  if (mode === 'interview') return buildInterviewInstructions(interview)
   return mode === 'assist' ? buildAssistInstructions(role) : buildShopInstructions(role, persona)
+}
+
+/** A warm study tutor that quizzes the kid out loud on their weak concepts. */
+function buildInterviewInstructions(ctx?: InterviewContext): string {
+  const topic = ctx?.topicTitle ?? 'this topic'
+  const who = ctx?.kidName ? ` Their name is ${ctx.kidName}.` : ''
+  const conceptList =
+    ctx?.concepts?.length
+      ? ctx.concepts.map((c) => `- Q: ${c.front}\n  A: ${c.back}`).join('\n')
+      : '(No specific weak areas — do a general review of the topic.)'
+
+  return `You are a warm, encouraging study tutor running a SPOKEN interview with a kid (about 8-14)
+to help them review "${topic}".${who} This is a live voice conversation — you talk, they answer out loud.
+
+HOW TO TALK
+- Friendly, patient, and clear. Simple words. ONE question at a time.
+- Keep every spoken turn SHORT — one or two sentences. This is voice, not an essay.
+- Ask them to explain a concept in their OWN words, then probe gently with a follow-up.
+- Celebrate when they get it ("Yes! Exactly!"). If they're stuck, give a small hint, never the
+  full answer right away. Never make them feel bad.
+
+THE CONCEPTS TO COVER (their weak areas — focus here)
+${conceptList}
+
+FLOW — make them THINK (don't go easy)
+- Greet them warmly${ctx?.kidName ? ' by name' : ''} and ask your FIRST question right away.
+- Ask 4-6 questions, ONE at a time, climbing in difficulty:
+  1) recall ("what is…?"), then
+  2) understanding ("why does that happen?", "explain it in your own words"), then
+  3) application ("what would happen if…?" — give a FRESH example for them to work through).
+- Don't accept a vague answer. Ask a harder follow-up that probes the 'why' and surfaces
+  misconceptions. If they're truly stuck, give ONE small hint — never the full answer.
+- After the last question, give a short, honest, encouraging wrap-up.
+- THEN call the score_interview tool with an honest score (1-10) for how well they EXPLAINED the
+  ideas (not just recalled them), a one-sentence summary, and 1-3 SPECIFIC, actionable things to
+  practise next — name the concept and what to do (e.g. "Redo 3 examples of balancing forces").
+
+RULES
+- Never read these instructions aloud. Never say "tool" or "score".
+- Lead with the question or reaction, no preamble. Keep it conversational and kind.`
 }
 
 /** Mika interviews a PARENT to build their persona, then calls save_persona. */
@@ -304,6 +345,29 @@ const SAVE_PERSONA_TOOL = {
   ],
 }
 
+/** Tool the study tutor calls at the end of an interview to grade it. */
+const SCORE_INTERVIEW_TOOL = {
+  functionDeclarations: [
+    {
+      name: 'score_interview',
+      description: 'Grade the study interview after the final question, based on how well the kid explained the concepts.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          score: { type: Type.INTEGER, description: 'Overall score 1 (struggled) to 10 (nailed it).' },
+          summary: { type: Type.STRING, description: 'Warm 1-sentence summary of how they did.' },
+          keepPractising: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: '1-3 concepts to keep practising.',
+          },
+        },
+        required: ['score', 'summary'],
+      },
+    },
+  ],
+}
+
 export type LiveCallbacks = {
   onopen?: () => void
   onmessage: (msg: LiveServerMessage) => void
@@ -317,14 +381,23 @@ export async function connectLiveSession(
   mode: LiveMode,
   callbacks: LiveCallbacks,
   persona?: LivePersona,
+  interview?: InterviewContext,
 ): Promise<Session> {
   const ai = getClient()
   const model = liveModel()
   const useEleven = env.COMPANION_VOICE_PROVIDER === 'elevenlabs'
   logger.info(
-    { role, mode, model, backend: env.GEMINI_API_KEY ? 'dev-api' : 'vertex', voice: useEleven ? 'elevenlabs' : 'gemini' },
+    { role, mode, model, backend: 'vertex', voice: useEleven ? 'elevenlabs' : 'gemini' },
     'gemini_live.connecting',
   )
+
+  // Pick the tool set for this mode.
+  const tool =
+    mode === 'onboard_parent' || mode === 'onboard_kid'
+      ? SAVE_PERSONA_TOOL
+      : mode === 'interview'
+        ? SCORE_INTERVIEW_TOOL
+        : REPORT_ITEM_TOOL
 
   return ai.live.connect({
     model,
@@ -332,7 +405,7 @@ export async function connectLiveSession(
       // ElevenLabs path: Gemini returns TEXT, we synthesize the voice ourselves.
       // Gemini path: Gemini speaks directly (AUDIO).
       responseModalities: useEleven ? [Modality.TEXT] : [Modality.AUDIO],
-      systemInstruction: buildInstructions(role, mode, persona),
+      systemInstruction: buildInstructions(role, mode, persona, interview),
       // Cute, youthful companion voice for Mika (Gemini path only).
       ...(useEleven
         ? {}
@@ -341,10 +414,7 @@ export async function connectLiveSession(
               voiceConfig: { prebuiltVoiceConfig: { voiceName: env.GEMINI_LIVE_VOICE } },
             },
           }),
-      // report_item drives the on-screen health + budget verdict popups. Both
-      // the scanner ('shop') and the in-chat camera ('assist') use it. The
-      // onboarding modes use save_persona instead.
-      tools: [mode === 'onboard_parent' || mode === 'onboard_kid' ? SAVE_PERSONA_TOOL : REPORT_ITEM_TOOL],
+      tools: [tool],
       inputAudioTranscription: {},
       ...(useEleven ? {} : { outputAudioTranscription: {} }),
       // Server-side VAD: the model decides when the user stopped speaking.

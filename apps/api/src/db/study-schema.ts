@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -59,6 +60,7 @@ export const studyDocuments = pgTable(
     processingStatus: text('processing_status').notNull().default('pending'),
     // 'pending' | 'processing' | 'ready' | 'failed'
     chunkCount: integer('chunk_count').default(0),
+    rawText: text('raw_text'), // extracted/inline source text, for regeneration
     error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     processedAt: timestamp('processed_at', { withTimezone: true }),
@@ -81,6 +83,7 @@ export const studyCards = pgTable(
       .notNull(),
     documentId: uuid('document_id').references(() => studyDocuments.id, { onDelete: 'set null' }),
     chunkRef: text('chunk_ref'), // S3 Vectors chunk ID reference
+    chapter: text('chapter'), // chapter/section this concept belongs to (nullable)
     front: text('front').notNull(), // question / concept
     back: text('back').notNull(), // answer / explanation
     difficulty: integer('difficulty').default(0).notNull(), // 0=new, 1-5 after reviews
@@ -88,6 +91,7 @@ export const studyCards = pgTable(
     interval: integer('interval').default(0).notNull(), // days until next review
     reviewCount: integer('review_count').default(0).notNull(),
     status: text('status').notNull().default('new'), // 'new' | 'learning' | 'mastered'
+    bookmarked: boolean('bookmarked').notNull().default(false), // kid-saved important cards
     nextReviewAt: timestamp('next_review_at', { withTimezone: true }).defaultNow().notNull(),
     lastReviewedAt: timestamp('last_reviewed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -95,6 +99,7 @@ export const studyCards = pgTable(
   (t) => ({
     byTopicReview: index('study_cards_review_idx').on(t.topicId, t.nextReviewAt),
     byAccountDue: index('study_cards_account_due_idx').on(t.accountId, t.nextReviewAt),
+    byBookmark: index('study_cards_bookmark_idx').on(t.accountId, t.bookmarked),
   }),
 )
 
@@ -167,6 +172,14 @@ export const studyInterviews = pgTable(
     score: integer('score'), // 1-10
     brainsEarned: integer('brains_earned').default(0),
     status: text('status').notNull().default('active'), // 'active' | 'completed'
+    // Chapter-scoped Tavus video interview fields.
+    chapter: text('chapter'),
+    mode: text('mode').notNull().default('chapter'), // 'chapter' | 'concept' | 'viva'
+    tavusConversationId: text('tavus_conversation_id'),
+    tavusConversationUrl: text('tavus_conversation_url'),
+    summary: text('summary'),
+    keepPractising: jsonb('keep_practising').notNull().default(sql`'[]'::jsonb`),
+    focus: jsonb('focus'), // { lookingPct, flags: string[], notes } — for the parent
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },

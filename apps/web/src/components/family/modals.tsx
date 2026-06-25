@@ -2,32 +2,34 @@ import { useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { COUNTRIES, isValidLocal, toE164, type Country } from '../../lib/phone'
+import { GradientButton } from '../ui'
 import { kidName, type Member } from './types'
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <div className="fixed inset-0 z-30 flex items-end justify-center sm:items-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60" />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative max-h-[90%] w-full max-w-md overflow-y-auto rounded-t-3xl bg-surface p-6 sm:rounded-3xl"
+        className="animate-rise grad-border relative max-h-[90%] w-full max-w-md overflow-y-auto rounded-t-3xl p-6 shadow-pop sm:rounded-3xl"
+        style={{ backgroundImage: 'var(--grad-card)' }}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="pointer-events-none absolute -top-16 left-1/2 h-40 w-40 -translate-x-1/2 rounded-full bg-grad-aurora opacity-20 blur-2xl" />
+        <div className="relative mb-4 flex items-center justify-between">
           <h3 className="text-lg font-extrabold text-ink">{title}</h3>
-          <button onClick={onClose} className="text-muted hover:text-ink">
+          <button onClick={onClose} className="press glass flex h-8 w-8 items-center justify-center rounded-full text-muted">
             ✕
           </button>
         </div>
-        {children}
+        <div className="relative">{children}</div>
       </div>
     </div>
   )
 }
 
 const fieldClass =
-  'h-12 w-full rounded-2xl bg-surface2 px-4 text-ink outline-none ring-1 ring-transparent focus:ring-accent'
-const labelClass = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-muted'
-const submitClass = 'mt-2 w-full rounded-full bg-accent py-3.5 font-bold text-on-accent disabled:opacity-40'
+  'grad-border h-12 w-full rounded-2xl bg-transparent px-4 text-ink outline-none placeholder:text-faint'
+const labelClass = 'mb-1 block text-xs font-extrabold uppercase tracking-widest text-muted'
 
 export function AddKidModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
@@ -66,10 +68,10 @@ export function AddKidModal({ onClose }: { onClose: () => void }) {
         <select
           value={country.code}
           onChange={(e) => setCountry(COUNTRIES.find((c) => c.code === e.target.value) ?? COUNTRIES[0])}
-          className="h-12 rounded-2xl bg-surface2 px-3 text-ink outline-none"
+          className="grad-border h-12 rounded-2xl bg-transparent px-3 text-ink outline-none"
         >
           {COUNTRIES.map((c) => (
-            <option key={c.code} value={c.code}>
+            <option key={c.code} value={c.code} className="bg-surface text-ink">
               {c.flag} {c.dial}
             </option>
           ))}
@@ -86,9 +88,9 @@ export function AddKidModal({ onClose }: { onClose: () => void }) {
         </p>
       )}
 
-      <button onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending} className={submitClass}>
+      <GradientButton onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending} className="mt-2 w-full rounded-full py-3.5">
         {mutation.isPending ? 'Sending…' : 'Send invite'}
-      </button>
+      </GradientButton>
       <p className="mt-3 text-center text-xs text-muted">Your kid joins by signing in with this number.</p>
     </Modal>
   )
@@ -132,9 +134,9 @@ export function TopupModal({ kid, onClose }: { kid: Member; onClose: () => void 
         </p>
       )}
 
-      <button onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending} className={submitClass}>
+      <GradientButton onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending} className="mt-2 w-full rounded-full py-3.5">
         {mutation.isPending ? 'Adding…' : `Add $${amount || 0}`}
-      </button>
+      </GradientButton>
     </Modal>
   )
 }
@@ -166,9 +168,9 @@ export function AddChoreModal({ kids, presetKidId, onClose }: { kids: Member[]; 
   return (
     <Modal title="New chore" onClose={onClose}>
       <label className={labelClass}>For</label>
-      <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="mb-4 h-12 w-full rounded-2xl bg-surface2 px-3 text-ink outline-none">
+      <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="grad-border mb-4 h-12 w-full rounded-2xl bg-transparent px-3 text-ink outline-none">
         {kids.map((k) => (
-          <option key={k.accountId} value={k.accountId}>
+          <option key={k.accountId} value={k.accountId} className="bg-surface text-ink">
             {kidName(k)}
           </option>
         ))}
@@ -186,9 +188,9 @@ export function AddChoreModal({ kids, presetKidId, onClose }: { kids: Member[]; 
         </p>
       )}
 
-      <button onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending} className={submitClass}>
+      <GradientButton onClick={() => mutation.mutate()} disabled={!valid || mutation.isPending} className="mt-2 w-full rounded-full py-3.5">
         {mutation.isPending ? 'Creating…' : 'Create chore'}
-      </button>
+      </GradientButton>
     </Modal>
   )
 }

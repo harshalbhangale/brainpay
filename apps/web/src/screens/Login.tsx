@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { COUNTRIES, isValidLocal, toE164, type Country } from '../lib/phone'
 import { useAuthStore, type Account } from '../stores/auth'
+import { PressButton, GradientButton } from '../components/ui'
 
 type CheckResponse = {
   token: string
@@ -63,11 +64,13 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center p-6">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <div className="text-4xl font-extrabold tracking-tight">BrainPal</div>
-          <p className="mt-2 text-sm text-muted">
+    <div className="relative flex min-h-full items-center justify-center overflow-hidden p-6">
+      {/* Ambient aurora */}
+      <div className="pointer-events-none absolute -top-32 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-grad-aurora opacity-25 blur-[100px] animate-aurora" />
+      <div className="relative w-full max-w-sm">
+        <div className="animate-rise mb-8 text-center">
+          <div className="text-5xl font-extrabold tracking-tight text-grad-accent">BrainPal</div>
+          <p className="mt-3 text-sm text-muted">
             {step === 'phone' ? "What's your number? We'll text you a code." : `Enter the code sent to ${e164}`}
           </p>
         </div>
@@ -84,14 +87,14 @@ export function Login() {
                 <button
                   type="button"
                   onClick={() => setPickerOpen((v) => !v)}
-                  className="flex h-14 items-center gap-2 rounded-2xl bg-surface px-4 font-semibold text-ink"
+                  className="press glass flex h-14 items-center gap-2 rounded-2xl px-4 font-semibold text-ink"
                 >
                   <span className="text-xl">{country.flag}</span>
                   <span>{country.dial}</span>
                   <span className="text-xs text-muted">▾</span>
                 </button>
                 {pickerOpen && (
-                  <div className="absolute left-0 top-16 z-10 w-56 overflow-hidden rounded-2xl bg-surface shadow-xl">
+                  <div className="animate-pop-in glass absolute left-0 top-16 z-10 w-56 overflow-hidden rounded-2xl shadow-pop">
                     {COUNTRIES.map((c) => (
                       <button
                         key={c.code}
@@ -100,7 +103,7 @@ export function Login() {
                           setCountry(c)
                           setPickerOpen(false)
                         }}
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface2"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-surface2"
                       >
                         <span className="text-xl">{c.flag}</span>
                         <span className="flex-1 text-ink">{c.name}</span>
@@ -118,17 +121,13 @@ export function Login() {
                 placeholder="412 345 678"
                 value={local}
                 onChange={(e) => setLocal(e.target.value)}
-                className="h-14 flex-1 rounded-2xl bg-surface px-4 text-lg font-semibold text-ink outline-none ring-1 ring-transparent focus:ring-accent"
+                className="grad-border h-14 flex-1 rounded-2xl bg-transparent px-4 text-lg font-semibold text-ink outline-none placeholder:text-faint"
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading || !phoneValid}
-              className="mt-5 h-14 w-full rounded-full bg-accent font-bold text-on-accent transition active:scale-[0.98] disabled:opacity-40"
-            >
+            <GradientButton type="submit" disabled={loading || !phoneValid} className="mt-5 h-14 w-full rounded-full">
               {loading ? 'Sending…' : 'Continue'}
-            </button>
+            </GradientButton>
           </form>
         ) : (
           <form
@@ -144,34 +143,29 @@ export function Login() {
               placeholder="123456"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              className="h-16 w-full rounded-2xl bg-surface px-4 text-center text-2xl tracking-[0.5em] text-ink outline-none ring-1 ring-transparent focus:ring-accent"
+              className="grad-border h-16 w-full rounded-2xl bg-transparent px-4 text-center text-2xl tracking-[0.5em] text-ink outline-none placeholder:text-faint"
             />
-            <button
-              type="submit"
-              disabled={loading || code.trim().length < 4}
-              className="mt-5 h-14 w-full rounded-full bg-accent font-bold text-on-accent transition active:scale-[0.98] disabled:opacity-40"
-            >
+            <GradientButton type="submit" disabled={loading || code.trim().length < 4} className="mt-5 h-14 w-full rounded-full">
               {loading ? 'Verifying…' : 'Verify'}
-            </button>
-            <button
-              type="button"
+            </GradientButton>
+            <PressButton
               onClick={() => {
                 setStep('phone')
                 setCode('')
                 setError(null)
               }}
-              className="mt-3 w-full text-sm text-muted hover:text-ink"
+              className="mt-3 w-full py-2 text-sm text-muted transition hover:text-ink"
             >
               Use a different number
-            </button>
+            </PressButton>
           </form>
         )}
 
         {error && (
-          <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-center text-sm text-danger">{error}</p>
+          <p className="animate-pop-in mt-4 rounded-xl bg-danger/10 px-3 py-2 text-center text-sm text-danger ring-1 ring-danger/20">{error}</p>
         )}
 
-        <p className="mt-8 text-center text-xs text-muted">
+        <p className="mt-8 text-center text-xs text-faint">
           By continuing you agree to the Terms and Privacy Policy.
         </p>
       </div>

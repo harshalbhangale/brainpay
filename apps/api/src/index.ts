@@ -74,7 +74,8 @@ const server = createServer((req, res) => {
   // Study nudge cron (bypasses Hono auth)
   if (pathname === '/study/nudge-check' && req.method === 'POST') {
     setCors()
-    if (req.headers['x-cron-key'] !== 'brainpal-internal-cron-2024') {
+    const cronKey = req.headers['x-cron-key']
+    if (!env.CRON_SECRET || cronKey !== env.CRON_SECRET) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'unauthorized' }))
       return
@@ -86,6 +87,34 @@ const server = createServer((req, res) => {
     }).catch(() => {
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'internal' }))
+    })
+    return
+  }
+
+  // Tavus interview webhook (bypasses Hono auth; authenticated via ?key=secret).
+  if (pathname === '/study/tavus/webhook' && req.method === 'POST') {
+    setCors()
+    const url = new URL(req.url ?? '', 'http://localhost')
+    if (env.TAVUS_WEBHOOK_SECRET && url.searchParams.get('key') !== env.TAVUS_WEBHOOK_SECRET) {
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'unauthorized' }))
+      return
+    }
+    let raw = ''
+    req.on('data', (chunk) => { raw += chunk })
+    req.on('end', () => {
+      let payload: unknown = {}
+      try { payload = raw ? JSON.parse(raw) : {} } catch { /* ignore */ }
+      import('./services/tavus-interview')
+        .then(({ handleTavusWebhook }) => handleTavusWebhook(payload))
+        .then((r) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(r))
+        })
+        .catch(() => {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ handled: false }))
+        })
     })
     return
   }

@@ -53,10 +53,10 @@ export function Home() {
     <div className="fixed inset-0 flex flex-col bg-canvas" style={{ height: '100dvh' }}>
       {/* Top bar: segmented control + settings */}
       <div
-        className="flex items-center justify-between border-b border-surface2 px-3 py-2"
+        className="flex items-center justify-between border-b border-border px-3 py-2"
         style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
       >
-        <div className="flex rounded-full bg-surface p-1">
+        <div className="glass flex rounded-full p-1">
           <Tab label="AI" active={pane === 0} onClick={() => goTo(0)} />
           <Tab label="MoneyPal" active={pane === 1} onClick={() => goTo(1)} />
           <Tab label="StudyPal" active={pane === 2} onClick={() => goTo(2)} />
@@ -64,7 +64,7 @@ export function Home() {
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface2 hover:text-ink"
+          className="press glass flex h-9 w-9 items-center justify-center rounded-full text-muted"
         >
           <SettingsIcon size={20} />
         </button>
@@ -74,12 +74,13 @@ export function Home() {
       {account && account.accountType && !(account.persona as Record<string, unknown> | null)?.onboarded && (
         <button
           onClick={() => navigate(account.accountType === 'kid' ? '/onboarding-kid' : '/onboarding')}
-          className="flex items-center justify-between gap-3 border-b border-border bg-accent-soft px-4 py-2.5 text-left active:opacity-90"
+          className="press flex items-center justify-between gap-3 border-b border-border px-4 py-2.5 text-left"
+          style={{ backgroundImage: 'var(--grad-card)' }}
         >
           <span className="text-sm font-semibold text-ink">
             Finish setting up your profile so {account.accountType === 'kid' ? 'your companion' : 'PAL'} knows you better.
           </span>
-          <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-bold text-on-accent">Set up →</span>
+          <span className="sheen shrink-0 rounded-full bg-grad-accent px-3 py-1 text-xs font-bold text-on-accent">Set up →</span>
         </button>
       )}
 
@@ -109,9 +110,10 @@ function Tab({ label, active, onClick }: { label: string; active: boolean; onCli
   return (
     <button
       onClick={onClick}
-      className={`rounded-full px-4 py-1.5 text-sm font-bold transition ${
-        active ? 'bg-accent text-on-accent' : 'text-muted'
+      className={`press relative rounded-full px-4 py-1.5 text-sm font-bold transition ${
+        active ? 'text-on-accent' : 'text-muted'
       }`}
+      style={active ? { backgroundImage: 'var(--grad-accent-bright)', boxShadow: 'var(--glow-accent)' } : undefined}
     >
       {label}
     </button>

@@ -1,12 +1,33 @@
 import type { WebSocket } from 'ws'
 import type { Session, LiveServerMessage } from '@google/genai'
-import { connectLiveSession, type LiveMode } from '../services/gemini-live'
+import { connectLiveSession, type LiveMode, type InterviewContext } from '../services/gemini-live'
 import { streamTts } from '../services/elevenlabs-tts'
 import { loadEnv } from '../env'
 import { logger } from '../logger'
 
 const env = loadEnv()
 const USE_ELEVEN = env.COMPANION_VOICE_PROVIDER === 'elevenlabs'
+
+/**
+ * Map a client voice preference (session.start → voice) to an ElevenLabs
+ * voice id. Defaults lean Australian/warm; override any of them via env.
+ * Applies on the ElevenLabs TTS path (COMPANION_VOICE_PROVIDER=elevenlabs).
+ */
+function resolveVoiceId(key?: string): string | undefined {
+  switch (key) {
+    case 'good':
+      return env.ELEVENLABS_TUTOR_VOICE_ID ?? 'pFZP5JQG7iQjIQuC4Bku' // Lily — warm tutor
+    case 'cute':
+      return process.env.ELEVENLABS_VOICE_CUTE ?? 'jBpfuIE2acCO8z3wKNLl' // Gigi — bright/young
+    case 'real':
+      return process.env.ELEVENLABS_VOICE_REAL ?? 'IKne3meq5aSn9XLyUdCD' // Charlie — Australian
+    case 'anime':
+      return process.env.ELEVENLABS_VOICE_ANIME ?? env.ELEVENLABS_VOICE_ID
+    case 'normal':
+    default:
+      return env.ELEVENLABS_COMPANION_VOICE_ID ?? env.ELEVENLABS_VOICE_ID
+  }
+}
 
 /**
  * Gemini Live bridge — /live-rt
@@ -46,6 +67,8 @@ type SessionState = {
   starting: boolean
   mode: LiveMode
   persona?: Record<string, unknown>
+  // Voice override for this session (e.g. tutor voice for interviews).
+  voiceId?: string
   // ElevenLabs TTS pipeline (companion voice).
   ttsBuf: string
   ttsGen: number
@@ -118,7 +141,7 @@ function speakSentence(ws: WebSocket, state: SessionState, text: string) {
       state.ttsAbort = ac
       const parts: Buffer[] = []
       try {
-        await streamTts(sentence, (c) => parts.push(c), ac.signal)
+        await streamTts(sentence, (c) => parts.push(c), ac.signal, state.voiceId)
       } catch {
         /* aborted or failed */
       }
@@ -195,10 +218,12 @@ export async function onGeminiLiveMessage(ws: WebSocket, data: Buffer) {
         ws,
         state,
         (msg.role as 'parent' | 'kid') ?? 'kid',
-        (['assist', 'shop', 'onboard_parent', 'onboard_kid'].includes(msg.mode as string)
+        (['assist', 'shop', 'onboard_parent', 'onboard_kid', 'interview'].includes(msg.mode as string)
           ? (msg.mode as LiveMode)
           : 'shop'),
         (msg.persona as Record<string, unknown> | undefined),
+        (msg.interview as InterviewContext | undefined),
+        (msg.voice as string | undefined),
       )
       break
     case 'mic':
@@ -219,11 +244,14 @@ export async function onGeminiLiveMessage(ws: WebSocket, data: Buffer) {
   }
 }
 
-async function handleStart(ws: WebSocket, state: SessionState, role: 'parent' | 'kid', mode: LiveMode, persona?: Record<string, unknown>) {
+async function handleStart(ws: WebSocket, state: SessionState, role: 'parent' | 'kid', mode: LiveMode, persona?: Record<string, unknown>, interview?: InterviewContext, voice?: string) {
   if (state.live || state.starting) return
   state.starting = true
   state.mode = mode
   state.persona = persona
+  // Interviews use the warm tutor voice; otherwise honor the user's choice.
+  if (mode === 'interview') state.voiceId = env.ELEVENLABS_TUTOR_VOICE_ID ?? 'pFZP5JQG7iQjIQuC4Bku'
+  else if (voice) state.voiceId = resolveVoiceId(voice)
   try {
     state.live = await connectLiveSession(role, mode, {
       onmessage: (m) => handleLiveMessage(ws, state, m),
@@ -234,9 +262,9 @@ async function handleStart(ws: WebSocket, state: SessionState, role: 'parent' | 
       onclose: (e) => {
         logger.info({ reason: e?.reason }, 'gemini_live.session_closed')
       },
-    }, persona as Parameters<typeof connectLiveSession>[3])
+    }, persona as Parameters<typeof connectLiveSession>[3], interview)
     logger.info({ role, mode }, 'gemini_live.session_started')
-    // In onboarding, Mika speaks first — kick off her greeting + first question.
+    // Modes where the assistant speaks first — kick off the greeting + first question.
     if (mode === 'onboard_parent' || mode === 'onboard_kid') {
       try {
         state.live.sendClientContent({
@@ -245,6 +273,15 @@ async function handleStart(ws: WebSocket, state: SessionState, role: 'parent' | 
         })
       } catch (err) {
         logger.warn({ err: String(err) }, 'onboard.kickoff_failed')
+      }
+    } else if (mode === 'interview') {
+      try {
+        state.live.sendClientContent({
+          turns: [{ role: 'user', parts: [{ text: '(The interview is starting. Warmly greet me by name if you know it, then ask your first question now.)' }] }],
+          turnComplete: true,
+        })
+      } catch (err) {
+        logger.warn({ err: String(err) }, 'interview.kickoff_failed')
       }
     }
   } catch (err) {
@@ -303,6 +340,17 @@ function handleLiveMessage(ws: WebSocket, state: SessionState, m: LiveServerMess
       if (call.name === 'save_persona') {
         send(ws, { type: 'persona.saved', persona: (call.args ?? {}) as Record<string, unknown> })
         logger.info('onboard.persona_saved')
+      }
+      if (call.name === 'score_interview') {
+        const a = (call.args ?? {}) as { score?: number; summary?: string; keepPractising?: string[] }
+        const score = Math.max(1, Math.min(10, Math.round(a.score ?? 5)))
+        send(ws, {
+          type: 'interview.scored',
+          score,
+          summary: a.summary ?? '',
+          keepPractising: Array.isArray(a.keepPractising) ? a.keepPractising.slice(0, 3).map(String) : [],
+        })
+        logger.info({ score }, 'interview.scored')
       }
       responses.push({ id: call.id, name: call.name ?? 'report_item', response: { result: 'ok' } })
     }

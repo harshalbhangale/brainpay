@@ -13,21 +13,21 @@ export function OnboardChooser({ role, onVoice, onType }: { role: 'parent' | 'ki
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col justify-center p-6">
       <div className="mb-2 flex justify-center">
-        <span className="flex h-16 w-16 items-center justify-center rounded-3xl text-white" style={{ background: 'linear-gradient(135deg,#2bd98a,#0f9d58)' }}>
+        <span className="flex h-16 w-16 items-center justify-center rounded-3xl text-white glow-accent" style={{ backgroundImage: 'var(--grad-accent-bright)' }}>
           <Sparkles size={30} />
         </span>
       </div>
       <h1 className="text-center text-2xl font-extrabold text-ink">Let's set up your companion</h1>
       <p className="mx-auto mt-2 max-w-xs text-center text-muted">Mika just needs to get to know {who} — it takes about a minute.</p>
       <div className="mt-8 flex flex-col gap-3">
-        <button onClick={onVoice} className="flex items-center gap-3 rounded-2xl bg-accent p-4 text-left text-on-accent active:scale-[0.99]">
+        <button onClick={onVoice} className="press-lg sheen flex items-center gap-3 rounded-2xl p-4 text-left text-on-accent glow-accent" style={{ backgroundImage: 'var(--grad-accent-bright)' }}>
           <Mic size={22} />
           <span className="flex-1">
             <span className="block font-bold">Chat with Mika</span>
             <span className="block text-sm opacity-90">Just talk — she'll ask a few quick questions</span>
           </span>
         </button>
-        <button onClick={onType} className="flex items-center gap-3 rounded-2xl bg-surface p-4 text-left text-ink ring-1 ring-border active:scale-[0.99]">
+        <button onClick={onType} className="press grad-border flex items-center gap-3 rounded-2xl p-4 text-left text-ink" style={{ backgroundImage: 'var(--grad-card)' }}>
           <Keyboard size={22} className="text-muted" />
           <span className="flex-1">
             <span className="block font-bold">Type it in</span>
@@ -172,7 +172,7 @@ export function VoiceOnboarding({
         <VrmCompanion src={avatarSrc(avatar)} getLevel={() => playerRef.current?.getLevel() ?? 0} mood={mood} className="absolute inset-0" />
         {phase === 'done' && (
           <div className="absolute inset-x-0 bottom-6 flex flex-col items-center gap-2">
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent text-on-accent"><Check size={28} strokeWidth={3} /></span>
+            <span className="animate-scale-in flex h-14 w-14 items-center justify-center rounded-full text-on-accent glow-accent" style={{ backgroundImage: 'var(--grad-accent-bright)' }}><Check size={28} strokeWidth={3} /></span>
             <span className="font-bold">Nice to meet you!</span>
           </div>
         )}
@@ -191,8 +191,8 @@ export function VoiceOnboarding({
 
       {/* Mic */}
       <div className="flex items-center justify-center p-6">
-        <button onClick={toggleMic} className="flex flex-col items-center gap-1.5 active:scale-95">
-          <span className={`flex h-16 w-16 items-center justify-center rounded-full backdrop-blur ${micOn ? 'bg-accent text-on-accent' : 'border border-white/15 bg-black/60'}`}>
+        <button onClick={toggleMic} className="press-lg flex flex-col items-center gap-1.5">
+          <span className={`flex h-16 w-16 items-center justify-center rounded-full backdrop-blur ${micOn ? 'text-on-accent glow-accent' : 'border border-white/15 bg-black/60'}`} style={micOn ? { backgroundImage: 'var(--grad-accent-bright)' } : undefined}>
             {micOn ? <Mic size={26} /> : <MicOff size={26} />}
           </span>
           <span className="text-xs font-semibold text-white/80">{micOn ? 'Listening' : 'Muted'}</span>

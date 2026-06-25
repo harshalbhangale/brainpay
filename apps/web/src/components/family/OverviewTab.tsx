@@ -63,7 +63,7 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
 
   return (
     <div className="space-y-6 p-5">
-      <h1 className="text-3xl font-extrabold tracking-tight text-ink">{kidName(kid)}</h1>
+      <h1 className="animate-rise text-3xl font-extrabold tracking-tight text-ink">{kidName(kid)}</h1>
 
       <BalanceCard name={kidName(kid)} balance={kid.cachedBalance ?? 0} familyName={familyName} accountId={kid.accountId} />
 
@@ -79,14 +79,14 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
       </div>
 
       <section>
-        <SectionTitle action={<button onClick={() => onGoTab('activity')} className="text-sm font-bold text-accent">See all</button>}>
+        <SectionTitle action={<button onClick={() => onGoTab('activity')} className="press text-sm font-bold text-grad-accent">See all</button>}>
           Where they are
         </SectionTitle>
         <KidMapCard name={kidName(kid)} accountId={kid.accountId} location={kid.lastLocation} />
       </section>
 
       <section>
-        <SectionTitle action={<button onClick={() => onGoTab('activity')} className="text-sm font-bold text-accent">See all</button>}>
+        <SectionTitle action={<button onClick={() => onGoTab('activity')} className="press text-sm font-bold text-grad-accent">See all</button>}>
           Recent activity
         </SectionTitle>
         {entries.length === 0 ? (
@@ -133,7 +133,7 @@ function FamilyOverview({
 
   return (
     <div className="space-y-6 p-5">
-      <h1 className="text-3xl font-extrabold tracking-tight text-ink">Hi, {parentName}</h1>
+      <h1 className="animate-rise text-3xl font-extrabold tracking-tight text-ink">Hi, <span className="text-grad-accent">{parentName}</span></h1>
 
       <div className="flex justify-around">
         <ActionCircle Icon={Send} label="Send money" variant="filled" onClick={() => (kids[0] ? setTopupKid(kids[0]) : setAddKid(true))} />
@@ -159,7 +159,7 @@ function FamilyOverview({
       )}
 
       <section>
-        <SectionTitle action={<button onClick={() => setAddKid(true)} className="flex items-center gap-1 text-sm font-bold text-accent"><Plus size={15} /> Add kid</button>}>
+        <SectionTitle action={<button onClick={() => setAddKid(true)} className="press flex items-center gap-1 text-sm font-bold text-grad-accent"><Plus size={15} /> Add kid</button>}>
           Kids
         </SectionTitle>
 
@@ -176,7 +176,7 @@ function FamilyOverview({
                   <div className="truncate font-bold text-ink">{kidName(k)}</div>
                   <div className="text-sm text-muted">Tap to manage</div>
                 </div>
-                <div className="text-lg font-extrabold text-accent">{aud(k.cachedBalance)}</div>
+                <div className="text-lg font-extrabold text-grad-accent">{aud(k.cachedBalance)}</div>
               </Card>
               <KidMapCard name={kidName(k)} accountId={k.accountId} location={k.lastLocation} onClick={() => onSelectSubject({ kind: 'kid', accountId: k.accountId })} />
             </div>
@@ -217,5 +217,5 @@ function MiniEntry({ entry }: { entry: LedgerEntry }) {
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-muted ring-1 ring-border">{text}</p>
+  return <p className="grad-border rounded-2xl px-4 py-5 text-center text-sm text-muted" style={{ backgroundImage: 'var(--grad-card)' }}>{text}</p>
 }

@@ -1,51 +1,19 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { ProtectedRoute } from './components/ProtectedRoute'
-import { Login } from './screens/Login'
-import { RoleSelect } from './screens/RoleSelect'
-import { ParentOnboarding } from './screens/ParentOnboarding'
-import { KidOnboarding } from './screens/KidOnboarding'
-import { Home } from './screens/Home'
+import PayApp from './pay/PayApp'
 
 /**
- * Single-camera app: the only camera lives inside the PAL chat (point & ask
- * with health + budget popups). The old kid-section "Live scan" was removed.
+ * BrainPal — the light "Soft Light Premium" app is the main frame.
+ * ───────────────────────────────────────────────────────────────────────────
+ * PayApp is fully self-contained: it gates on auth (phone OTP → role → voice
+ * onboarding) and then renders the animated Pal switcher with the three real
+ * sections — AI (the multi-agent council + live camera), MoneyPal (real family
+ * banking), and StudyPal (real learning). It mounts at both `/` and `/pay`.
  */
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route
-        path="/role"
-        element={
-          <ProtectedRoute>
-            <RoleSelect />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/onboarding"
-        element={
-          <ProtectedRoute>
-            <ParentOnboarding />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/onboarding-kid"
-        element={
-          <ProtectedRoute>
-            <KidOnboarding />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Home />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/" element={<PayApp />} />
+      <Route path="/pay/*" element={<PayApp />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

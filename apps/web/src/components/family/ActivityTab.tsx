@@ -44,12 +44,12 @@ export function ActivityTab({ subject, members }: { subject: Subject; members: M
       )}
 
       <div className="flex flex-col gap-2.5">
-        {entries.map((e) => {
+        {entries.map((e, i) => {
           const { Icon, label } = describe(e)
           const positive = e.brainsDelta >= 0
           return (
-            <Card key={e.id} className="animate-msg-in flex items-center gap-3 px-4 py-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent-soft text-accent">
+            <Card key={e.id} className="animate-msg-in flex items-center gap-3 px-4 py-3" style={{ animationDelay: `${Math.min(i, 8) * 30}ms` } as React.CSSProperties}>
+              <span className="flex h-10 w-10 items-center justify-center rounded-full text-white" style={{ backgroundImage: positive ? 'var(--grad-accent-bright)' : 'var(--grad-violet)' }}>
                 <Icon size={18} />
               </span>
               <div className="min-w-0 flex-1">
@@ -59,7 +59,7 @@ export function ActivityTab({ subject, members }: { subject: Subject; members: M
                   {relativeTime(e.createdAt)}
                 </div>
               </div>
-              <div className={`text-sm font-bold ${positive ? 'text-accent' : 'text-danger'}`}>
+              <div className={`text-sm font-bold ${positive ? 'text-grad-accent' : 'text-danger'}`}>
                 {audSigned(e.brainsDelta)}
               </div>
             </Card>

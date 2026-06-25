@@ -27,7 +27,20 @@ const TAG_OUT_AUDIO = 0x04
 const TAG_OUT_MP3 = 0x05
 
 export type LiveRole = 'parent' | 'kid'
-export type LiveMode = 'assist' | 'shop' | 'onboard_parent' | 'onboard_kid'
+export type LiveMode = 'assist' | 'shop' | 'onboard_parent' | 'onboard_kid' | 'interview'
+
+/** Context for an `interview` session — the topic + concepts to probe. */
+export type InterviewContext = {
+  topicTitle: string
+  concepts: { front: string; back: string }[]
+  kidName?: string
+}
+
+export type InterviewScore = {
+  score: number
+  summary: string
+  keepPractising: string[]
+}
 
 export type LiveDetection = {
   detectionId: string
@@ -55,13 +68,14 @@ export type LiveRtHandlers = {
   onPalAudio?: (pcm: Int16Array) => void
   onPalAudioMp3?: (mp3: ArrayBuffer) => void
   onPersona?: (persona: Record<string, unknown>) => void
+  onInterviewScored?: (result: InterviewScore) => void
   onDetection?: (d: LiveDetection) => void
   onError?: (message: string) => void
   onClose?: () => void
 }
 
 export type LiveRtSocket = {
-  start: (role: LiveRole, mode: LiveMode, persona?: Record<string, unknown>) => void
+  start: (role: LiveRole, mode: LiveMode, persona?: Record<string, unknown>, interview?: InterviewContext, voice?: string) => void
   sendFrame: (jpeg: Uint8Array) => void
   sendMicPcm: (pcm: Int16Array) => void
   setMic: (on: boolean) => void
@@ -129,6 +143,13 @@ export function connectLiveRt(handlers: LiveRtHandlers, token?: string | null): 
       case 'persona.saved':
         handlers.onPersona?.((msg.persona as Record<string, unknown>) ?? {})
         break
+      case 'interview.scored':
+        handlers.onInterviewScored?.({
+          score: (msg.score as number) ?? 5,
+          summary: (msg.summary as string) ?? '',
+          keepPractising: Array.isArray(msg.keepPractising) ? (msg.keepPractising as string[]) : [],
+        })
+        break
       case 'error':
         handlers.onError?.((msg.message as string) ?? 'Live session error')
         break
@@ -140,7 +161,7 @@ export function connectLiveRt(handlers: LiveRtHandlers, token?: string | null): 
   }
 
   return {
-    start: (role, mode, persona) => sendJson({ type: 'session.start', role, mode, persona }),
+    start: (role, mode, persona, interview, voice) => sendJson({ type: 'session.start', role, mode, persona, interview, voice }),
     sendFrame: (jpeg) => {
       if (ws.readyState !== WebSocket.OPEN) return
       const out = new Uint8Array(1 + jpeg.length)

@@ -1,56 +1,83 @@
 @import "tailwindcss";
 
-/* Dark mode is class-driven: we toggle `.dark` on <html>. */
-@custom-variant dark (&:where(.dark, .dark *));
-
 /*
-  BrainPal design tokens — a clean, friendly, Greenlight-inspired system.
-  Light is the default; dark mirrors it. All values are runtime CSS variables
-  so the whole app re-themes instantly when `.dark` is toggled.
+  ════════════════════════════════════════════════════════════════════════
+  BrainPal — CRED-inspired dark design system
+  ════════════════════════════════════════════════════════════════════════
+  Dark-only. No light mode. Near-black canvas, layered charcoal surfaces,
+  hairline light-catching borders, a refined emerald accent, and gradients
+  used liberally. Motion is spring-based and tactile — every press responds.
+  All values are runtime CSS variables; tweak here, the whole app follows.
 */
 :root {
-  --canvas: #f3f7f4;      /* page background — soft green-white */
-  --surface: #ffffff;     /* cards */
-  --surface-2: #e9f0eb;   /* insets, chips, tracks */
-  --ink: #0e2419;         /* primary text — deep green-black */
-  --muted: #5f7268;       /* secondary text */
-  --accent: #12b76a;      /* brand green */
-  --accent-soft: #d6f3e3; /* tinted green fill */
-  --brand-deep: #0e3a2c;  /* deep forest green for primary circles */
-  --on-accent: #ffffff;   /* text on green */
-  --danger: #e5484d;
-  --warn: #f59e0b;
-  --border: #e2eae5;
-  --shadow: 16px 36px 64px -32px rgba(16, 60, 40, 0.22);
-}
+  color-scheme: dark;
 
-.dark {
-  --canvas: #0a120e;
-  --surface: #121d18;
-  --surface-2: #1d2a23;
-  --ink: #ecf3ee;
-  --muted: #8aa095;
-  --accent: #2be08a;
-  --accent-soft: #14271e;
-  --brand-deep: #0c3325;
-  --on-accent: #062014;
-  --danger: #ff6b6b;
-  --warn: #fbbf24;
-  --border: #243029;
-  --shadow: 16px 36px 64px -32px rgba(0, 0, 0, 0.6);
+  /* ── Surfaces (near-black → charcoal, layered for depth) ── */
+  --canvas: #07090e;       /* page background — deep blue-black */
+  --canvas-2: #0b0e15;     /* subtle alt background for sheets */
+  --surface: #11141d;      /* primary cards */
+  --surface-2: #181c28;    /* insets, chips, tracks */
+  --surface-3: #20253420;  /* faint elevated wash */
+
+  /* ── Text ── */
+  --ink: #f4f6fb;          /* primary text — near white */
+  --muted: #8b93a7;        /* secondary text */
+  --faint: #565d70;        /* tertiary / disabled */
+
+  /* ── Accent (refined emerald) + its gradient stops ── */
+  --accent: #2bd98a;
+  --accent-2: #19a978;     /* deeper emerald for gradient end */
+  --accent-soft: #122a22;  /* tinted fill on dark */
+  --on-accent: #04130c;    /* text on accent */
+
+  /* ── Metallic / premium gradient family (CRED signature) ── */
+  --gold: #e9c98c;
+  --gold-2: #b8893f;
+  --violet: #8b7cff;
+  --violet-2: #5b4bd6;
+  --cyan: #5ad7ff;
+  --pink: #ff7eb6;
+
+  /* ── Semantic ── */
+  --danger: #ff5d6c;
+  --warn: #f5b544;
+
+  /* ── Lines & glass ── */
+  --border: #ffffff14;     /* hairline that catches light */
+  --border-strong: #ffffff24;
+  --glass: #ffffff08;      /* frosted overlay tint */
+
+  /* ── Brand gradients (use these everywhere) ── */
+  --grad-accent: linear-gradient(135deg, #2bd98a 0%, #12b06a 100%);
+  --grad-accent-bright: linear-gradient(135deg, #5cf9c0 0%, #1fb877 60%, #0e8f63 100%);
+  --grad-gold: linear-gradient(135deg, #f6dca6 0%, #d6a55a 45%, #9c6e2e 100%);
+  --grad-violet: linear-gradient(135deg, #a99bff 0%, #6f5cf0 55%, #4b39c4 100%);
+  --grad-aurora: linear-gradient(120deg, #2bd98a 0%, #5ad7ff 38%, #8b7cff 72%, #ff7eb6 100%);
+  --grad-ink: linear-gradient(180deg, #1a1f2c 0%, #0d1017 100%);
+  --grad-card: linear-gradient(160deg, #161b27 0%, #0e121b 100%);
+
+  /* ── Shadows / glows ── */
+  --shadow-soft: 0 1px 2px rgba(0,0,0,0.5), 0 18px 40px -18px rgba(0,0,0,0.7);
+  --shadow-pop: 0 2px 6px rgba(0,0,0,0.55), 0 28px 60px -20px rgba(0,0,0,0.8);
+  --glow-accent: 0 0 0 1px rgba(43,217,138,0.25), 0 10px 36px -8px rgba(43,217,138,0.45);
+  --glow-violet: 0 10px 36px -8px rgba(123,108,255,0.5);
 }
 
 /* Map semantic tokens to Tailwind color utilities (bg-canvas, text-ink, …). */
 @theme inline {
   --color-canvas: var(--canvas);
+  --color-canvas2: var(--canvas-2);
   --color-surface: var(--surface);
   --color-surface2: var(--surface-2);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-accent: var(--accent);
+  --color-accent2: var(--accent-2);
   --color-accent-soft: var(--accent-soft);
-  --color-brand-deep: var(--brand-deep);
   --color-on-accent: var(--on-accent);
+  --color-gold: var(--gold);
+  --color-violet: var(--violet);
   --color-danger: var(--danger);
   --color-warn: var(--warn);
   --color-border: var(--border);
@@ -68,16 +95,15 @@ body,
 body {
   margin: 0;
   background-color: var(--canvas);
+  /* Subtle aurora wash so the black is never flat. */
+  background-image:
+    radial-gradient(1200px 600px at 12% -10%, rgba(43,217,138,0.10), transparent 60%),
+    radial-gradient(1000px 560px at 110% 8%, rgba(123,108,255,0.10), transparent 55%);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-}
-
-/* Smooth, subtle theme transition. */
-body,
-.theme-tween {
-  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
 }
 
 button {
@@ -85,97 +111,252 @@ button {
 }
 
 /* Hide scrollbars on the swipeable pane container */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   GRADIENT + GLASS UTILITIES
+   ════════════════════════════════════════════════════════════════════════ */
+
+.bg-grad-accent { background-image: var(--grad-accent); }
+.bg-grad-accent-bright { background-image: var(--grad-accent-bright); }
+.bg-grad-gold { background-image: var(--grad-gold); }
+.bg-grad-violet { background-image: var(--grad-violet); }
+.bg-grad-aurora { background-image: var(--grad-aurora); }
+.bg-grad-card { background-image: var(--grad-card); }
+
+/* Gradient text */
+.text-grad-accent {
+  background: var(--grad-accent-bright);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
 }
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+.text-grad-aurora {
+  background: var(--grad-aurora);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+.text-grad-gold {
+  background: var(--grad-gold);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+.text-grad-violet {
+  background: var(--grad-violet);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
 }
 
-/* ── Tasteful motion (restraint over flash) ──────────────────────────── */
+/* Frosted glass surface */
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid var(--border);
+}
+
+/* Gradient hairline border via mask (the CRED card edge) */
+.grad-border {
+  position: relative;
+  background: var(--grad-card);
+  border-radius: inherit;
+}
+.grad-border::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(150deg, rgba(255,255,255,0.22), rgba(255,255,255,0.02) 40%, rgba(43,217,138,0.18));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
+}
+
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-pop { box-shadow: var(--shadow-pop); }
+.glow-accent { box-shadow: var(--glow-accent); }
+.glow-violet { box-shadow: var(--glow-violet); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   TACTILE PRESS SYSTEM — proper spring motion on every interaction
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Base interactive element: springy scale + lift. */
+.press {
+  transition:
+    transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.3s ease,
+    filter 0.3s ease;
+  will-change: transform;
+}
+.press:hover { transform: translateY(-1px); }
+.press:active {
+  transform: scale(0.955);
+  transition: transform 0.08s ease-out;
+}
+
+/* Stronger spring for hero / primary CTAs. */
+.press-lg {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, filter 0.3s ease;
+  will-change: transform;
+}
+.press-lg:hover { transform: translateY(-2px); filter: brightness(1.04); }
+.press-lg:active {
+  transform: scale(0.94);
+  transition: transform 0.09s ease-out;
+}
+
+/* Moving sheen across gradient buttons (premium light sweep). */
+.sheen { position: relative; overflow: hidden; isolation: isolate; }
+.sheen::after {
+  content: "";
+  position: absolute; top: 0; left: -150%;
+  width: 60%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.35), transparent);
+  transform: skewX(-18deg);
+  transition: none;
+  pointer-events: none;
+}
+.sheen:hover::after { animation: sheen-sweep 0.9s ease; }
+@keyframes sheen-sweep {
+  0% { left: -150%; }
+  100% { left: 150%; }
+}
+
+/* Ripple burst on press — attach .ripple, set --rx/--ry from JS for origin. */
+.ripple { position: relative; overflow: hidden; }
+.ripple::after {
+  content: "";
+  position: absolute;
+  left: var(--rx, 50%); top: var(--ry, 50%);
+  width: 8px; height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.4);
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  pointer-events: none;
+}
+.ripple:active::after {
+  animation: ripple-burst 0.6s ease-out;
+}
+@keyframes ripple-burst {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0.55; }
+  100% { transform: translate(-50%, -50%) scale(34); opacity: 0; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ENTRANCE + AMBIENT MOTION
+   ════════════════════════════════════════════════════════════════════════ */
 
 @keyframes msg-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.animate-msg-in {
-  animation: msg-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
+.animate-msg-in { animation: msg-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 @keyframes rise-in {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-rise {
-  animation: rise-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+.animate-rise { animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes pop-in {
+  0% { opacity: 0; transform: translateY(10px) scale(0.94); }
+  60% { transform: translateY(-2px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+.animate-pop-in { animation: pop-in 0.44s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+@keyframes scale-in {
+  0% { opacity: 0; transform: scale(0.8); }
+  60% { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-scale-in { animation: scale-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
 @keyframes dot-bounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
   40% { transform: translateY(-4px); opacity: 1; }
 }
-.dot {
-  animation: dot-bounce 1.2s infinite ease-in-out;
-}
+.dot { animation: dot-bounce 1.2s infinite ease-in-out; }
 
 @keyframes confer-pulse {
   0% { transform: scale(0.85); opacity: 0.7; }
   50% { transform: scale(1.1); opacity: 0.3; }
   100% { transform: scale(0.85); opacity: 0.7; }
 }
-.animate-confer {
-  animation: confer-pulse 1.4s infinite ease-in-out;
+.animate-confer { animation: confer-pulse 1.4s infinite ease-in-out; }
+
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+.animate-spin-slow { animation: spin-slow 9s linear infinite; }
+
+/* Ambient gradient drift for hero backgrounds. */
+@keyframes aurora-drift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-aurora {
+  background-size: 200% 200%;
+  animation: aurora-drift 12s ease infinite;
 }
 
-@keyframes pop-in {
-  0% { opacity: 0; transform: translateY(8px) scale(0.96); }
-  60% { transform: translateY(-1px) scale(1.01); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+/* Soft breathing glow for orbs / live indicators. */
+@keyframes glow-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.06); }
 }
-.animate-pop-in {
-  animation: pop-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+.animate-glow { animation: glow-breathe 2.8s ease-in-out infinite; }
+
+/* Gentle vertical float — for hero avatars / idle characters. */
+@keyframes float-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.animate-float { animation: float-soft 4s ease-in-out infinite; }
+
+/* Expanding "listening" rings around the live mic. */
+@keyframes listen-ring {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+.animate-listen::before,
+.animate-listen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 2px solid var(--accent);
+  animation: listen-ring 1.8s ease-out infinite;
+}
+.animate-listen::after { animation-delay: 0.9s; }
+
+/* Live transcript line wipe-in. */
+@keyframes line-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-line-in { animation: line-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Bookmark pop when saved. */
+@keyframes bookmark-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.animate-bookmark { animation: bookmark-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* Shimmer for skeletons. */
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+.shimmer { position: relative; overflow: hidden; }
+.shimmer::after {
+  content: ""; position: absolute; inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  animation: shimmer 1.4s infinite;
 }
 
-@keyframes spin-slow {
-  to { transform: rotate(360deg); }
-}
-.animate-spin-slow {
-  animation: spin-slow 9s linear infinite;
-}
-
-/* ── Soft elevation + playful tilt (design system) ───────────────────── */
-.shadow-soft {
-  box-shadow: 0 1px 2px rgba(11, 40, 28, 0.06), 0 8px 24px -10px rgba(11, 40, 28, 0.18);
-}
-.dark .shadow-soft {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -12px rgba(0, 0, 0, 0.55);
-}
-.shadow-pop {
-  box-shadow: 0 2px 4px rgba(11, 40, 28, 0.08), 0 18px 40px -16px rgba(11, 40, 28, 0.26);
-}
-.dark .shadow-pop {
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5), 0 20px 44px -16px rgba(0, 0, 0, 0.65);
-}
-.press {
-  transition: transform 0.12s ease, box-shadow 0.2s ease;
-}
-.press:active {
-  transform: scale(0.975);
-}
-
-/* Respect reduced-motion preferences. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* ─── StudyPal celebration animations ─────────────────────────────── */
+/* ─── Celebration ─────────────────────────────────────────────────── */
 @keyframes trophyPop {
   0%   { transform: scale(0) rotate(-30deg); opacity: 0; }
   60%  { transform: scale(1.15) rotate(8deg); opacity: 1; }
@@ -183,14 +364,17 @@ button {
 }
 .animate-trophy { animation: trophyPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
-@keyframes riseIn {
-  0%   { transform: translateY(16px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
-}
-.animate-rise { animation: riseIn 0.5s ease-out both; }
-
 @keyframes confettiFall {
   0%   { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
   100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
 }
 .animate-confetti { animation: confettiFall linear forwards; }
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

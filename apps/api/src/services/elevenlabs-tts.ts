@@ -26,8 +26,9 @@ export async function streamTts(
   text: string,
   onChunk: (mp3: Buffer) => void,
   signal: AbortSignal,
+  voiceIdOverride?: string,
 ): Promise<void> {
-  const voiceId = env.ELEVENLABS_COMPANION_VOICE_ID || env.ELEVENLABS_VOICE_ID
+  const voiceId = voiceIdOverride || env.ELEVENLABS_COMPANION_VOICE_ID || env.ELEVENLABS_VOICE_ID
   const url =
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream` +
     `?output_format=mp3_22050_32&optimize_streaming_latency=3`

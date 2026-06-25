@@ -4,16 +4,14 @@ import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../lib/liv
 import { startCamera, captureJpeg, type CameraHandle } from '../lib/camera'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../lib/liveAudio'
 import { avatarSrc, useAvatar } from '../lib/avatar'
+import { getVoiceKey } from '../lib/voicePrefs'
 import { appendVoiceLines } from '../lib/voiceHistory'
-import { Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ShoppingBag, ZoomIn, ZoomOut, ChevronUp, ChevronDown, GripHorizontal, ShoppingCart, Plus, Check, Trash2, X } from 'lucide-react'
+import { Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ZoomIn, ZoomOut, ChevronUp, ChevronDown, ShoppingCart, Plus, Check, Trash2, X, Sparkles, PhoneOff } from 'lucide-react'
 import { VrmCompanion, type CompanionMood } from './VrmCompanion'
 
 const FRAME_INTERVAL_MS = 1000
 const FRAME_MAX_WIDTH = 480
 const MAX_ZOOM = 4
-const COMP_W = 240
-const COMP_H = 360
-const POS_KEY = 'brainpal.companionPos'
 
 type Phase = 'connecting' | 'live' | 'error' | 'no_permission'
 type Line = { id: number; role: 'you' | 'mika'; text: string }
@@ -42,6 +40,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [realZoom, setRealZoom] = useState(false)
+  const [showAvatar, setShowAvatar] = useState(true)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -56,40 +55,6 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   const cancelledRef = useRef(false)
   const inFlightRef = useRef(false)
   const zoomRef = useRef(1)
-
-  // ── Draggable companion position ────────────────────────────────────
-  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
-    try {
-      const raw = localStorage.getItem(POS_KEY)
-      if (raw) return JSON.parse(raw)
-    } catch {
-      /* ignore */
-    }
-    const w = typeof window !== 'undefined' ? window.innerWidth : 390
-    const h = typeof window !== 'undefined' ? window.innerHeight : 780
-    return { x: (w - COMP_W) / 2, y: h - COMP_H - 150 }
-  })
-  const dragRef = useRef<{ dx: number; dy: number } | null>(null)
-
-  function onDragStart(e: React.PointerEvent) {
-    e.currentTarget.setPointerCapture(e.pointerId)
-    dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }
-  }
-  function onDragMove(e: React.PointerEvent) {
-    if (!dragRef.current) return
-    const x = Math.max(0, Math.min(window.innerWidth - COMP_W, e.clientX - dragRef.current.dx))
-    const y = Math.max(60, Math.min(window.innerHeight - 120, e.clientY - dragRef.current.dy))
-    setPos({ x, y })
-  }
-  function onDragEnd() {
-    if (!dragRef.current) return
-    dragRef.current = null
-    try {
-      localStorage.setItem(POS_KEY, JSON.stringify(pos))
-    } catch {
-      /* ignore */
-    }
-  }
 
   // ── Connect on mount ────────────────────────────────────────────────
   useEffect(() => {
@@ -129,7 +94,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
               name: p.name, age: p.age, interests: p.interests,
               savingGoal: p.savingGoal ?? p.saving_goal, spend_style: p.spend_style,
             }
-            sock.start(role, mode, persona)
+            sock.start(role, mode, persona, undefined, getVoiceKey())
             setPhase('live')
           },
           onUserTranscript: (t) => {
@@ -316,33 +281,33 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
         <div className="absolute inset-0 bg-gradient-to-b from-[#06100d] to-[#0b0b0f]" />
       )}
 
-      {/* Draggable companion */}
-      <div
-        onPointerDown={onDragStart}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragEnd}
-        className="absolute z-20 touch-none select-none"
-        style={{ left: pos.x, top: pos.y, width: COMP_W, height: COMP_H, cursor: 'grab' }}
-      >
-        <VrmCompanion
-          src={avatarSrc(avatar)}
-          getLevel={() => playerRef.current?.getLevel() ?? 0}
-          mood={companionMood}
-          className="h-full w-full"
-        />
-        <div className="pointer-events-none absolute left-1/2 top-1 -translate-x-1/2 rounded-full bg-black/40 px-2 py-0.5 text-white/70 backdrop-blur">
-          <GripHorizontal size={14} />
+      {/* Avatar stage — big & centered by default (bottom-center over camera) */}
+      {showAvatar && (
+        <div className={withCamera ? 'pointer-events-none absolute inset-x-0 bottom-24 z-20 flex justify-center' : 'pointer-events-none absolute inset-0 z-20 flex items-center justify-center'}>
+          <div
+            className="relative"
+            style={withCamera ? { width: 300, height: 430 } : { width: 'min(86vw, 380px)', height: 'min(66vh, 560px)' }}
+          >
+            <div className="pointer-events-none absolute left-1/2 top-1/2 h-3/5 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-grad-aurora opacity-25 blur-[80px]" />
+            <VrmCompanion
+              src={avatarSrc(avatar)}
+              getLevel={() => playerRef.current?.getLevel() ?? 0}
+              mood={companionMood}
+              className="relative h-full w-full"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Top bar */}
       <div className="relative z-30 flex items-center gap-3 p-4">
         <div
           className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-extrabold tracking-wide backdrop-blur ${
-            phase === 'live' ? 'bg-accent text-on-accent' : 'bg-black/60 text-ink'
+            phase === 'live' ? 'text-on-accent glow-accent' : 'bg-black/60 text-ink'
           }`}
+          style={phase === 'live' ? { backgroundImage: 'var(--grad-accent-bright)' } : undefined}
         >
-          {phase === 'live' && <span className="h-2 w-2 rounded-full bg-black" />}
+          {phase === 'live' && <span className="h-2 w-2 rounded-full bg-black/70 animate-glow" />}
           {statusLabel}
         </div>
         <div className="font-bold drop-shadow">{title}</div>
@@ -351,13 +316,15 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
           <div className="flex rounded-full bg-black/60 p-1 backdrop-blur">
             <button
               onClick={() => { if (mode !== 'assist') { setMode('assist'); setPhase('connecting'); setDetections([]) } }}
-              className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${mode === 'assist' ? 'bg-accent text-on-accent' : 'text-white/70'}`}
+              className={`press rounded-full px-3 py-1.5 text-xs font-bold ${mode === 'assist' ? 'text-on-accent' : 'text-white/70'}`}
+              style={mode === 'assist' ? { backgroundImage: 'var(--grad-accent-bright)' } : undefined}
             >
               Ask
             </button>
             <button
               onClick={() => { if (mode !== 'shop') { setMode('shop'); setPhase('connecting'); setDetections([]) } }}
-              className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${mode === 'shop' ? 'bg-accent text-on-accent' : 'text-white/70'}`}
+              className={`press rounded-full px-3 py-1.5 text-xs font-bold ${mode === 'shop' ? 'text-on-accent' : 'text-white/70'}`}
+              style={mode === 'shop' ? { backgroundImage: 'var(--grad-accent-bright)' } : undefined}
             >
               🛒 Shop
             </button>
@@ -366,12 +333,12 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
         {withCamera && (
           <button
             onClick={() => setSheet('cart')}
-            className="relative flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-2 text-sm font-bold text-ink backdrop-blur active:scale-95"
+            className="press relative flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-2 text-sm font-bold text-ink backdrop-blur"
             aria-label="Cart"
           >
             <ShoppingCart size={16} />
             {cart.length > 0 && (
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-extrabold text-on-accent">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-extrabold text-on-accent" style={{ backgroundImage: 'var(--grad-accent-bright)' }}>
                 {cart.length}
               </span>
             )}
@@ -380,7 +347,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
         <button
           onClick={onClose}
           aria-label="Close"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-ink backdrop-blur active:scale-95"
+          className="press flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-ink backdrop-blur"
         >
           <IconX />
         </button>
@@ -415,9 +382,9 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
 
       {/* Permission / error */}
       {(phase === 'no_permission' || phase === 'error') && (
-        <div className="relative z-30 mx-auto mt-6 max-w-xs rounded-2xl bg-surface/90 p-4 text-center backdrop-blur">
+        <div className="animate-pop-in grad-border relative z-30 mx-auto mt-6 max-w-xs rounded-2xl p-4 text-center backdrop-blur" style={{ backgroundImage: 'var(--grad-card)' }}>
           <div className="text-sm text-ink">{error ?? 'Something went wrong.'}</div>
-          <button onClick={onClose} className="mt-3 rounded-full bg-accent px-5 py-2 text-sm font-bold text-on-accent active:scale-95">
+          <button onClick={onClose} className="press mt-3 rounded-full px-5 py-2 text-sm font-bold text-on-accent glow-accent" style={{ backgroundImage: 'var(--grad-accent-bright)' }}>
             Close
           </button>
         </div>
@@ -509,14 +476,23 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
         <CartSheet cart={cart} total={cartTotal} onRemove={toggleCart} onClose={() => setSheet('none')} />
       )}
 
-      {/* Controls */}
-      <div className="relative z-30 flex items-center justify-center gap-5 p-6">
+      {/* Controls — call-style bar */}
+      <div className="relative z-30 flex items-center justify-center gap-4 px-6 pb-7 pt-3">
+        <ControlButton active={showAvatar} onClick={() => setShowAvatar((v) => !v)} label={showAvatar ? 'Avatar' : 'Hidden'}>
+          <Sparkles size={24} strokeWidth={2.2} />
+        </ControlButton>
         <ControlButton active={micOn} onClick={toggleMic} label={micOn ? 'Mic on' : 'Muted'}>
           {micOn ? <IconMic /> : <IconMicOff />}
         </ControlButton>
         <ControlButton active={speakerOn} onClick={toggleSpeaker} label={speakerOn ? 'Sound on' : 'Silent'}>
           {speakerOn ? <IconVolume /> : <IconVolumeOff />}
         </ControlButton>
+        <button onClick={onClose} aria-label="End session" className="press-lg flex flex-col items-center gap-1.5">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full text-white" style={{ background: 'var(--danger)', boxShadow: '0 12px 30px -8px rgba(255,93,108,0.65)' }}>
+            <PhoneOff size={24} strokeWidth={2.4} />
+          </span>
+          <span className="text-xs font-semibold text-white/80">End</span>
+        </button>
       </div>
     </div>
   )
@@ -524,8 +500,8 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
 
 function ControlButton({ active, onClick, label, children }: { active: boolean; onClick: () => void; label: string; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className="flex flex-col items-center gap-1.5 active:scale-95">
-      <span className={`flex h-16 w-16 items-center justify-center rounded-full backdrop-blur ${active ? 'bg-accent text-on-accent' : 'border border-white/15 bg-black/60 text-ink'}`}>
+    <button onClick={onClick} className="press-lg flex flex-col items-center gap-1.5">
+      <span className={`flex h-16 w-16 items-center justify-center rounded-full backdrop-blur ${active ? 'text-on-accent glow-accent' : 'border border-white/15 bg-black/60 text-ink'}`} style={active ? { backgroundImage: 'var(--grad-accent-bright)' } : undefined}>
         {children}
       </span>
       <span className="text-xs font-semibold text-white/80">{label}</span>
@@ -587,8 +563,8 @@ function ExpandedCard({ d, inCart, onAdd, onDismiss, onClose }: { d: LiveDetecti
   const good = d.verdict === 'great'
   return (
     <div className="absolute inset-0 z-40 flex items-end justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50" />
-      <div onClick={(e) => e.stopPropagation()} className="animate-rise relative w-full max-w-md rounded-t-3xl bg-surface p-5 pb-8 text-ink" style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div onClick={(e) => e.stopPropagation()} className="animate-rise grad-border relative w-full max-w-md rounded-t-3xl p-5 pb-8 text-ink shadow-pop" style={{ backgroundImage: 'var(--grad-card)', paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}>
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-surface2" />
         <div className="flex items-start gap-3">
           <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white" style={{ background: v.color }}>
@@ -625,14 +601,15 @@ function ExpandedCard({ d, inCart, onAdd, onDismiss, onClose }: { d: LiveDetecti
         )}
 
         <div className="mt-4 flex gap-2">
-          <button onClick={onDismiss} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-surface2 py-3.5 text-sm font-bold text-ink active:scale-[0.99]">
+          <button onClick={onDismiss} className="press glass flex flex-1 items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold text-ink">
             <X size={16} /> Skip
           </button>
           <button
             onClick={onAdd}
-            className={`flex flex-[1.4] items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold active:scale-[0.99] ${
-              inCart ? 'bg-surface2 text-ink' : good ? 'bg-accent text-on-accent' : 'bg-warn/20 text-warn'
+            className={`press flex flex-[1.4] items-center justify-center gap-2 rounded-full py-3.5 text-sm font-bold ${
+              inCart ? 'glass text-ink' : good ? 'text-on-accent glow-accent' : 'bg-warn/20 text-warn'
             }`}
+            style={!inCart && good ? { backgroundImage: 'var(--grad-accent-bright)' } : undefined}
           >
             <Plus size={16} /> {good ? 'Add to cart' : 'Add anyway'}
           </button>
@@ -664,16 +641,16 @@ function CartSheet({ cart, total, onRemove, onClose }: { cart: LiveDetection[]; 
   }
   return (
     <div className="absolute inset-0 z-40 flex items-end justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50" />
-      <div onClick={(e) => e.stopPropagation()} className="animate-rise relative w-full max-w-md rounded-t-3xl bg-surface p-5 text-ink" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div onClick={(e) => e.stopPropagation()} className="animate-rise grad-border relative w-full max-w-md rounded-t-3xl p-5 text-ink shadow-pop" style={{ backgroundImage: 'var(--grad-card)', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-surface2" />
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-lg font-extrabold">Your cart</h3>
-          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-surface2 text-muted"><X size={16} /></button>
+          <button onClick={onClose} className="press glass flex h-8 w-8 items-center justify-center rounded-full text-muted"><X size={16} /></button>
         </div>
         {done ? (
           <div className="py-10 text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-on-accent"><Check size={28} strokeWidth={3} /></div>
+            <div className="animate-scale-in mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-on-accent glow-accent" style={{ backgroundImage: 'var(--grad-accent-bright)' }}><Check size={28} strokeWidth={3} /></div>
             <div className="font-bold">Paid! Great choices 🎉</div>
           </div>
         ) : cart.length === 0 ? (
@@ -697,7 +674,7 @@ function CartSheet({ cart, total, onRemove, onClose }: { cart: LiveDetection[]; 
               <span className="text-sm font-semibold text-muted">Health points</span>
               <span className="text-lg font-extrabold" style={{ color: total >= 0 ? 'var(--color-accent)' : 'var(--color-danger)' }}>{pts(total)}</span>
             </div>
-            <button onClick={checkout} className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-ink py-3.5 font-bold text-canvas active:scale-[0.99]">
+            <button onClick={checkout} className="press-lg sheen mt-3 flex w-full items-center justify-center gap-2 rounded-full py-3.5 font-extrabold text-on-accent glow-accent" style={{ backgroundImage: 'var(--grad-accent-bright)' }}>
                Pay
             </button>
           </>

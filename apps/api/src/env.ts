@@ -57,16 +57,12 @@ const EnvSchema = z.object({
   GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default('global'),
   // Vertex AI service-account key as a JSON string. When set, the Live API
-  // authenticates to Vertex with this key (keyless ADC isn't available on
-  // Fargate). Takes priority over GEMINI_API_KEY.
+  // authenticates to Vertex with this key (e.g. on Fargate where ADC isn't
+  // available). Otherwise ADC is used. The Gemini Developer API is never used.
   GOOGLE_SA_JSON: z.string().min(1).optional(),
   GEMINI_LIVE_MODEL: z.string().default('gemini-live-2.5-flash'),
   // Companion voice — a Gemini prebuilt voice. "Leda" is youthful/sweet.
   GEMINI_LIVE_VOICE: z.string().default('Leda'),
-  // Gemini Developer API key. When set, the Live API uses this instead of
-  // Vertex AI/ADC — required for Fargate, which has no GCP credentials.
-  GEMINI_API_KEY: z.string().min(1).optional(),
-  GEMINI_LIVE_MODEL_DEV: z.string().default('gemini-2.0-flash-live-001'),
   VERTEX_LIVE_ENABLED: z
     .string()
     .default('true')
@@ -87,6 +83,8 @@ const EnvSchema = z.object({
   // Companion (Mika) voice: when COMPANION_VOICE_PROVIDER='elevenlabs', the live
   // camera/voice routes Gemini's TEXT through ElevenLabs TTS using this voice.
   ELEVENLABS_COMPANION_VOICE_ID: z.string().min(1).optional(),
+  // Study tutor (interview) voice — warm/encouraging. Falls back to companion voice.
+  ELEVENLABS_TUTOR_VOICE_ID: z.string().min(1).optional(),
   ELEVENLABS_TTS_MODEL: z.string().default('eleven_flash_v2_5'),
   COMPANION_VOICE_PROVIDER: z.enum(['gemini', 'elevenlabs']).default('gemini'),
 
@@ -97,9 +95,38 @@ const EnvSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_MERCHANT_ID: z.string().default('merchant.com.brainpal.pay'),
 
+  // Tavus — conversational video tutor (StudyPal interviews).
+  // Server-side only. When TAVUS_API_KEY is unset, the interview falls back to
+  // the legacy Gemini-Live voice tutor so nothing dead-ends.
+  TAVUS_API_KEY: z.string().min(1).optional(),
+  // Optional explicit ids; when unset we auto-pick a stock replica and
+  // lazily create + cache the StudyPal Tutor persona on first use.
+  TAVUS_REPLICA_ID: z.string().min(1).optional(),
+  TAVUS_PERSONA_ID: z.string().min(1).optional(),
+  // Optional TTS voice override for the tutor (Cartesia/ElevenLabs voice id).
+  TAVUS_TUTOR_VOICE_ID: z.string().min(1).optional(),
+  // Shared secret appended to the webhook callback url (?key=) to authenticate
+  // Tavus → our /study/tavus/webhook calls.
+  TAVUS_WEBHOOK_SECRET: z.string().min(1).optional(),
+
+  // Internal cron secret — guards unauthenticated cron endpoints
+  // (e.g. POST /study/nudge-check) via the x-cron-key header.
+  CRON_SECRET: z.string().min(1).optional(),
+
   // Observability (optional in dev)
   SENTRY_DSN_API: z.string().url().optional().or(z.literal('')),
 })
+  .superRefine((env, ctx) => {
+    // CRON_SECRET must be set in production — the cron endpoints are
+    // unauthenticated apart from this header.
+    if (env.NODE_ENV === 'production' && !env.CRON_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CRON_SECRET'],
+        message: 'CRON_SECRET is required in production',
+      })
+    }
+  })
 
 export type Env = z.infer<typeof EnvSchema>
 

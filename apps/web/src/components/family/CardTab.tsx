@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, type LucideIcon } from 'lucide-react'
 import { useCardSettings } from '../../lib/card'
-import { Card, SectionTitle } from '../ui'
+import { Card, SectionTitle, PressButton } from '../ui'
 import { aud } from '../../lib/format'
 import { PaymentCard } from './PaymentCard'
 import { kidName, type Member, type Subject } from './types'
@@ -34,29 +34,30 @@ export function CardTab({
       <PaymentCard name={name} accountId={accountId} frozen={settings.frozen} revealed={revealed} />
 
       <div className="flex gap-3">
-        <button
+        <PressButton
           onClick={() => setRevealed((v) => !v)}
-          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-surface2 py-3 text-sm font-bold text-ink active:scale-[0.98]"
+          className="glass flex flex-1 items-center justify-center gap-2 rounded-full py-3 text-sm font-bold text-ink"
         >
           {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
           {revealed ? 'Hide details' : 'Show number'}
-        </button>
-        <button
+        </PressButton>
+        <PressButton
           onClick={() => update({ frozen: !settings.frozen })}
-          className={`flex flex-1 items-center justify-center gap-2 rounded-full py-3 text-sm font-bold active:scale-[0.98] ${
-            settings.frozen ? 'bg-accent text-on-accent' : 'bg-surface2 text-ink'
+          className={`flex flex-1 items-center justify-center gap-2 rounded-full py-3 text-sm font-bold ${
+            settings.frozen ? 'text-on-accent glow-accent' : 'glass text-ink'
           }`}
+          style={settings.frozen ? { backgroundImage: 'var(--grad-accent-bright)' } : undefined}
         >
           <Snowflake size={16} />
           {settings.frozen ? 'Unfreeze' : 'Freeze card'}
-        </button>
+        </PressButton>
       </div>
 
       {/* Status */}
       <Card className="flex items-center gap-3 p-4">
         <span
           className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: settings.frozen ? 'var(--color-danger)' : 'var(--color-accent)' }}
+          style={{ backgroundColor: settings.frozen ? 'var(--color-danger)' : 'var(--color-accent)', boxShadow: settings.frozen ? '0 0 8px var(--danger)' : '0 0 8px var(--accent)' }}
         />
         <span className="text-sm font-semibold text-ink">
           {settings.frozen ? 'Card is frozen' : 'Card is active'}
@@ -66,7 +67,7 @@ export function CardTab({
       {/* Controls */}
       <section>
         <SectionTitle>Controls</SectionTitle>
-        <Card className="divide-y divide-border overflow-hidden">
+        <Card className="divide-y divide-[var(--border)] overflow-hidden">
           <ToggleRow
             Icon={Globe}
             label="Online payments"
@@ -96,31 +97,31 @@ export function CardTab({
               <span className="text-sm font-medium text-ink">Daily spend limit</span>
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <PressButton
                 onClick={() => update({ dailyLimit: Math.max(0, settings.dailyLimit - 10) })}
-                className="h-7 w-7 rounded-full bg-surface2 font-bold text-ink"
+                className="glass h-7 w-7 rounded-full font-bold text-ink"
               >
                 −
-              </button>
-              <span className="w-16 text-right text-sm font-bold text-ink">{aud(settings.dailyLimit)}</span>
-              <button
+              </PressButton>
+              <span className="w-16 text-right text-sm font-bold text-grad-accent">{aud(settings.dailyLimit)}</span>
+              <PressButton
                 onClick={() => update({ dailyLimit: settings.dailyLimit + 10 })}
-                className="h-7 w-7 rounded-full bg-surface2 font-bold text-ink"
+                className="glass h-7 w-7 rounded-full font-bold text-ink"
               >
                 +
-              </button>
+              </PressButton>
             </div>
           </div>
         </Card>
       </section>
 
-      <button
+      <PressButton
         onClick={() => update({ frozen: true })}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-danger/10 py-3.5 text-sm font-bold text-danger active:scale-[0.99]"
+        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-danger/10 py-3.5 text-sm font-bold text-danger ring-1 ring-danger/20"
       >
         <ShieldAlert size={16} />
         Report lost or stolen
-      </button>
+      </PressButton>
     </div>
   )
 }
@@ -148,12 +149,12 @@ function ToggleRow({
       <button
         onClick={() => !disabled && onToggle()}
         disabled={disabled}
-        className="relative h-6 w-11 rounded-full transition"
-        style={{ backgroundColor: effectiveOn ? '#3ddc84' : '#3a3a45' }}
+        className="relative h-6 w-11 rounded-full transition-all duration-300"
+        style={{ backgroundImage: effectiveOn ? 'var(--grad-accent-bright)' : undefined, backgroundColor: effectiveOn ? undefined : 'var(--surface-2)', boxShadow: effectiveOn ? 'var(--glow-accent)' : undefined }}
         aria-pressed={effectiveOn}
       >
         <span
-          className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all"
+          className="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all duration-300"
           style={{ left: effectiveOn ? '22px' : '2px' }}
         />
       </button>

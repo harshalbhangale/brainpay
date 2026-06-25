@@ -8,6 +8,7 @@ import {
 import { api } from '../lib/api'
 import { useAuthStore, type Account } from '../stores/auth'
 import { VoiceOnboarding } from '../components/VoiceOnboarding'
+import { PressButton, GradientButton } from '../components/ui'
 
 /** Kid onboarding — builds a kid persona used to personalise every agent. */
 
@@ -102,14 +103,17 @@ export function KidOnboarding() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-md flex-col p-6">
-      <div className="mt-2 flex gap-1.5">
+    <div className="relative mx-auto flex min-h-full max-w-md flex-col overflow-hidden p-6">
+      <div className="pointer-events-none absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-grad-aurora opacity-15 blur-[90px]" />
+      <div className="relative mt-2 flex gap-1.5">
         {Array.from({ length: TOTAL }).map((_, i) => (
-          <div key={i} className="h-1.5 flex-1 rounded-full transition-colors" style={{ backgroundColor: i <= step ? 'var(--color-accent)' : 'var(--color-surface2)' }} />
+          <div key={i} className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: i <= step ? '100%' : '0%', backgroundImage: 'var(--grad-accent-bright)', boxShadow: i <= step ? '0 0 8px rgba(43,217,138,0.6)' : undefined }} />
+          </div>
         ))}
       </div>
 
-      <div className="mt-8 flex-1">
+      <div className="relative mt-8 flex-1">
         {step === 0 && (
           <div className="animate-rise">
             <h2 className="text-2xl font-extrabold leading-snug text-ink">Hey! What's your name?</h2>
@@ -121,7 +125,7 @@ export function KidOnboarding() {
               placeholder="Your name"
               maxLength={20}
               onKeyDown={(e) => e.key === 'Enter' && canContinue && next()}
-              className="mt-6 h-14 w-full rounded-2xl bg-surface px-4 text-lg font-semibold text-ink outline-none ring-1 ring-border focus:ring-accent"
+              className="grad-border mt-6 h-14 w-full rounded-2xl bg-transparent px-4 text-lg font-semibold text-ink outline-none placeholder:text-faint"
             />
           </div>
         )}
@@ -131,15 +135,15 @@ export function KidOnboarding() {
             <h2 className="text-2xl font-extrabold leading-snug text-ink">How old are you?</h2>
             <p className="mt-2 text-muted">We'll keep things just right for your age.</p>
             <div className="mt-6 grid grid-cols-2 gap-3">
-              {AGES.map((a) => (
-                <button
+              {AGES.map((a, i) => (
+                <PressButton
                   key={a}
                   onClick={() => setAge(a)}
-                  style={{ borderColor: age === a ? 'var(--color-accent)' : 'var(--color-border)' }}
-                  className={`rounded-2xl border-2 py-5 text-lg font-bold transition active:scale-[0.98] ${age === a ? 'bg-accent-soft text-accent' : 'bg-surface text-ink'}`}
+                  className={`animate-pop-in rounded-2xl py-5 text-lg font-bold ${age === a ? 'glow-accent text-grad-accent' : 'grad-border text-ink'}`}
+                  style={{ animationDelay: `${i * 40}ms`, backgroundImage: age === a ? 'var(--grad-card)' : undefined }}
                 >
                   {a}
-                </button>
+                </PressButton>
               ))}
             </div>
           </div>
@@ -156,17 +160,17 @@ export function KidOnboarding() {
         )}
       </div>
 
-      {error && <p className="mb-3 text-center text-sm text-danger">{error}</p>}
+      {error && <p className="animate-pop-in relative mb-3 text-center text-sm text-danger">{error}</p>}
 
-      <div className="flex gap-3">
+      <div className="relative flex gap-3">
         {step > 0 && (
-          <button onClick={() => setStep((s) => s - 1)} disabled={submitting} className="h-14 rounded-full bg-surface2 px-6 font-bold text-ink active:scale-[0.98]">
+          <PressButton onClick={() => setStep((s) => s - 1)} disabled={submitting} className="glass h-14 rounded-full px-6 font-bold text-ink">
             Back
-          </button>
+          </PressButton>
         )}
-        <button onClick={next} disabled={!canContinue || submitting} className="h-14 flex-1 rounded-full bg-accent font-bold text-on-accent transition active:scale-[0.98] disabled:opacity-40">
+        <GradientButton onClick={next} disabled={!canContinue || submitting} className="h-14 flex-1 rounded-full">
           {submitting ? 'Setting up…' : step === TOTAL - 1 ? 'Done' : 'Continue'}
-        </button>
+        </GradientButton>
       </div>
     </div>
   )
@@ -180,18 +184,18 @@ function SingleQuestion({ title, subtitle, options, value, onChange }: { title: 
       <h2 className="text-2xl font-extrabold leading-snug text-ink">{title}</h2>
       <p className="mt-2 text-muted">{subtitle}</p>
       <div className="mt-6 flex flex-col gap-3">
-        {options.map((opt) => {
+        {options.map((opt, i) => {
           const picked = value === opt.id
           return (
-            <button key={opt.id} onClick={() => onChange(opt.id)} style={{ borderColor: picked ? 'var(--color-accent)' : 'var(--color-border)' }} className={`flex items-center gap-3 rounded-2xl border-2 p-4 text-left transition active:scale-[0.99] ${picked ? 'bg-accent-soft' : 'bg-surface'}`}>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: picked ? 'var(--color-accent)' : 'var(--color-surface2)' }}>
-                <opt.Icon size={20} style={{ color: picked ? 'var(--color-on-accent)' : 'var(--color-muted)' }} />
+            <PressButton key={opt.id} onClick={() => onChange(opt.id)} className={`animate-pop-in flex items-center gap-3 rounded-2xl p-4 text-left ${picked ? 'glow-accent' : 'grad-border'}`} style={{ animationDelay: `${i * 40}ms`, backgroundImage: picked ? 'var(--grad-card)' : undefined }}>
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={picked ? { backgroundImage: 'var(--grad-accent-bright)' } : { backgroundColor: 'var(--surface-2)' }}>
+                <opt.Icon size={20} style={{ color: picked ? 'var(--on-accent)' : 'var(--muted)' }} />
               </span>
               <div className="flex-1">
-                <div className={`font-bold ${picked ? 'text-accent' : 'text-ink'}`}>{opt.label}</div>
+                <div className={`font-bold ${picked ? 'text-grad-accent' : 'text-ink'}`}>{opt.label}</div>
                 {opt.sub && <div className="mt-0.5 text-xs italic text-muted">{opt.sub}</div>}
               </div>
-            </button>
+            </PressButton>
           )
         })}
       </div>
@@ -205,13 +209,13 @@ function MultiQuestion({ title, subtitle, options, selected, onToggle }: { title
       <h2 className="text-2xl font-extrabold leading-snug text-ink">{title}</h2>
       <p className="mt-2 text-muted">{subtitle}</p>
       <div className="mt-6 grid grid-cols-2 gap-3">
-        {options.map((opt) => {
+        {options.map((opt, i) => {
           const picked = selected.includes(opt.id)
           return (
-            <button key={opt.id} onClick={() => onToggle(opt.id)} style={{ borderColor: picked ? 'var(--color-accent)' : 'var(--color-border)' }} className={`flex flex-col items-center gap-2 rounded-2xl border-2 p-4 transition active:scale-[0.98] ${picked ? 'bg-accent-soft' : 'bg-surface'}`}>
-              <opt.Icon size={24} style={{ color: picked ? 'var(--color-accent)' : 'var(--color-muted)' }} />
-              <span className={`text-sm font-bold ${picked ? 'text-accent' : 'text-ink'}`}>{opt.label}</span>
-            </button>
+            <PressButton key={opt.id} onClick={() => onToggle(opt.id)} className={`animate-pop-in flex flex-col items-center gap-2 rounded-2xl p-4 ${picked ? 'glow-accent' : 'grad-border'}`} style={{ animationDelay: `${i * 35}ms`, backgroundImage: picked ? 'var(--grad-card)' : undefined }}>
+              <opt.Icon size={24} style={{ color: picked ? 'var(--accent)' : 'var(--muted)' }} />
+              <span className={`text-sm font-bold ${picked ? 'text-grad-accent' : 'text-ink'}`}>{opt.label}</span>
+            </PressButton>
           )
         })}
       </div>

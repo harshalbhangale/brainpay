@@ -25,6 +25,9 @@ export async function processDocument(documentId: string, rawContent?: string) {
     let text: string
     if (rawContent) {
       text = rawContent
+    } else if (doc.rawText) {
+      // Re-processing (e.g. regenerate): reuse the previously stored source.
+      text = doc.rawText
     } else if (doc.fileType === 'image') {
       text = await extractFromImage(doc.fileUrl)
     } else if (doc.fileType === 'pdf') {
@@ -38,6 +41,13 @@ export async function processDocument(documentId: string, rawContent?: string) {
         .set({ processingStatus: 'failed', error: 'Could not extract meaningful text' })
         .where(eq(studyDocuments.id, documentId))
       return
+    }
+
+    // Persist the resolved source text so the topic can be regenerated later.
+    if (!doc.rawText) {
+      await db.update(studyDocuments)
+        .set({ rawText: text.slice(0, 200000) })
+        .where(eq(studyDocuments.id, documentId))
     }
 
     // Step 2: Chunk semantically
@@ -70,18 +80,21 @@ export async function processDocument(documentId: string, rawContent?: string) {
       cardsDue: sql`${studyTopics.cardsDue} + ${cards.length}`,
     }).where(eq(studyTopics.id, doc.topicId))
 
-    // Award brains for successful document upload (non-fatal)
-    try {
-      const [membership] = await db
-        .select({ familyId: memberships.familyId })
-        .from(memberships)
-        .where(eq(memberships.accountId, doc.accountId))
-        .limit(1)
-      if (membership?.familyId) {
-        await awardStudyBrains(doc.accountId, membership.familyId, 'study_upload', STUDY_REWARD_AMOUNTS.study_upload, { documentId })
+    // Award brains for successful document upload (non-fatal). Only on the
+    // first processing — never on regenerate/reprocess (doc.rawText preset).
+    if (!doc.rawText) {
+      try {
+        const [membership] = await db
+          .select({ familyId: memberships.familyId })
+          .from(memberships)
+          .where(eq(memberships.accountId, doc.accountId))
+          .limit(1)
+        if (membership?.familyId) {
+          await awardStudyBrains(doc.accountId, membership.familyId, 'study_upload', STUDY_REWARD_AMOUNTS.study_upload, { documentId })
+        }
+      } catch (rewardErr) {
+        logger.warn({ err: String(rewardErr).slice(0, 120), documentId }, 'study.reward_skipped')
       }
-    } catch (rewardErr) {
-      logger.warn({ err: String(rewardErr).slice(0, 120), documentId }, 'study.reward_skipped')
     }
 
     logger.info({ documentId, chunks: chunks.length, cards: cards.length }, 'study.document_processed')
@@ -174,53 +187,105 @@ async function embedAndStore(content: string, topicId: string, documentId: strin
   `)
 }
 
-// ─── Card generation ──────────────────────────────────────────────────
+// ─── Card generation (full-document, chapter-tagged) ──────────────────
+
+type GenCard = { front: string; back: string; chapter: string }
+
+const CARD_SYSTEM_PROMPT = `You are an expert study flashcard generator for school students.
+
+You will receive EITHER an excerpt of study material (notes, textbook text, extracted PDF/image content) OR a request to generate concepts for a subject and grade.
+
+Produce flashcards covering the most important concepts, definitions, formulas, and facts in THIS excerpt.
+
+For EACH card also identify the "chapter" — the chapter / unit / section / topic heading the concept belongs to. Infer it from headings in the text. If you truly cannot tell, use "General".
+
+Return ONLY valid JSON in this exact shape:
+{"cards": [{"front": "question or concept", "back": "clear, concise answer", "chapter": "chapter or section name"}]}
+
+Generate 6-12 cards for this excerpt. Each card tests ONE concept. Answers must be student-friendly and accurate.`
+
+/** Split text into ~12k-char batches on paragraph boundaries so the whole
+ *  document is covered (not just the opening), then generate cards per batch. */
+function batchText(text: string, maxLen = 12000): string[] {
+  if (text.length <= maxLen) return [text]
+  const paras = text.split(/\n\n+/)
+  const batches: string[] = []
+  let current = ''
+  for (const p of paras) {
+    if (current.length + p.length > maxLen && current) {
+      batches.push(current.trim())
+      current = p
+    } else {
+      current += (current ? '\n\n' : '') + p
+    }
+  }
+  if (current.trim()) batches.push(current.trim())
+  return batches
+}
+
+async function generateCardsForBatch(excerpt: string): Promise<GenCard[]> {
+  const res = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: CARD_SYSTEM_PROMPT },
+      { role: 'user', content: excerpt },
+    ],
+    response_format: { type: 'json_object' },
+    max_tokens: 3000,
+  })
+  const raw = res.choices[0]?.message?.content ?? '{}'
+  try {
+    const parsed = JSON.parse(raw)
+    const arr = Array.isArray(parsed.cards) ? parsed.cards : Array.isArray(parsed) ? parsed : parsed.flashcards
+    if (!Array.isArray(arr)) return []
+    return arr
+      .filter((c: unknown): c is { front: string; back: string; chapter?: unknown } =>
+        !!c && typeof (c as { front?: unknown }).front === 'string' && typeof (c as { back?: unknown }).back === 'string',
+      )
+      .map((c) => ({
+        front: c.front,
+        back: c.back,
+        chapter: typeof c.chapter === 'string' && c.chapter.trim() ? c.chapter.trim() : 'General',
+      }))
+  } catch {
+    logger.warn({ raw: raw.slice(0, 200) }, 'study.card_parse_failed')
+    return []
+  }
+}
+
+const MAX_CARDS_PER_DOC = 80
 
 async function generateCards(
   text: string,
   topicId: string,
   accountId: string,
   documentId: string,
-): Promise<{ front: string; back: string }[]> {
-  const res = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      {
-        role: 'system',
-        content: `You are an expert study flashcard generator for school students.
-
-You will receive EITHER study material (notes, textbook text, extracted PDF/image content) OR a request to generate concepts for a subject and grade.
-
-In BOTH cases, produce a set of flashcards covering the most important concepts, definitions, formulas, and facts a student needs to know.
-
-Return ONLY valid JSON in this exact shape:
-{"cards": [{"front": "question or concept", "back": "clear, concise answer or explanation"}]}
-
-Generate 8-15 cards. Each card tests ONE concept. Make answers student-friendly and accurate.`,
-      },
-      { role: 'user', content: text.slice(0, 12000) },
-    ],
-    response_format: { type: 'json_object' },
-    max_tokens: 3000,
-  })
-
-  const raw = res.choices[0]?.message?.content ?? '{}'
-  let cards: { front: string; back: string }[] = []
-  try {
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed.cards)) cards = parsed.cards
-    else if (Array.isArray(parsed)) cards = parsed
-    else if (Array.isArray(parsed.flashcards)) cards = parsed.flashcards
-  } catch {
-    logger.error({ documentId, raw: raw.slice(0, 200) }, 'study.card_parse_failed')
-    return []
+): Promise<GenCard[]> {
+  const batches = batchText(text)
+  const all: GenCard[] = []
+  for (const batch of batches) {
+    if (all.length >= MAX_CARDS_PER_DOC) break
+    try {
+      const cards = await generateCardsForBatch(batch)
+      all.push(...cards)
+    } catch (err) {
+      logger.warn({ err: String(err).slice(0, 120), documentId }, 'study.card_batch_failed')
+    }
   }
 
-  // Validate shape
-  cards = cards.filter((c) => c && typeof c.front === 'string' && typeof c.back === 'string' && c.front.length > 0)
+  // Dedupe near-identical fronts (cross-batch overlap) and cap.
+  const seen = new Set<string>()
+  const cards = all
+    .filter((c) => {
+      const key = c.front.trim().toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, MAX_CARDS_PER_DOC)
 
   if (cards.length === 0) {
-    logger.warn({ documentId, raw: raw.slice(0, 200) }, 'study.no_cards_generated')
+    logger.warn({ documentId }, 'study.no_cards_generated')
     return []
   }
 
@@ -228,12 +293,13 @@ Generate 8-15 cards. Each card tests ONE concept. Make answers student-friendly 
     topicId,
     accountId,
     documentId,
+    chapter: card.chapter,
     front: card.front,
     back: card.back,
     status: 'new' as const,
     nextReviewAt: new Date(),
   })))
 
-  logger.info({ documentId, cardCount: cards.length }, 'study.cards_generated')
+  logger.info({ documentId, cardCount: cards.length, batches: batches.length }, 'study.cards_generated')
   return cards
 }

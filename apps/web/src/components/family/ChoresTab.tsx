@@ -3,7 +3,7 @@ import { Plus, ListChecks } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
-import { Card, SectionTitle } from '../ui'
+import { Card, SectionTitle, PressButton } from '../ui'
 import { AddChoreModal } from './modals'
 import { isKid, kidName, type Chore, type ChoresResponse, type Member, type Subject } from './types'
 
@@ -46,7 +46,7 @@ export function ChoresTab({ subject, members }: { subject: Subject; members: Mem
     <div className="space-y-3 p-5">
       <SectionTitle
         action={
-          <button onClick={() => setAddChore(true)} disabled={kids.length === 0} className="flex items-center gap-1 text-sm font-bold text-accent disabled:opacity-40">
+          <button onClick={() => setAddChore(true)} disabled={kids.length === 0} className="press flex items-center gap-1 text-sm font-bold text-grad-accent disabled:opacity-40">
             <Plus size={15} /> New chore
           </button>
         }
@@ -57,18 +57,19 @@ export function ChoresTab({ subject, members }: { subject: Subject; members: Mem
       {q.isLoading && <p className="text-center text-sm text-muted">Loading…</p>}
       {!q.isLoading && chores.length === 0 && (
         <Card className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent-soft text-accent"><ListChecks size={20} /></span>
+          <span className="flex h-11 w-11 items-center justify-center rounded-full text-white" style={{ backgroundImage: 'var(--grad-accent-bright)' }}><ListChecks size={20} /></span>
           <span className="text-sm text-muted">{kids.length === 0 ? 'Add a kid first, then assign chores.' : 'No chores yet.'}</span>
         </Card>
       )}
 
       <div className="flex flex-col gap-2.5">
-        {chores.map((ch) => (
+        {chores.map((ch, i) => (
           <ChoreRow
             key={ch.id}
             chore={ch}
             who={nameById.get(ch.assignedTo) ?? 'Kid'}
             busy={review.isPending}
+            index={i}
             onApprove={() => review.mutate({ id: ch.id, status: 'parent_approved' })}
             onReject={() => review.mutate({ id: ch.id, status: 'parent_rejected' })}
           />
@@ -84,26 +85,28 @@ function ChoreRow({
   chore,
   who,
   busy,
+  index,
   onApprove,
   onReject,
 }: {
   chore: Chore
   who: string
   busy: boolean
+  index: number
   onApprove: () => void
   onReject: () => void
 }) {
   const st = STATUS[chore.status] ?? { label: chore.status, color: '#9aa0aa' }
   const canReview = AWAITING.includes(chore.status)
   return (
-    <Card className="p-4">
+    <Card className="animate-pop-in p-4" style={{ animationDelay: `${Math.min(index, 8) * 35}ms` } as React.CSSProperties}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate font-semibold text-ink">{chore.title}</div>
           <div className="text-xs text-muted">{who}</div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-accent">{aud(chore.rewardBrains)}</span>
+          <span className="text-sm font-bold text-grad-accent">{aud(chore.rewardBrains)}</span>
           <span
             className="rounded-full px-2 py-1 text-[10px] font-bold uppercase"
             style={{ color: st.color, backgroundColor: `${st.color}22` }}
@@ -117,20 +120,21 @@ function ChoreRow({
 
       {canReview && (
         <div className="mt-3 flex gap-2">
-          <button
+          <PressButton
             onClick={onReject}
             disabled={busy}
-            className="flex-1 rounded-full bg-surface2 py-2 text-sm font-bold text-ink active:scale-[0.98] disabled:opacity-50"
+            className="glass flex-1 rounded-full py-2 text-sm font-bold text-ink disabled:opacity-50"
           >
             Reject
-          </button>
-          <button
+          </PressButton>
+          <PressButton
             onClick={onApprove}
             disabled={busy}
-            className="flex-1 rounded-full bg-accent py-2 text-sm font-bold text-on-accent active:scale-[0.98] disabled:opacity-50"
+            className="flex-1 rounded-full py-2 text-sm font-bold text-on-accent glow-accent disabled:opacity-50"
+            style={{ backgroundImage: 'var(--grad-accent-bright)' }}
           >
             Approve &amp; pay
-          </button>
+          </PressButton>
         </div>
       )}
     </Card>

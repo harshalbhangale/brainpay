@@ -126,6 +126,13 @@ export const PushTemplates = {
     data: { screen: 'wallet' },
   }),
 
+  // AI verified the chore and auto-credited the kid. Parent can still report it.
+  choreAiAutoPaid: (kidName: string, choreTitle: string, rewardBrains: number) => ({
+    title: 'PAL paid a chore ✅',
+    body: `${kidName} earned ${rewardBrains} 🧠 for "${choreTitle}". Tap to review or report.`,
+    data: { screen: 'chores' },
+  }),
+
   choreParentRejected: (choreTitle: string, note?: string | null) => ({
     title: 'Chore rejected ❌',
     body: note ? `"${choreTitle}" — ${note}` : `"${choreTitle}" was rejected. Try again.`,

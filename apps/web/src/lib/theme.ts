@@ -1,49 +1,13 @@
-import { create } from 'zustand'
-
-export type Theme = 'light' | 'dark'
-
-const KEY = 'brainpal.theme'
-
 /**
- * Read the saved theme. Defaults to dark for every user; they can switch to
- * light in Settings, which persists. System preference is not used as the
- * default — dark is the brand default.
+ * Theme — the BrainPal web app is dark-only (CRED-inspired).
+ * Light mode has been removed. These helpers remain so the rest of the
+ * app has a single place to set the document color scheme + browser chrome.
  */
-export function initialTheme(): Theme {
-  try {
-    const saved = localStorage.getItem(KEY) as Theme | null
-    if (saved === 'light' || saved === 'dark') return saved
-  } catch {
-    /* ignore */
-  }
-  return 'dark'
-}
 
-/** Apply the theme to <html> + the browser UI colour. */
-export function applyTheme(theme: Theme) {
+export function applyDarkTheme() {
   const root = document.documentElement
-  root.classList.toggle('dark', theme === 'dark')
-  root.style.colorScheme = theme
+  root.classList.add('dark') // harmless; tokens are dark-only regardless
+  root.style.colorScheme = 'dark'
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', theme === 'dark' ? '#0a120e' : '#f3f7f4')
+  if (meta) meta.setAttribute('content', '#07090e')
 }
-
-type ThemeState = {
-  theme: Theme
-  setTheme: (t: Theme) => void
-  toggle: () => void
-}
-
-export const useTheme = create<ThemeState>((set, get) => ({
-  theme: initialTheme(),
-  setTheme: (theme) => {
-    try {
-      localStorage.setItem(KEY, theme)
-    } catch {
-      /* ignore */
-    }
-    applyTheme(theme)
-    set({ theme })
-  },
-  toggle: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
-}))

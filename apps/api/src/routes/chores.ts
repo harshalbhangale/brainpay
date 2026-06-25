@@ -305,7 +305,8 @@ choresRoutes.post('/chores/:id/verify', async (c) => {
 
   if (!chore) return c.json({ error: 'chore_not_found' }, 404)
   if (chore.assignedTo !== actorId) return c.json({ error: 'not_your_chore' }, 403)
-  if (!['pending', 'submitted'].includes(chore.status)) {
+  // Kid may verify a fresh chore, or retry one the AI previously rejected.
+  if (!['pending', 'submitted', 'ai_rejected'].includes(chore.status)) {
     return c.json({ error: 'chore_already_verified' }, 409)
   }
 
@@ -339,14 +340,78 @@ choresRoutes.post('/chores/:id/verify', async (c) => {
   // Run GPT-4o Vision.
   const { verdict, reason } = await verifyChorePhoto(chore.title, photoBase64, mimeType)
 
-  // Map verdict to chore status.
-  const statusMap = {
-    approved:  'ai_approved',
-    rejected:  'ai_rejected',
-    uncertain: 'ai_uncertain',
-  } as const
+  // ── approved: auto-credit the kid immediately (Policy A) ────────────
+  // Money moves on the AI verdict; the parent gets a "report / undo" path
+  // (POST /chores/:id/report) that reverses the ledger if it was wrong.
+  if (verdict === 'approved') {
+    let balanceAfter = 0
+    await db.transaction(async (tx) => {
+      const [kidAcct] = await tx
+        .select({ cachedBalance: accounts.cachedBalance })
+        .from(accounts)
+        .where(eq(accounts.id, chore.assignedTo))
+        .for('update')
 
-  const newStatus = statusMap[verdict]
+      if (!kidAcct) throw new Error('kid_account_not_found')
+      balanceAfter = kidAcct.cachedBalance + chore.rewardBrains
+
+      await tx
+        .update(accounts)
+        .set({ cachedBalance: sql`${accounts.cachedBalance} + ${chore.rewardBrains}` })
+        .where(eq(accounts.id, chore.assignedTo))
+
+      await tx.insert(ledger).values({
+        familyId: chore.familyId,
+        accountId: chore.assignedTo,
+        actorId,
+        kind: 'chore_payout',
+        brainsDelta: chore.rewardBrains,
+        balanceAfter,
+        metadata: {
+          choreId: chore.id,
+          choreTitle: chore.title,
+          approvedBy: 'ai',
+          autoPaid: true,
+        },
+      })
+
+      await tx
+        .update(chores)
+        .set({
+          status: 'paid',
+          aiVerdict: verdict,
+          aiReason: reason,
+          submittedAt: new Date(),
+          completedAt: new Date(),
+        })
+        .where(eq(chores.id, choreId))
+    })
+
+    // Kid celebration push + parent "review / report" push — non-blocking.
+    sendPushToAccount(
+      chore.assignedTo,
+      PushTemplates.choreParentApproved(chore.title, chore.rewardBrains),
+    ).catch(() => undefined)
+
+    const [kidAcct] = await db
+      .select({ persona: accounts.persona })
+      .from(accounts)
+      .where(eq(accounts.id, chore.assignedTo))
+      .limit(1)
+    const kidName = (kidAcct?.persona as { name?: string } | null)?.name ?? 'Your kid'
+
+    const parentIds = await getParentIds(chore.familyId)
+    sendPushToAccounts(
+      parentIds,
+      PushTemplates.choreAiAutoPaid(kidName, chore.title, chore.rewardBrains),
+    ).catch(() => undefined)
+
+    logger.info({ choreId, verdict, reason, autoPaid: true }, 'chores.verified')
+    return c.json({ verdict, reason, status: 'paid', choreId, autoPaid: true })
+  }
+
+  // ── rejected / uncertain: no money moves ────────────────────────────
+  const newStatus = verdict === 'rejected' ? 'ai_rejected' : 'ai_uncertain'
 
   await db
     .update(chores)
@@ -358,13 +423,13 @@ choresRoutes.post('/chores/:id/verify', async (c) => {
     })
     .where(eq(chores.id, choreId))
 
-  // Notify parents on approved or uncertain (they need to review).
-  if (verdict === 'approved' || verdict === 'uncertain') {
+  // Uncertain → parent reviews manually. Rejected → kid simply retries.
+  if (verdict === 'uncertain') {
     const parentIds = await getParentIds(chore.familyId)
-    const pushFn = verdict === 'approved'
-      ? PushTemplates.choreAiApproved(chore.title, chore.rewardBrains)
-      : PushTemplates.choreAiRejected(chore.title)
-    sendPushToAccounts(parentIds, pushFn).catch(() => undefined)
+    sendPushToAccounts(
+      parentIds,
+      PushTemplates.choreAiRejected(chore.title),
+    ).catch(() => undefined)
   }
 
   logger.info({ choreId, verdict, reason }, 'chores.verified')
@@ -374,5 +439,91 @@ choresRoutes.post('/chores/:id/verify', async (c) => {
     reason,
     status: newStatus,
     choreId,
+    autoPaid: false,
   })
+})
+
+
+// ─── POST /chores/:id/report ──────────────────────────────────────────
+// Parent disputes a chore the AI auto-approved and paid (Policy A undo).
+// Reverses the Brains payout with a compensating ledger entry and marks the
+// chore parent_rejected. Only valid for AI-auto-paid chores.
+//
+// Body: { note?: string }
+choresRoutes.post('/chores/:id/report', async (c) => {
+  const actorId = authedAccountId(c)
+  const choreId = c.req.param('id')
+  const membership = await getMembership(actorId)
+  if (!membership) return c.json({ error: 'no_family' }, 403)
+
+  const isParent = ['primary_parent', 'co_parent'].includes(membership.role)
+  if (!isParent) return c.json({ error: 'only_parents_can_report' }, 403)
+
+  const body = await c.req.json().catch(() => ({})) as { note?: string }
+  const note = typeof body.note === 'string' ? body.note.slice(0, 300) : undefined
+
+  // Load chore — must belong to this family.
+  const [chore] = await db
+    .select()
+    .from(chores)
+    .where(and(eq(chores.id, choreId), eq(chores.familyId, membership.familyId)))
+    .limit(1)
+
+  if (!chore) return c.json({ error: 'chore_not_found' }, 404)
+
+  // Only AI-auto-paid chores can be reported/undone here.
+  if (chore.status !== 'paid' || chore.aiVerdict !== 'approved') {
+    return c.json({ error: 'chore_not_reportable' }, 409)
+  }
+
+  await db.transaction(async (tx) => {
+    const [kidAcct] = await tx
+      .select({ cachedBalance: accounts.cachedBalance })
+      .from(accounts)
+      .where(eq(accounts.id, chore.assignedTo))
+      .for('update')
+
+    if (!kidAcct) throw new Error('kid_account_not_found')
+    const balanceAfter = kidAcct.cachedBalance - chore.rewardBrains
+
+    // Debit the previously-credited Brains.
+    await tx
+      .update(accounts)
+      .set({ cachedBalance: sql`${accounts.cachedBalance} - ${chore.rewardBrains}` })
+      .where(eq(accounts.id, chore.assignedTo))
+
+    // Compensating ledger entry — keeps the ledger as the source of truth.
+    await tx.insert(ledger).values({
+      familyId: chore.familyId,
+      accountId: chore.assignedTo,
+      actorId,
+      kind: 'chore_reversal',
+      brainsDelta: -chore.rewardBrains,
+      balanceAfter,
+      metadata: {
+        choreId: chore.id,
+        choreTitle: chore.title,
+        reportedBy: actorId,
+        note: note ?? null,
+      },
+    })
+
+    await tx
+      .update(chores)
+      .set({
+        status: 'parent_rejected',
+        parentNote: note ?? 'A parent reported this chore.',
+      })
+      .where(eq(chores.id, choreId))
+  })
+
+  sendPushToAccount(
+    chore.assignedTo,
+    PushTemplates.choreParentRejected(chore.title, note),
+  ).catch(() => undefined)
+
+  logger.info({ choreId, reportedBy: actorId, note }, 'chores.reported')
+
+  const [updated] = await db.select().from(chores).where(eq(chores.id, choreId)).limit(1)
+  return c.json({ chore: updated })
 })

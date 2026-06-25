@@ -34,6 +34,17 @@ export type Chore = {
   createdAt: string
   parentNote?: string | null
   aiReason?: string | null
+  aiVerdict?: 'approved' | 'rejected' | 'uncertain' | null
+  submittedAt?: string | null
+  completedAt?: string | null
+}
+
+export type VerifyResponse = {
+  verdict: 'approved' | 'rejected' | 'uncertain'
+  reason: string
+  status: string
+  choreId: string
+  autoPaid: boolean
 }
 
 export type ChoresResponse = { chores: Chore[] }

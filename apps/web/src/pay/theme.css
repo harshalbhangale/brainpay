@@ -1,0 +1,360 @@
+/*
+  ════════════════════════════════════════════════════════════════════════════
+  MoneyPal — "Soft Light Premium" payments design system
+  ════════════════════════════════════════════════════════════════════════════
+  A billion-dollar fintech aesthetic: a calm light canvas, pure-white surfaces,
+  oversized tight-tracked display type, soft pastel action tiles, ink-black
+  primary controls, and feather-soft shadows. Motion is spring-based.
+
+  EVERYTHING here is scoped to the `.pv` root class so it can live alongside the
+  existing dark BrainPal theme without a single collision. Apply `.pv` once on
+  the payments app root; all tokens cascade to descendants.
+  ──────────────────────────────────────────────────────────────────────────── */
+
+.pv {
+  /* ── Canvas & surfaces (Neobank reference: flat cool light grey) ──────── */
+  --pv-bg: #ededef;          /* page backdrop (light grey, like the mock)       */
+  --pv-bg-2: #e6e6e9;        /* deeper backdrop edge for the ambient gradient   */
+  --pv-surface: #ffffff;     /* primary cards / app shell                       */
+  --pv-surface-2: #f4f5f6;   /* insets, search field, tracks                    */
+  --pv-surface-3: #ececee;   /* chips / faint fills                             */
+
+  /* ── Ink (text) ──────────────────────────────────────────────────────── */
+  --pv-ink: #0b0c0f;         /* primary text — near black                       */
+  --pv-ink-2: #5b606b;       /* secondary text                                  */
+  --pv-ink-3: #9aa0ac;       /* tertiary / placeholders                         */
+  --pv-on-dark: #ffffff;     /* text on black / dark surfaces                   */
+
+  /* ── Primary control (ink-black, like the mock's pill buttons) ────────── */
+  --pv-primary: #0b0c0f;
+  --pv-primary-2: #20232b;
+  --pv-on-primary: #ffffff;
+
+  /* ── Signature brand accent (Neobank lime — DARK text rides on it) ─────── */
+  --pv-accent: #c5f441;      /* the bright lime of the reference debit card     */
+  --pv-accent-2: #b4ec2a;
+  --pv-accent-soft: #f0fbd2; /* pale lime tint for fills                        */
+  --pv-on-accent: #0b0c0f;   /* near-black text on lime (lime is too light for white) */
+
+  /* ── Pastel tile family (the heart of the look) ───────────────────────── */
+  --pv-sky: #d3e7ff;         --pv-sky-ink: #0d3f7a;
+  --pv-mint: #c6f0d6;        --pv-mint-ink: #0c5132;
+  --pv-butter: #fbe7a3;      --pv-butter-ink: #6a5200;
+  --pv-lilac: #e1d7ff;       --pv-lilac-ink: #3a2c7a;
+  --pv-peach: #ffdfcf;       --pv-peach-ink: #7a3115;
+  --pv-blush: #ffd6e4;       --pv-blush-ink: #7a1f45;
+
+  /* ── Semantic ────────────────────────────────────────────────────────── */
+  --pv-pos: #12a150;         /* money in / positive                             */
+  --pv-pos-soft: #e6f6ed;
+  --pv-neg: #e5484d;         /* money out / negative                            */
+  --pv-neg-soft: #fdebec;
+  --pv-warn: #d98e04;
+
+  /* ── Lines ───────────────────────────────────────────────────────────── */
+  --pv-line: rgba(11, 12, 15, 0.08);
+  --pv-line-strong: rgba(11, 12, 15, 0.14);
+
+  /* ── Radii ───────────────────────────────────────────────────────────── */
+  --pv-r-xs: 12px;
+  --pv-r-sm: 16px;
+  --pv-r-md: 22px;
+  --pv-r-lg: 28px;
+  --pv-r-xl: 34px;
+  --pv-r-2xl: 42px;
+  --pv-r-pill: 999px;
+
+  /* ── Shadows (feather-soft, layered) ─────────────────────────────────── */
+  --pv-shadow-xs: 0 1px 2px rgba(16, 18, 27, 0.04);
+  --pv-shadow-sm: 0 1px 2px rgba(16, 18, 27, 0.05), 0 6px 16px -10px rgba(16, 18, 27, 0.18);
+  --pv-shadow-md: 0 2px 4px rgba(16, 18, 27, 0.05), 0 18px 40px -18px rgba(16, 18, 27, 0.22);
+  --pv-shadow-lg: 0 8px 24px -8px rgba(16, 18, 27, 0.12), 0 40px 80px -32px rgba(16, 18, 27, 0.30);
+  --pv-shadow-pop: 0 10px 30px -10px rgba(150, 200, 30, 0.55);
+
+  /* ── Brand gradients ─────────────────────────────────────────────────── */
+  --pv-grad-ink: linear-gradient(155deg, #2a2d36 0%, #0b0c0f 70%);
+  --pv-grad-accent: linear-gradient(135deg, #d4fb5b 0%, #b4ec2a 100%);
+  --pv-grad-card: linear-gradient(160deg, #ffffff 0%, #fafbfc 100%);
+  --pv-grad-aurora: linear-gradient(120deg, #b4ec2a 0%, #7fe3a0 45%, #4f46e5 100%);
+
+  /* ── Type ────────────────────────────────────────────────────────────── */
+  --pv-font: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* ── Per-Pal signature accent (overridden by the Pal switcher at runtime). */
+  --pv-pal: "moneypal";
+
+  color: var(--pv-ink);
+  font-family: var(--pv-font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01", "tnum";
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TYPOGRAPHY SCALE
+   Big, tight, confident headlines (the mock's signature) → calm body text.
+   ════════════════════════════════════════════════════════════════════════════ */
+.pv .pv-display {
+  font-size: clamp(2.5rem, 9vw, 3.6rem);
+  font-weight: 800;
+  line-height: 0.96;
+  letter-spacing: -0.035em;
+}
+.pv .pv-h1 {
+  font-size: clamp(1.9rem, 6.5vw, 2.4rem);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+.pv .pv-h2 {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.pv .pv-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.pv .pv-body {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.pv .pv-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pv-ink-3);
+}
+/* Tabular figures for money so digits never jitter. */
+.pv .pv-amount {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SURFACES & UTILITIES
+   ════════════════════════════════════════════════════════════════════════════ */
+.pv .pv-card {
+  background: var(--pv-surface);
+  border-radius: var(--pv-r-lg);
+  box-shadow: var(--pv-shadow-sm);
+}
+.pv .pv-card-flat {
+  background: var(--pv-surface);
+  border-radius: var(--pv-r-lg);
+  border: 1px solid var(--pv-line);
+}
+.pv .pv-inset {
+  background: var(--pv-surface-2);
+  border-radius: var(--pv-r-md);
+}
+
+.pv .pv-shadow-sm { box-shadow: var(--pv-shadow-sm); }
+.pv .pv-shadow-md { box-shadow: var(--pv-shadow-md); }
+.pv .pv-shadow-lg { box-shadow: var(--pv-shadow-lg); }
+
+.pv .pv-grad-ink { background-image: var(--pv-grad-ink); }
+.pv .pv-grad-accent { background-image: var(--pv-grad-accent); }
+.pv .pv-grad-aurora { background-image: var(--pv-grad-aurora); }
+
+.pv .pv-text-accent {
+  background: var(--pv-grad-accent);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+
+/* Hide scrollbars on internal scrollers */
+.pv .pv-no-scrollbar::-webkit-scrollbar { display: none; }
+.pv .pv-no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TACTILE PRESS — every interactive surface springs under the finger.
+   ════════════════════════════════════════════════════════════════════════════ */
+.pv .pv-press {
+  transition:
+    transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.3s ease,
+    filter 0.25s ease,
+    background-color 0.2s ease;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+}
+.pv .pv-press:hover { transform: translateY(-1px); }
+.pv .pv-press:active {
+  transform: scale(0.96);
+  transition: transform 0.08s ease-out;
+}
+.pv .pv-press-lg {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, filter 0.25s ease;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+}
+.pv .pv-press-lg:hover { transform: translateY(-2px); filter: brightness(1.03); }
+.pv .pv-press-lg:active {
+  transform: scale(0.93);
+  transition: transform 0.09s ease-out;
+}
+
+/* Light sweep across dark/gradient CTAs */
+.pv .pv-sheen { position: relative; overflow: hidden; isolation: isolate; }
+.pv .pv-sheen::after {
+  content: "";
+  position: absolute; top: 0; left: -150%;
+  width: 55%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+}
+.pv .pv-sheen:hover::after { animation: pv-sheen 0.9s ease; }
+@keyframes pv-sheen { 0% { left: -150%; } 100% { left: 160%; } }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   ENTRANCE / AMBIENT MOTION
+   ════════════════════════════════════════════════════════════════════════════ */
+@keyframes pv-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.pv .pv-rise { animation: pv-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes pv-pop { 0% { opacity: 0; transform: translateY(8px) scale(0.96); } 60% { transform: translateY(-2px) scale(1.02); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+.pv .pv-pop { animation: pv-pop 0.44s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+@keyframes pv-scale-in { 0% { opacity: 0; transform: scale(0.8); } 60% { transform: scale(1.05); } 100% { opacity: 1; transform: scale(1); } }
+.pv .pv-scale-in { animation: pv-scale-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* Celebration confetti — a short, tasteful fall for the chore-paid moment. */
+@keyframes pv-confetti {
+  0%   { opacity: 0; transform: translateY(-10%) rotate(0deg); }
+  10%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(340%) rotate(420deg); }
+}
+.pv .pv-confetti { animation: pv-confetti 1.1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Ambient drift for the aurora glow behind the canvas */
+@keyframes pv-drift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+.pv .pv-aurora { background-size: 200% 200%; animation: pv-drift 14s ease infinite; }
+
+/* Staggered list entrances — set --i on each item */
+.pv .pv-stagger { animation: pv-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 60ms); }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PAL SWITCHER — per-Pal signature accents + the animated switch.
+   The whole `.pv` accent family is re-pointed per Pal, so every button, tile,
+   ring and gradient recolors at once. The circular reveal masks the swap so it
+   reads as one fluid, premium motion.
+   ════════════════════════════════════════════════════════════════════════════ */
+.pv[data-pal='ai'] {
+  --pv-accent: #19c37d;  --pv-accent-2: #0f9d58;  --pv-accent-soft: #d8f7e8;  --pv-on-accent: #04130c;
+  --pv-grad-accent: linear-gradient(135deg, #34e89e 0%, #0f9d58 100%);
+  --pv-shadow-pop: 0 10px 30px -10px rgba(15, 157, 88, 0.5);
+}
+.pv[data-pal='moneypal'] {
+  --pv-accent: #c5f441;  --pv-accent-2: #b4ec2a;  --pv-accent-soft: #f0fbd2;  --pv-on-accent: #0b0c0f;
+  --pv-grad-accent: linear-gradient(135deg, #d4fb5b 0%, #b4ec2a 100%);
+  --pv-shadow-pop: 0 10px 30px -10px rgba(150, 200, 30, 0.55);
+}
+.pv[data-pal='studypal'] {
+  --pv-accent: #8b7cff;  --pv-accent-2: #6f5cf0;  --pv-accent-soft: #ece9ff;  --pv-on-accent: #ffffff;
+  --pv-grad-accent: linear-gradient(135deg, #a99bff 0%, #6f5cf0 100%);
+  --pv-shadow-pop: 0 10px 30px -10px rgba(123, 108, 255, 0.5);
+}
+.pv[data-pal='healthpal'] {
+  --pv-accent: #34d399;  --pv-accent-2: #10b981;  --pv-accent-soft: #d6f7e8;  --pv-on-accent: #04130c;
+  --pv-grad-accent: linear-gradient(135deg, #5ce8b3 0%, #10b981 100%);
+  --pv-shadow-pop: 0 10px 30px -10px rgba(16, 185, 129, 0.5);
+}
+.pv[data-pal='parentpal'] {
+  --pv-accent: #38bdf8;  --pv-accent-2: #0ea5e9;  --pv-accent-soft: #dcf2ff;  --pv-on-accent: #04121b;
+  --pv-grad-accent: linear-gradient(135deg, #7dd3fc 0%, #0ea5e9 100%);
+  --pv-shadow-pop: 0 10px 30px -10px rgba(14, 165, 233, 0.5);
+}
+
+/* Circular color flood that wipes in from the tapped Pal chip (--px/--py). */
+@keyframes pv-reveal-in {
+  from { clip-path: circle(0% at var(--px, 50%) var(--py, 12%)); }
+  to   { clip-path: circle(150% at var(--px, 50%) var(--py, 12%)); }
+}
+.pv .pv-reveal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  animation: pv-reveal-in 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+/* Reveal fades out once the new Pal content is mounted underneath. */
+@keyframes pv-reveal-out { to { opacity: 0; } }
+.pv .pv-reveal[data-leaving='true'] { animation: pv-reveal-out 0.32s ease forwards; }
+
+/* New Pal content rises into place behind the fading flood. */
+@keyframes pv-pal-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+.pv .pv-pal-enter { animation: pv-pal-enter 0.46s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* The big logo/glyph that pops at the center of the flood. */
+@keyframes pv-pal-badge {
+  0%   { opacity: 0; transform: scale(0.4) rotate(-12deg); }
+  55%  { opacity: 1; transform: scale(1.12) rotate(4deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+.pv .pv-pal-badge { animation: pv-pal-badge 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* Active Pal chip — springy lift + soft accent halo. */
+.pv .pv-pal-chip {
+  transition: transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pv *, .pv *::before, .pv *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — visible keyboard focus on every interactive surface.
+   (Outline follows border-radius in modern engines, so it hugs pills/cards.)
+   ════════════════════════════════════════════════════════════════════════════ */
+.pv :focus-visible {
+  outline: 2.5px solid var(--pv-ink);
+  outline-offset: 2px;
+}
+.pv :focus:not(:focus-visible) { outline: none; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PROGRESS BAR — savings goals / limits
+   ════════════════════════════════════════════════════════════════════════════ */
+.pv .pv-progress {
+  position: relative;
+  height: 10px;
+  border-radius: var(--pv-r-pill);
+  background: var(--pv-surface-3);
+  overflow: hidden;
+}
+.pv .pv-progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--pv-r-pill);
+  background-image: var(--pv-grad-accent);
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   IMAGE UPLOAD — drag-drop dropzone states
+   ════════════════════════════════════════════════════════════════════════════ */
+.pv .pv-dropzone {
+  border: 2px dashed var(--pv-line-strong);
+  background: var(--pv-surface-2);
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+.pv .pv-dropzone:hover { border-color: var(--pv-accent); background: var(--pv-accent-soft); }
+.pv .pv-dropzone[data-drag="true"] {
+  border-color: var(--pv-accent);
+  background: var(--pv-accent-soft);
+  transform: scale(1.01);
+}

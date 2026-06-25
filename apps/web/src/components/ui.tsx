@@ -6,9 +6,11 @@ import { loadGoogleMaps } from '../lib/mapsJs'
 import { relativeTime } from '../lib/format'
 
 /**
- * BrainPal design system — clean, Greenlight-style primitives.
+ * BrainPal design system — CRED-inspired dark primitives.
  * Compose screens from these so the whole app stays consistent:
- *  - Card        surface container with soft shadow
+ *  - PressButton  tactile button with spring scale + ripple-from-cursor
+ *  - GradientButton premium gradient CTA with sheen sweep
+ *  - Card        glass/gradient surface container
  *  - StatCard    icon + label + big value + sub (2-col grids)
  *  - ActionCircle round action button + label
  *  - Avatar      circular initial/photo
@@ -16,24 +18,109 @@ import { relativeTime } from '../lib/format'
  *  - KidMapCard   per-kid location card for the parent overview
  */
 
+/* ── Tactile press button: spring scale + ripple originating at the cursor ──
+   Drop-in <button> replacement. Use for any interactive surface that should
+   feel alive. Pass `spring="lg"` for hero CTAs. */
+export function PressButton({
+  children,
+  className = '',
+  spring = 'sm',
+  ripple = true,
+  type = 'button',
+  disabled,
+  onClick,
+  style,
+  'aria-label': ariaLabel,
+  title,
+}: {
+  children: React.ReactNode
+  className?: string
+  spring?: 'sm' | 'lg'
+  ripple?: boolean
+  type?: 'button' | 'submit'
+  disabled?: boolean
+  onClick?: () => void
+  style?: React.CSSProperties
+  'aria-label'?: string
+  title?: string
+}) {
+  const handleDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!ripple) return
+    const el = e.currentTarget
+    const r = el.getBoundingClientRect()
+    el.style.setProperty('--rx', `${e.clientX - r.left}px`)
+    el.style.setProperty('--ry', `${e.clientY - r.top}px`)
+  }
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={onClick}
+      onPointerDown={handleDown}
+      aria-label={ariaLabel}
+      title={title}
+      style={style}
+      className={`${spring === 'lg' ? 'press-lg' : 'press'} ${ripple ? 'ripple' : ''} ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/* ── Premium gradient CTA — gradient fill, glow, sheen sweep, spring press ── */
+export function GradientButton({
+  children,
+  onClick,
+  disabled,
+  type = 'button',
+  variant = 'accent',
+  className = '',
+}: {
+  children: React.ReactNode
+  onClick?: () => void
+  disabled?: boolean
+  type?: 'button' | 'submit'
+  variant?: 'accent' | 'violet' | 'gold'
+  className?: string
+}) {
+  const grad =
+    variant === 'violet' ? 'var(--grad-violet)' : variant === 'gold' ? 'var(--grad-gold)' : 'var(--grad-accent-bright)'
+  const glow =
+    variant === 'violet' ? 'var(--glow-violet)' : variant === 'gold' ? '0 10px 30px -8px rgba(214,165,90,0.5)' : 'var(--glow-accent)'
+  const ink = variant === 'accent' ? 'var(--on-accent)' : variant === 'gold' ? '#2a1c06' : '#0c0a1e'
+  return (
+    <PressButton
+      type={type}
+      spring="lg"
+      onClick={onClick}
+      disabled={disabled}
+      className={`sheen relative flex items-center justify-center gap-2 rounded-2xl px-5 py-4 text-base font-extrabold tracking-tight disabled:opacity-40 disabled:saturate-50 ${className}`}
+      style={{ backgroundImage: grad, color: ink, boxShadow: disabled ? undefined : glow }}
+    >
+      {children}
+    </PressButton>
+  )
+}
+
 export function Card({
   children,
   className = '',
   onClick,
+  style,
 }: {
   children: React.ReactNode
   className?: string
   onClick?: () => void
+  style?: React.CSSProperties
 }) {
-  const Tag = onClick ? 'button' : 'div'
-  return (
-    <Tag
-      onClick={onClick}
-      className={`shadow-soft block rounded-3xl bg-surface text-left ring-1 ring-border ${onClick ? 'press' : ''} ${className}`}
-    >
-      {children}
-    </Tag>
-  )
+  if (onClick) {
+    return (
+      <PressButton onClick={onClick} style={style} className={`grad-border shadow-soft block rounded-3xl text-left ${className}`}>
+        {children}
+      </PressButton>
+    )
+  }
+  return <div style={style} className={`grad-border shadow-soft block rounded-3xl text-left ${className}`}>{children}</div>
 }
 
 export function StatCard({
@@ -53,8 +140,8 @@ export function StatCard({
 }) {
   return (
     <Card onClick={onClick} className="p-4">
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-soft">
-        <Icon size={18} className="text-accent" />
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl text-on-accent" style={{ backgroundImage: 'var(--grad-accent-bright)' }}>
+        <Icon size={18} />
       </span>
       <div className="mt-3 text-sm font-semibold text-muted">{label}</div>
       <div className="mt-0.5 text-2xl font-extrabold tracking-tight text-ink">{value}</div>
@@ -81,17 +168,17 @@ export function ActionCircle({
   disabled?: boolean
 }) {
   return (
-    <button onClick={onClick} disabled={disabled} className="press flex w-[5.5rem] shrink-0 flex-col items-center gap-2 disabled:opacity-40">
+    <PressButton onClick={onClick} disabled={disabled} spring="lg" ripple={false} className="flex w-[5.5rem] shrink-0 flex-col items-center gap-2 disabled:opacity-40">
       <span
-        className={`flex h-16 w-16 items-center justify-center rounded-full ${
-          variant === 'filled' ? 'text-white' : 'shadow-soft bg-surface text-accent ring-1 ring-border'
+        className={`sheen flex h-16 w-16 items-center justify-center rounded-full ${
+          variant === 'filled' ? 'text-on-accent glow-accent' : 'glass text-accent'
         }`}
-        style={variant === 'filled' ? { background: 'var(--color-brand-deep)' } : undefined}
+        style={variant === 'filled' ? { backgroundImage: 'var(--grad-accent-bright)' } : undefined}
       >
         <Icon size={24} strokeWidth={2.4} />
       </span>
       <span className="text-center text-xs font-semibold leading-tight text-ink">{label}</span>
-    </button>
+    </PressButton>
   )
 }
 

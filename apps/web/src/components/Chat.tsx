@@ -4,6 +4,7 @@ import { aud } from '../lib/format'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../lib/agents'
 import { BrandLogo } from './BrandLogo'
 import { ConversationHistory } from './ConversationHistory'
+import { PressButton, GradientButton } from './ui'
 import { SquarePen, History as HistoryIcon } from 'lucide-react'
 
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
@@ -202,34 +203,35 @@ export function Chat() {
 /* ── Header: orchestrator orb + specialist roster ────────────────────── */
 function ChatHeader({ onNewChat, onHistory }: { onNewChat: () => void; onHistory: () => void }) {
   return (
-    <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+    <div className="relative flex items-center gap-3 border-b border-border px-4 py-3">
+      <div className="pointer-events-none absolute -top-10 left-6 h-24 w-40 rounded-full bg-grad-aurora opacity-15 blur-2xl" />
       <BrandLogo size={34} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {SPECIALISTS.map((a) => (
-            <span key={a.id} className="flex items-center gap-1 text-[11px] font-medium text-muted">
+            <span key={a.id} className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-muted glass">
               <a.Icon size={12} style={{ color: a.color }} />
               {a.name.replace('PAL', '')}
             </span>
           ))}
         </div>
       </div>
-      <button
+      <PressButton
         onClick={onHistory}
         aria-label="Conversation history"
         title="History"
-        className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface2 hover:text-ink"
+        className="flex h-9 w-9 items-center justify-center rounded-full glass text-muted"
       >
         <HistoryIcon size={19} />
-      </button>
-      <button
+      </PressButton>
+      <PressButton
         onClick={onNewChat}
         aria-label="New chat"
         title="New chat"
-        className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface2 hover:text-ink"
+        className="flex h-9 w-9 items-center justify-center rounded-full glass text-muted"
       >
         <SquarePen size={19} />
-      </button>
+      </PressButton>
     </div>
   )
 }
@@ -238,22 +240,23 @@ function ChatHeader({ onNewChat, onHistory }: { onNewChat: () => void; onHistory
 function EmptyState({ onPick }: { onPick: (t: string) => void }) {
   return (
     <div className="flex flex-col items-center px-4 pt-10 text-center">
-      <div className="relative mb-4">
-        <AgentOrb agent={AGENTS.pal} size={72} aura />
+      <div className="animate-scale-in relative mb-4">
+        <AgentOrb agent={AGENTS.pal} size={76} aura />
       </div>
-      <div className="text-lg font-extrabold text-ink">Meet your money council</div>
-      <p className="mt-1 max-w-xs text-sm text-muted">
+      <div className="animate-rise text-xl font-extrabold tracking-tight text-grad-accent">Meet your money council</div>
+      <p className="animate-rise mt-1.5 max-w-xs text-sm text-muted" style={{ animationDelay: '0.08s' }}>
         Ask PAL anything. MoneyPAL, HealthPAL &amp; StudyPAL jump in when it's their thing.
       </p>
-      <div className="mt-5 flex w-full flex-col gap-2">
-        {SUGGESTIONS.map((s) => (
-          <button
+      <div className="mt-5 flex w-full flex-col gap-2.5">
+        {SUGGESTIONS.map((s, i) => (
+          <PressButton
             key={s}
             onClick={() => onPick(s)}
-            className="rounded-2xl border border-surface2 bg-surface px-4 py-3 text-left text-sm text-ink transition active:scale-[0.99] hover:border-accent/40"
+            className="grad-border animate-pop-in rounded-2xl px-4 py-3.5 text-left text-sm font-medium text-ink"
+            style={{ animationDelay: `${i * 50}ms` }}
           >
             {s}
-          </button>
+          </PressButton>
         ))}
       </div>
     </div>
@@ -264,7 +267,10 @@ function EmptyState({ onPick }: { onPick: (t: string) => void }) {
 function UserBubble({ content }: { content: string }) {
   return (
     <div className="animate-msg-in flex justify-end">
-      <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm font-medium leading-relaxed text-on-accent">
+      <div
+        className="max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-br-md px-4 py-2.5 text-sm font-medium leading-relaxed text-on-accent glow-accent"
+        style={{ backgroundImage: 'var(--grad-accent-bright)' }}
+      >
         {content}
       </div>
     </div>
@@ -274,7 +280,7 @@ function UserBubble({ content }: { content: string }) {
 function AgentBubble({ agent, content, index }: { agent: Agent; content: string; index: number }) {
   const isPal = agent.id === 'pal'
   return (
-    <div className="animate-msg-in flex items-end gap-2" style={{ animationDelay: `${Math.min(index, 6) * 20}ms` }}>
+    <div className="animate-msg-in flex items-end gap-2" style={{ animationDelay: `${Math.min(index, 6) * 24}ms` }}>
       <AgentOrb agent={agent} size={30} />
       <div className="max-w-[82%]">
         {!isPal && (
@@ -283,10 +289,10 @@ function AgentBubble({ agent, content, index }: { agent: Agent; content: string;
           </div>
         )}
         <div
-          className="whitespace-pre-wrap rounded-2xl rounded-bl-md px-4 py-2.5 text-sm leading-relaxed text-ink"
+          className="grad-border whitespace-pre-wrap rounded-2xl rounded-bl-md px-4 py-2.5 text-sm leading-relaxed text-ink"
           style={
             isPal
-              ? { background: 'var(--color-surface2)' }
+              ? { backgroundImage: 'var(--grad-card)' }
               : { background: `${agent.color}1a`, boxShadow: `inset 0 0 0 1px ${agent.color}33` }
           }
         >
@@ -308,7 +314,7 @@ function Conferring() {
           </span>
         ))}
       </div>
-      <div className="flex items-center gap-1.5 rounded-2xl bg-surface2 px-3.5 py-2.5">
+      <div className="glass flex items-center gap-1.5 rounded-2xl px-3.5 py-2.5">
         <span className="dot h-1.5 w-1.5 rounded-full bg-muted" style={{ animationDelay: '0ms' }} />
         <span className="dot h-1.5 w-1.5 rounded-full bg-muted" style={{ animationDelay: '160ms' }} />
         <span className="dot h-1.5 w-1.5 rounded-full bg-muted" style={{ animationDelay: '320ms' }} />
@@ -321,22 +327,19 @@ function Conferring() {
 /* ── Intent confirmation card ────────────────────────────────────────── */
 function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="animate-msg-in rounded-2xl border border-accent/40 bg-surface p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted">PAL wants to</div>
+    <div className="animate-pop-in grad-border rounded-2xl p-4 glow-accent" style={{ backgroundImage: 'var(--grad-card)' }}>
+      <div className="text-xs font-bold uppercase tracking-widest text-grad-accent">PAL wants to</div>
       <div className="mt-1 font-semibold text-ink">{describeIntent(intent)}</div>
       <div className="mt-3 flex gap-2">
-        <button
+        <PressButton
           onClick={onCancel}
-          className="flex-1 rounded-full bg-surface2 py-2.5 text-sm font-bold text-ink active:scale-[0.98]"
+          className="glass flex-1 rounded-full py-2.5 text-sm font-bold text-ink"
         >
           Cancel
-        </button>
-        <button
-          onClick={onConfirm}
-          className="flex-1 rounded-full bg-accent py-2.5 text-sm font-bold text-on-accent active:scale-[0.98]"
-        >
+        </PressButton>
+        <GradientButton onClick={onConfirm} className="flex-1 rounded-full py-2.5 text-sm">
           Confirm
-        </button>
+        </GradientButton>
       </div>
     </div>
   )
@@ -358,6 +361,7 @@ function Composer({
   onCamera: () => void
   onVoice: () => void
 }) {
+  const canSend = !disabled && !!value.trim()
   return (
     <form
       onSubmit={(e) => {
@@ -367,37 +371,38 @@ function Composer({
       className="flex items-center gap-2 border-t border-surface2 p-3"
       style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
     >
-      <button
-        type="button"
+      <PressButton
         onClick={onCamera}
         aria-label="Point the camera and ask"
         title="Camera"
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface2 text-accent active:scale-95"
+        className="glass flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-accent"
       >
         <CameraIcon />
-      </button>
-      <button
-        type="button"
+      </PressButton>
+      <PressButton
         onClick={onVoice}
         aria-label="Talk to PAL"
         title="Voice"
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface2 text-accent active:scale-95"
+        className="glass flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-accent"
       >
         <WaveIcon />
-      </button>
+      </PressButton>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Message the council…"
-        className="h-12 flex-1 rounded-full bg-surface px-4 text-ink outline-none ring-1 ring-transparent focus:ring-accent"
+        className="grad-border h-12 flex-1 rounded-full bg-transparent px-4 text-ink outline-none placeholder:text-faint"
       />
-      <button
+      <PressButton
         type="submit"
-        disabled={disabled || !value.trim()}
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-xl font-black text-on-accent transition disabled:opacity-40"
+        spring="lg"
+        disabled={!canSend}
+        aria-label="Send"
+        className="sheen flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-xl font-black text-on-accent transition disabled:opacity-40 disabled:saturate-50"
+        style={{ backgroundImage: 'var(--grad-accent-bright)', boxShadow: canSend ? 'var(--glow-accent)' : undefined }}
       >
         ↑
-      </button>
+      </PressButton>
     </form>
   )
 }
@@ -408,8 +413,8 @@ function AgentOrb({ agent, size, aura, ring }: { agent: Agent; size: number; aur
     <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }}>
       {aura && (
         <span
-          className="animate-spin-slow absolute inset-[-3px] rounded-full opacity-60 blur-[2px]"
-          style={{ background: `conic-gradient(from 0deg, ${agent.gradient[0]}, ${agent.gradient[1]}, ${agent.gradient[0]})` }}
+          className="animate-spin-slow absolute inset-[-4px] rounded-full opacity-70 blur-[3px]"
+          style={{ background: `conic-gradient(from 0deg, ${agent.gradient[0]}, ${agent.gradient[1]}, var(--violet), ${agent.gradient[0]})` }}
         />
       )}
       <span
@@ -418,7 +423,7 @@ function AgentOrb({ agent, size, aura, ring }: { agent: Agent; size: number; aur
           width: size,
           height: size,
           background: `linear-gradient(135deg, ${agent.gradient[0]}, ${agent.gradient[1]})`,
-          boxShadow: ring ? '0 0 0 2px var(--color-canvas)' : undefined,
+          boxShadow: ring ? '0 0 0 2px var(--color-canvas)' : `0 6px 18px -6px ${agent.color}88`,
         }}
       >
         <agent.Icon size={size * 0.5} strokeWidth={2.4} />

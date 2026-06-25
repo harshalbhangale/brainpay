@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DailyCall } from '@daily-co/daily-js'
 import {
-  ChevronLeft, ChevronRight, Mic, Video, Trophy, Sparkles, Check, X, ShieldCheck, Eye, BookOpen, PhoneOff,
+  ChevronLeft, ChevronRight, Mic, MicOff, Video, Trophy, Sparkles, Check, X, ShieldCheck, Eye, BookOpen, PhoneOff,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Button } from '../components/primitives'
@@ -238,28 +238,75 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
 
 
 // ─────────────────────────────────────────────────────────── Tavus stage
+// Joins the Tavus conversation with a Daily *call object* (no prebuilt UI, so
+// no prejoin lobby / name prompt) and renders the replica tutor's video + audio
+// directly. We only complete the interview once we've actually joined.
 function TavusStage({ url, token, onEnd }: { url: string; token: string | null; onEnd: (p: { transcript: TranscriptLine[]; durationSecs: number; focus?: Focus }) => void }) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const tutorVideoRef = useRef<HTMLVideoElement>(null)
+  const selfVideoRef = useRef<HTMLVideoElement>(null)
   const callRef = useRef<DailyCall | null>(null)
   const transcriptRef = useRef<TranscriptLine[]>([])
   const flagsRef = useRef<string[]>([])
   const endedRef = useRef(false)
+  const joinedRef = useRef(false)
   const startedRef = useRef(Date.now())
+  const [status, setStatus] = useState<'connecting' | 'live'>('connecting')
+  const [micOn, setMicOn] = useState(true)
 
-  function end() {
+  async function end() {
     if (endedRef.current) return
     endedRef.current = true
     const durationSecs = Math.round((Date.now() - startedRef.current) / 1000)
     const flags = Array.from(new Set(flagsRef.current)).slice(0, 8)
-    try { callRef.current?.destroy() } catch { /* ignore */ }
+    try { await callRef.current?.leave() } catch { /* ignore */ }
+    try { await callRef.current?.destroy() } catch { /* ignore */ }
+    callRef.current = null
     onEnd({ transcript: transcriptRef.current.slice(-80), durationSecs, focus: flags.length ? { flags } : undefined })
+  }
+
+  function toggleMic() {
+    const next = !micOn
+    setMicOn(next)
+    try { callRef.current?.setLocalAudio(next) } catch { /* ignore */ }
   }
 
   useEffect(() => {
     let disposed = false
+
+    // Attach the replica tutor's tracks (and the kid's self-view) to the <video>s.
+    function paint() {
+      const call = callRef.current
+      if (!call) return
+      const parts = call.participants() as Record<string, { local?: boolean; tracks?: Record<string, { track?: MediaStreamTrack; persistentTrack?: MediaStreamTrack }> }>
+      const remote = Object.values(parts).find((p) => !p.local)
+      if (remote && tutorVideoRef.current) {
+        const v = remote.tracks?.video?.persistentTrack ?? remote.tracks?.video?.track
+        const a = remote.tracks?.audio?.persistentTrack ?? remote.tracks?.audio?.track
+        const stream = new MediaStream()
+        if (v) stream.addTrack(v)
+        if (a) stream.addTrack(a)
+        if (stream.getTracks().length) {
+          tutorVideoRef.current.srcObject = stream
+          void tutorVideoRef.current.play().catch(() => undefined)
+        }
+      }
+      const local = parts.local
+      const lv = local?.tracks?.video?.persistentTrack ?? local?.tracks?.video?.track
+      if (lv && selfVideoRef.current) {
+        selfVideoRef.current.srcObject = new MediaStream([lv])
+        void selfVideoRef.current.play().catch(() => undefined)
+      }
+    }
+
     function onAppMessage(ev: { data?: Record<string, unknown> }) {
       const d = (ev?.data ?? {}) as Record<string, unknown>
       const type = String(d.event_type ?? d.message_type ?? '')
+      // Tavus signals the end of the conversation on the data channel — when it
+      // does, auto-finish so the kid lands on their score without tapping End.
+      if (/shutdown|conversation[._]ended|conversation\.ended|application\.ended|replica.*(left|stopped)/i.test(type)) {
+        if (joinedRef.current) void end()
+        return
+      }
       const props = (d.properties ?? {}) as Record<string, unknown>
       if (/utterance|transcription/i.test(type)) {
         const role = String(props.role ?? d.role ?? 'tutor')
@@ -270,35 +317,77 @@ function TavusStage({ url, token, onEnd }: { url: string; token: string | null; 
         if (note.trim()) flagsRef.current.push(note.slice(0, 100))
       }
     }
+
     ;(async () => {
       const Daily = (await import('@daily-co/daily-js')).default
-      if (disposed || !containerRef.current) return
-      const call = Daily.createFrame(containerRef.current, {
-        showLeaveButton: false,
-        iframeStyle: { width: '100%', height: '100%', border: '0', borderRadius: '24px' },
-      })
-      callRef.current = call
-      call.on('app-message', onAppMessage as never)
-      call.on('left-meeting', () => end())
+      if (disposed) return
+      // Reuse-safe: tear down any stray instance from a prior mount (StrictMode).
+      try { (Daily.getCallInstance?.() as DailyCall | undefined)?.destroy() } catch { /* ignore */ }
+
+      let call: DailyCall
       try {
-        await call.join({ url, ...(token ? { token } : {}) })
+        call = Daily.createCallObject({ subscribeToTracksAutomatically: true })
       } catch {
-        end()
+        void end()
+        return
+      }
+      callRef.current = call
+
+      call
+        .on('joined-meeting', () => { joinedRef.current = true; setStatus('live'); paint() })
+        .on('participant-joined', paint)
+        .on('participant-updated', paint)
+        .on('track-started', paint)
+        .on('app-message', onAppMessage as never)
+        // Only treat a "left" as completion once we actually got in — otherwise
+        // a transient pre-join teardown would falsely "complete" the interview.
+        .on('left-meeting', () => { if (joinedRef.current) void end() })
+        // Auto-end when the tutor (replica) leaves after wrapping up.
+        .on('participant-left', (ev) => {
+          const left = (ev as { participant?: { local?: boolean } } | undefined)?.participant
+          if (left && !left.local && joinedRef.current) void end()
+        })
+        .on('error', () => { void end() })
+
+      try {
+        await call.join({ url, ...(token ? { token } : {}), userName: 'Student', startVideoOff: false, startAudioOff: false })
+      } catch {
+        void end()
       }
     })()
+
     return () => {
       disposed = true
       try { callRef.current?.destroy() } catch { /* ignore */ }
+      callRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, token])
 
-
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
-      <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden rounded-[24px]" style={{ background: 'var(--pv-surface-3)', boxShadow: 'var(--pv-shadow-lg)' }} />
-      <div className="flex flex-none items-center justify-center pt-4">
-        <button onClick={end} aria-label="End interview" className="pv-press-lg flex flex-col items-center gap-1.5">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-[24px]" style={{ background: 'var(--pv-surface-3)', boxShadow: 'var(--pv-shadow-lg)' }}>
+        <video ref={tutorVideoRef} autoPlay playsInline className="h-full w-full object-cover" />
+
+        {/* Kid self-view (proctor) */}
+        <video ref={selfVideoRef} autoPlay playsInline muted className="absolute bottom-3 right-3 h-28 w-20 rounded-xl object-cover" style={{ transform: 'scaleX(-1)', boxShadow: 'var(--pv-shadow-md)', background: '#000' }} />
+
+        {status === 'connecting' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: 'rgba(11,12,15,0.55)' }}>
+            <Spinner />
+            <p className="text-sm font-semibold text-white">Connecting you to your tutor…</p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-none items-center justify-center gap-8 pt-4">
+        <button onClick={toggleMic} aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'} className="pv-press-lg flex flex-col items-center gap-1.5">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full" style={micOn ? { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' } : { background: 'var(--pv-ink)', color: '#fff', boxShadow: 'var(--pv-shadow-md)' }}>
+            {micOn ? <Mic size={22} /> : <MicOff size={22} />}
+          </span>
+          <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{micOn ? 'Mic on' : 'Muted'}</span>
+        </button>
+        <button onClick={() => void end()} aria-label="End interview" className="pv-press-lg flex flex-col items-center gap-1.5">
           <span className="flex h-16 w-16 items-center justify-center rounded-full text-white" style={{ background: 'var(--pv-neg)', boxShadow: '0 12px 30px -8px rgba(229,72,77,0.6)' }}>
             <PhoneOff size={24} strokeWidth={2.4} />
           </span>

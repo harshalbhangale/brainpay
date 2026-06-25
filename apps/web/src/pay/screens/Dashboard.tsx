@@ -15,18 +15,23 @@ import {
   TrendingUp,
   ChevronRight,
   ArrowUpRight,
+  ListChecks,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import {
   ActionTile,
   Avatar,
   Card,
   IconButton,
+  IconBadge,
   ListRow,
   SectionHeader,
   Sparkline,
 } from '../components/primitives'
 import { TopBar, type TabKey } from '../components/shell'
 import { fmt, signed, timeAgo } from '../data'
+import { api } from '../../lib/api'
+import type { ChoresResponse } from '../../components/family/types'
 import { useAuthStore } from '../../stores/auth'
 import { useWallet, useFamilyKids } from '../useMoneyPal'
 import type { PalKey } from '../pals/config'
@@ -41,10 +46,21 @@ export function Dashboard({
   onTopUp: () => void
 }) {
   const account = useAuthStore((s) => s.account)
+  const token = useAuthStore((s) => s.token)
+  const isKid = account?.accountType === 'kid'
   const firstName = ((account?.persona?.name as string) || 'there').split(' ')[0]
   const wallet = useWallet()
   const { kids } = useFamilyKids()
   const recent = wallet.txns.slice(0, 4)
+
+  // Active chores, surfaced right on the home screen.
+  const choresQ = useQuery({ queryKey: ['chores'], queryFn: () => api<ChoresResponse>('/chores'), enabled: !!token })
+  const chores = choresQ.data?.chores ?? []
+  const KID_TODO = ['pending', 'ai_rejected']
+  const PARENT_REVIEW = ['submitted', 'ai_uncertain', 'ai_rejected']
+  const choreCount = isKid
+    ? chores.filter((ch) => KID_TODO.includes(ch.status)).length
+    : chores.filter((ch) => PARENT_REVIEW.includes(ch.status)).length
 
   return (
     <div className="flex flex-1 flex-col">
@@ -114,6 +130,29 @@ export function Dashboard({
           <ActionTile Icon={Receipt} label="Activity" tile="butter" onClick={() => go('activity')} />
           <ActionTile Icon={Sparkles} label="Ask AI" tile="lilac" onClick={() => goPal?.('ai')} />
         </div>
+
+        {/* Active chores — visible right here on the home screen */}
+        {chores.length > 0 && (
+          <Card
+            className="pv-rise mt-5 flex items-center gap-4 p-4"
+            style={{ ['--i' as string]: 2 }}
+            onClick={() => go(isKid ? 'chores' : 'family')}
+          >
+            <IconBadge Icon={ListChecks} tile="lilac" size={44} />
+            <div className="min-w-0 flex-1">
+              <div className="pv-title">{isKid ? 'Your chores' : 'Chores'}</div>
+              <div className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
+                {choreCount > 0 ? `${choreCount} ${isKid ? 'to do' : 'to review'}` : 'All caught up 🎉'}
+              </div>
+            </div>
+            {choreCount > 0 && (
+              <span className="pv-amount flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-extrabold" style={{ background: 'var(--pv-accent)', color: 'var(--pv-on-accent)' }}>
+                {choreCount}
+              </span>
+            )}
+            <ChevronRight size={18} style={{ color: 'var(--pv-ink-3)' }} />
+          </Card>
+        )}
 
         {/* The kids (tap → Family) */}
         {kids.length > 0 && (

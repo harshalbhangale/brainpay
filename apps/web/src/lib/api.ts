@@ -1,5 +1,5 @@
 import { env } from './env'
-import { getStoredToken } from '../stores/auth'
+import { getStoredToken, useAuthStore } from '../stores/auth'
 
 export class ApiError extends Error {
   status: number
@@ -24,7 +24,16 @@ export async function api<T = unknown>(path: string, init: RequestInit = {}): Pr
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
 
   const res = await fetch(`${env.apiBaseUrl}${path}`, { ...init, headers })
-  if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => ''))
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    // A 401 means the stored token is missing, expired, or signed by a
+    // different API/secret. Clear the session so the app falls back to the
+    // login screen instead of dead-ending on repeated auth errors.
+    if (res.status === 401 && getStoredToken()) {
+      useAuthStore.getState().logout()
+    }
+    throw new ApiError(res.status, body)
+  }
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
 }

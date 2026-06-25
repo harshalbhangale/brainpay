@@ -1,0 +1,9 @@
+version: 1
+
+# Trust-all configuration.
+# WARNING: this auto-approves every tool, including file edits, deletions,
+# and shell command execution, with no confirmation prompts. Only use this
+# in an environment where you fully trust the agent and its actions.
+permissions:
+  - effect: allow
+    tools: ["*"]

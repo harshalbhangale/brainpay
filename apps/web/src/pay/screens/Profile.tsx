@@ -5,9 +5,9 @@
  * primitives so it matches MoneyPal / StudyPal. Logout lives ONLY here (and the
  * pre-onboarding role screen), so it's consistent across the app.
  */
-import { useState } from 'react'
+import { useState, useRef, Children } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, LogOut, Trash2, ChevronRight, Check } from 'lucide-react'
+import { X, LogOut, Trash2, ChevronRight, Check, Camera, Pencil, Loader2 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { useAuthStore } from '../../stores/auth'
 import { AVATARS, useAvatar } from '../../lib/avatar'
@@ -30,6 +30,7 @@ function loadPrefs(): Prefs {
 export function Profile({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const account = useAuthStore((s) => s.account)
+  const updateAccount = useAuthStore((s) => s.updateAccount)
   const logout = useAuthStore((s) => s.logout)
   const { avatar, setAvatar } = useAvatar()
   const { voice, setVoice } = useVoicePrefs()
@@ -42,6 +43,39 @@ export function Profile({ onClose }: { onClose: () => void }) {
   const name = (account?.persona?.name as string) || 'You'
   const photo = typeof account?.persona?.avatar === 'string' ? (account.persona.avatar as string) : undefined
   const role = account?.accountType === 'kid' ? 'Kid' : 'Parent'
+
+  // Editable identity (name + photo), persisted to persona via PATCH /me.
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [editingName, setEditingName] = useState(false)
+  const [draftName, setDraftName] = useState(name)
+  const [savingId, setSavingId] = useState(false)
+
+  async function savePersona(patch: Record<string, unknown>) {
+    setSavingId(true)
+    try {
+      const next = { ...(account?.persona ?? {}), ...patch }
+      const res = await api<{ account: NonNullable<typeof account> }>('/me', { method: 'PATCH', body: JSON.stringify({ persona: next }) })
+      updateAccount(res.account)
+    } catch { /* ignore — keep prior value */ } finally {
+      setSavingId(false)
+    }
+  }
+
+  function onPhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => { if (typeof reader.result === 'string') void savePersona({ avatar: reader.result }) }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  function commitName() {
+    const n = draftName.trim()
+    setEditingName(false)
+    if (n && n !== name) void savePersona({ name: n })
+    else setDraftName(name)
+  }
 
   function setPref(patch: Partial<Prefs>) {
     setPrefs((prev) => {
@@ -80,15 +114,40 @@ export function Profile({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="pv-no-scrollbar flex-1 overflow-y-auto px-5 pb-10">
-        {/* Identity card */}
-        <Card className="pv-rise flex items-center gap-4 p-5" style={{ background: 'var(--pv-grad-ink)' }}>
-          <Avatar name={name} src={photo} size={60} />
-          <div className="min-w-0">
-            <div className="truncate text-lg font-extrabold" style={{ color: 'var(--pv-on-dark)' }}>{name}</div>
-            <div className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>
-              {role}{account?.phone ? ` · ${account.phone}` : ''}
+        {/* Identity card — editable photo + name */}
+        <Card className="pv-rise p-5" style={{ background: 'var(--pv-grad-ink)' }}>
+          <div className="flex items-center gap-4">
+            <button onClick={() => fileRef.current?.click()} aria-label="Change photo" className="pv-press relative shrink-0 rounded-full">
+              <Avatar name={name} src={photo} size={64} />
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-accent)', color: 'var(--pv-on-accent)', boxShadow: '0 0 0 2px var(--pv-ink)' }}>
+                <Camera size={12} strokeWidth={2.6} />
+              </span>
+            </button>
+            <div className="min-w-0 flex-1">
+              {editingName ? (
+                <input
+                  autoFocus
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onBlur={commitName}
+                  onKeyDown={(e) => { if (e.key === 'Enter') commitName() }}
+                  maxLength={40}
+                  className="w-full rounded-xl px-3 py-1.5 text-lg font-extrabold outline-none"
+                  style={{ background: 'rgba(255,255,255,0.14)', color: 'var(--pv-on-dark)' }}
+                />
+              ) : (
+                <button onClick={() => { setDraftName(name); setEditingName(true) }} className="pv-press flex max-w-full items-center gap-1.5 text-left">
+                  <span className="truncate text-lg font-extrabold" style={{ color: 'var(--pv-on-dark)' }}>{name}</span>
+                  {savingId ? <Loader2 size={14} className="animate-spin" style={{ color: 'rgba(255,255,255,0.6)' }} /> : <Pencil size={13} className="shrink-0" style={{ color: 'rgba(255,255,255,0.55)' }} />}
+                </button>
+              )}
+              <div className="mt-1 flex items-center gap-2">
+                <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: 'rgba(255,255,255,0.16)', color: 'var(--pv-on-dark)' }}>{role}</span>
+                {account?.phone && <span className="truncate text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>{account.phone}</span>}
+              </div>
             </div>
           </div>
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPhotoPick} />
         </Card>
 
         {/* Companion */}
@@ -159,11 +218,16 @@ export function Profile({ onClose }: { onClose: () => void }) {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const items = Children.toArray(children)
   return (
     <section className="mt-6">
       <h3 className="pv-label mb-2">{title}</h3>
       <Card flat className="overflow-hidden p-0">
-        <div className="divide-y" style={{ borderColor: 'var(--pv-line)' }}>{children}</div>
+        {items.map((child, i) => (
+          <div key={i} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--pv-line)' }}>
+            {child}
+          </div>
+        ))}
       </Card>
     </section>
   )

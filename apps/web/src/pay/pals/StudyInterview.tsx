@@ -54,6 +54,7 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
   const [session, setSession] = useState<{ interviewId: string; url: string; token: string | null } | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorDetail, setErrorDetail] = useState<string | null>(null)
 
   async function start() {
     setPhase('starting')
@@ -62,8 +63,9 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
     try {
       const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       s.getTracks().forEach((t) => t.stop())
-    } catch {
+    } catch (err) {
       setError('I need your camera and microphone for the interview. Please allow them and try again.')
+      setErrorDetail(`getUserMedia: ${errText(err)}`)
       setPhase('error')
       return
     }
@@ -79,8 +81,9 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
         setSession({ interviewId: res.interviewId, url: '', token: null })
         setPhase('fallback')
       }
-    } catch {
+    } catch (err) {
       setError('Could not start the interview. Please try again.')
+      setErrorDetail(`start: ${errText(err)}`)
       setPhase('error')
     }
   }
@@ -159,6 +162,11 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
         <Header title="AI Interview" onBack={onBack} />
         <Centered>
           <p className="pv-body mb-4" style={{ color: 'var(--pv-ink-2)' }}>{error ?? 'Something went wrong.'}</p>
+          {errorDetail && (
+            <p className="mb-4 max-w-xs select-all break-words rounded-lg px-3 py-2 text-[11px]" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-3)', fontFamily: 'monospace' }}>
+              {errorDetail}
+            </p>
+          )}
           <Button variant="accent" size="lg" onClick={() => setPhase('intro')}>Try again</Button>
         </Centered>
       </>
@@ -225,9 +233,11 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
   }
 
   // Connection failed / we never really got an interview — let them retry
-  // instead of silently "completing" with a default score.
-  function abort(reason?: string) {
-    setError(reason ?? "I couldn't connect you to the tutor. Let's try that again.")
+  // instead of silently "completing" with a default score. `detail` carries the
+  // raw failure cause so it's visible on-device (tablets have no console).
+  function abort(message?: string, detail?: string) {
+    setError(message ?? "I couldn't connect you to the tutor. Let's try that again.")
+    setErrorDetail(detail ?? null)
     setPhase('error')
   }
 
@@ -252,7 +262,7 @@ const MIN_REAL_INTERVIEW_SECS = 12
 // Joins the Tavus conversation with a Daily *call object* (no prebuilt UI, so
 // no prejoin lobby / name prompt) and renders the replica tutor's video + audio
 // directly. We only complete the interview once we've actually joined.
-function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string | null; onEnd: (p: { transcript: TranscriptLine[]; durationSecs: number; focus?: Focus }) => void; onAbort: (reason?: string) => void }) {
+function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string | null; onEnd: (p: { transcript: TranscriptLine[]; durationSecs: number; focus?: Focus }) => void; onAbort: (message?: string, detail?: string) => void }) {
   const tutorVideoRef = useRef<HTMLVideoElement>(null)
   const selfVideoRef = useRef<HTMLVideoElement>(null)
   const callRef = useRef<DailyCall | null>(null)
@@ -282,7 +292,10 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
     // enough for the server/webhook to have a transcript. Anything less is a
     // dropped connection — bail out instead of awarding a default score.
     if (!joinedRef.current || (transcript.length === 0 && durationSecs < MIN_REAL_INTERVIEW_SECS)) {
-      onAbort("We didn't quite get your interview going. Let's try again.")
+      onAbort(
+        "We didn't quite get your interview going. Let's try again.",
+        `ended before a real interview (joined=${joinedRef.current}, ${durationSecs}s, ${transcript.length} lines)`,
+      )
       return
     }
     const flags = Array.from(new Set(flagsRef.current)).slice(0, 8)
@@ -290,11 +303,11 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
   }
 
   // Connection failed before we ever got in — never score, just let them retry.
-  async function fail(reason?: string) {
+  async function fail(message?: string, detail?: string) {
     if (endedRef.current) return
     endedRef.current = true
     await teardown()
-    onAbort(reason)
+    onAbort(message, detail)
   }
 
   function toggleMic() {
@@ -362,7 +375,7 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
         call = Daily.createCallObject({ subscribeToTracksAutomatically: true })
       } catch (err) {
         console.error('[StudyInterview] createCallObject failed:', err)
-        void fail("I couldn't start the video tutor. Let's try again.")
+        void fail("I couldn't start the video tutor. Let's try again.", `createCallObject: ${errText(err)}`)
         return
       }
       callRef.current = call
@@ -386,15 +399,16 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
         .on('error', (ev) => {
           if (joinedRef.current) return
           const e = ev as { errorMsg?: string; error?: { msg?: string; type?: string } } | undefined
-          console.error('[StudyInterview] Daily error before join:', e?.errorMsg ?? e?.error?.msg ?? e)
-          void fail()
+          const detail = `daily ${e?.error?.type ?? 'error'}: ${e?.errorMsg ?? e?.error?.msg ?? 'unknown'}`
+          console.error('[StudyInterview] Daily error before join:', detail, ev)
+          void fail(undefined, detail)
         })
 
       try {
         await call.join({ url, ...(token ? { token } : {}), userName: 'Student', startVideoOff: false, startAudioOff: false })
       } catch (err) {
         console.error('[StudyInterview] call.join failed:', err)
-        void fail()
+        void fail(undefined, `join: ${errText(err)}`)
       }
     })()
 
@@ -441,6 +455,12 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
 }
 
 // ───────────────────────────────────────────────────────────── small bits
+function errText(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`.slice(0, 160)
+  if (typeof err === 'string') return err.slice(0, 160)
+  try { return JSON.stringify(err).slice(0, 160) } catch { return String(err).slice(0, 160) }
+}
+
 function ChapterRow({ label, sub, active, onClick }: { label: string; sub: string; active: boolean; onClick: () => void }) {
   return (
     <button

@@ -70,7 +70,9 @@ export async function loadPalContext(accountId: string): Promise<PalContext> {
       familyId: null,
       familyName: null,
       kids: [],
-      isParent: caller?.accountType === 'parent',
+      // No membership yet: treat anyone not explicitly a kid as a parent, so a
+      // freshly-onboarded parent (accountType still null) isn't dropped into kid mode.
+      isParent: caller?.accountType !== 'kid',
     }
   }
 

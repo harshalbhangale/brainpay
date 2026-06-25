@@ -52,7 +52,6 @@ export function OverviewTab({
 }
 
 function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: string; onGoTab: (t: FamilyTab) => void }) {
-  const [topup, setTopup] = useState(false)
   const feedQ = useQuery({
     queryKey: ['feed', kid.accountId],
     queryFn: () => api<FeedResponse>(`/family/feed?kidId=${kid.accountId}&limit=50`),
@@ -68,7 +67,6 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
       <BalanceCard name={kidName(kid)} balance={kid.cachedBalance ?? 0} familyName={familyName} accountId={kid.accountId} />
 
       <div className="flex justify-around">
-        <ActionCircle Icon={Send} label="Add money" variant="filled" onClick={() => setTopup(true)} />
         <ActionCircle Icon={ListChecks} label="Chores" onClick={() => onGoTab('chores')} />
         <ActionCircle Icon={Receipt} label="Activity" onClick={() => onGoTab('activity')} />
       </div>
@@ -99,8 +97,6 @@ function KidOverview({ kid, familyName, onGoTab }: { kid: Member; familyName?: s
           </div>
         )}
       </section>
-
-      {topup && <TopupModal kid={kid} onClose={() => setTopup(false)} />}
     </div>
   )
 }

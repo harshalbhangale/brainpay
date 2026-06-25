@@ -11,20 +11,22 @@ import { Settings } from './Settings'
 
 /**
  * Main surface after onboarding.
- * Pane 0 = PAL chat (default). Swipe left → Pane 1 = family dashboard.
+ * Parents: Pane 0 = PAL chat, Pane 1 = family dashboard (MoneyPal), Pane 2 = StudyPal
+ * Kids: Pane 0 = PAL chat, Pane 1 = StudyPal (no MoneyPal)
  * A segmented control mirrors/controls the active pane for desktop.
  */
 export function Home() {
   const navigate = useNavigate()
   const account = useAuthStore((s) => s.account)
   const updateAccount = useAuthStore((s) => s.updateAccount)
+  const isKid = account?.accountType === 'kid'
 
   const scrollerRef = useRef<HTMLDivElement>(null)
   const [pane, setPane] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   // Kids report their device location so parents can see them on the maps.
-  useLocationReporter(account?.accountType === 'kid')
+  useLocationReporter(isKid)
 
   // Background sync of account (accountType / persona / balance).
   useEffect(() => {
@@ -49,6 +51,22 @@ export function Home() {
     if (i !== pane) setPane(i)
   }
 
+  // Kids see: AI, StudyPal (no MoneyPal)
+  // Parents see: AI, MoneyPal, StudyPal
+  const tabs = isKid
+    ? [
+        { label: 'AI', pane: 0 },
+        { label: 'StudyPal', pane: 1 },
+      ]
+    : [
+        { label: 'AI', pane: 0 },
+        { label: 'MoneyPal', pane: 1 },
+        { label: 'StudyPal', pane: 2 },
+      ]
+
+  // Map pane index for rendering (kids skip MoneyPal)
+  const renderPane = isKid ? [0, 2] : [0, 1, 2]
+
   return (
     <div className="fixed inset-0 flex flex-col bg-canvas" style={{ height: '100dvh' }}>
       {/* Top bar: segmented control + settings */}
@@ -57,9 +75,9 @@ export function Home() {
         style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
       >
         <div className="glass flex rounded-full p-1">
-          <Tab label="AI" active={pane === 0} onClick={() => goTo(0)} />
-          <Tab label="MoneyPal" active={pane === 1} onClick={() => goTo(1)} />
-          <Tab label="StudyPal" active={pane === 2} onClick={() => goTo(2)} />
+          {tabs.map(({ label, pane: tabPane }) => (
+            <Tab key={label} label={label} active={pane === tabPane} onClick={() => goTo(tabPane)} />
+          ))}
         </div>
         <button
           onClick={() => setSettingsOpen(true)}
@@ -84,21 +102,19 @@ export function Home() {
         </button>
       )}
 
-      {/* Swipeable panes */}
+      {/* Swipeable panes — kids skip MoneyPal (index 1) */}
       <div
         ref={scrollerRef}
         onScroll={onScroll}
         className="no-scrollbar flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden"
       >
-        <section className="h-full w-full flex-none snap-start">
-          <Chat />
-        </section>
-        <section className="h-full w-full flex-none snap-start">
-          <FamilyView />
-        </section>
-        <section className="h-full w-full flex-none snap-start">
-          <StudyPal />
-        </section>
+        {renderPane.map((paneIdx) => (
+          <section key={paneIdx} className="h-full w-full flex-none snap-start">
+            {paneIdx === 0 && <Chat />}
+            {paneIdx === 1 && <FamilyView />}
+            {paneIdx === 2 && <StudyPal />}
+          </section>
+        ))}
       </div>
 
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}

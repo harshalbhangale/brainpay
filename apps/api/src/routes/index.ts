@@ -16,6 +16,7 @@ import { voiceAgent } from './voice-agent'
 import { voiceOnboarding } from './voice-onboarding'
 import { wallet } from './wallet'
 import { study } from './study'
+import { uploads } from './uploads'
 
 export const routes = new Hono()
 routes.route('/', health)
@@ -39,3 +40,4 @@ routes.route('/', voiceAgent)
 routes.route('/', voiceOnboarding)
 routes.route('/', realtime)
 routes.route('/', study)
+routes.route('/', uploads)

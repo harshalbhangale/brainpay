@@ -14,6 +14,7 @@ import {
   Check, Plus, Flame, Trophy, Bookmark, MessageCircle, RefreshCw, Send as SendIcon, X,
 } from 'lucide-react'
 import { api } from '../../lib/api'
+import { uploadFile } from '../../lib/uploads'
 import { connectLiveRt, type LiveRtSocket, type InterviewScore } from '../../lib/liveRt'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../../lib/liveAudio'
 import { avatarSrc, useAvatar } from '../../lib/avatar'
@@ -1195,16 +1196,24 @@ function SavedView({ topicId, onBack }: { topicId: string; onBack: () => void })
 
 async function fileToDocBody(file: File): Promise<Record<string, unknown>> {
   if (file.type.startsWith('image/')) {
-    const dataUrl = await new Promise<string>((resolve) => {
-      const r = new FileReader()
-      r.onload = () => resolve(r.result as string)
-      r.readAsDataURL(file)
-    })
-    return { title: file.name, fileUrl: dataUrl, fileType: 'image', content: `[Image: ${file.name}. Extract all text, formulas, diagrams and concepts.]` }
+    try {
+      const { fileRef } = await uploadFile(file, 'study-doc')
+      return { title: file.name, fileUrl: fileRef, fileType: 'image', content: `[Image: ${file.name}. Extract all text, formulas, diagrams and concepts.]` }
+    } catch {
+      // Fallback to an inline data URL so uploads still work if storage is down.
+      const dataUrl = await new Promise<string>((resolve) => {
+        const r = new FileReader()
+        r.onload = () => resolve(r.result as string)
+        r.readAsDataURL(file)
+      })
+      return { title: file.name, fileUrl: dataUrl, fileType: 'image', content: `[Image: ${file.name}. Extract all text, formulas, diagrams and concepts.]` }
+    }
   }
   if (file.type === 'application/pdf') {
     const t = await file.text()
-    return { title: file.name, fileUrl: `local://${file.name}`, fileType: 'pdf', content: t.length > 100 ? t.slice(0, 15000) : `[PDF: ${file.name}. Generate concepts for this subject.]` }
+    let fileUrl = `local://${file.name}`
+    try { fileUrl = (await uploadFile(file, 'study-doc')).fileRef } catch { /* keep local ref */ }
+    return { title: file.name, fileUrl, fileType: 'pdf', content: t.length > 100 ? t.slice(0, 15000) : `[PDF: ${file.name}. Generate concepts for this subject.]` }
   }
   const t = await file.text()
   return {

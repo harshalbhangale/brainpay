@@ -16,6 +16,13 @@ function messageFor(e: unknown): string {
   return e instanceof Error ? e.message : 'Something went wrong'
 }
 
+/** Example local-number format per country (placeholder only). */
+const PLACEHOLDERS: Record<Country['code'], string> = {
+  AU: '412 345 678',
+  US: '(201) 555-0123',
+  IN: '98765 43210',
+}
+
 export function Login() {
   const setAuth = useAuthStore((s) => s.setAuth)
 
@@ -100,7 +107,7 @@ export function Login() {
               type="tel"
               inputMode="tel"
               autoFocus
-              placeholder="412 345 678"
+              placeholder={PLACEHOLDERS[country.code]}
               value={local}
               onChange={(e) => setLocal(e.target.value)}
               className="h-14 flex-1 rounded-2xl px-4 text-lg font-semibold outline-none"

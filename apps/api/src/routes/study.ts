@@ -550,7 +550,7 @@ study.post('/study/topics/:id/interview', async (c) => {
     .select({ front: studyCards.front, back: studyCards.back })
     .from(studyCards)
     .where(and(...conds))
-    .limit(mode === 'viva' ? 20 : 12)
+    .limit(mode === 'viva' ? 20 : 16)
 
   const focusAreas = cards.map((cd) => cd.front)
   // Proctor on for tests (chapter/viva) by default; off for quick concept practice.

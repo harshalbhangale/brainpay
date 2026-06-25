@@ -268,10 +268,19 @@ joinRequests.post('/join-requests/:id/accept', requireAuth, async (c) => {
     const acctType = memberRole === 'kid' ? 'kid' : memberRole === 'co_parent' ? 'parent' : 'extended'
 
     await db.transaction(async (tx) => {
-      // Set account type based on the invited role.
+      // Set account type + carry over the name the parent entered (when the kid
+      // hasn't set their own yet) so PAL and the family list show their real name.
+      const [kidAcct] = await tx
+        .select({ persona: accounts.persona })
+        .from(accounts)
+        .where(eq(accounts.id, accountId))
+        .limit(1)
+      const persona = (kidAcct?.persona ?? {}) as Record<string, unknown>
+      const invitedName = ((request.kidSeed ?? {}) as { name?: string }).name
+      const nextPersona = !persona.name && invitedName ? { ...persona, name: invitedName } : persona
       await tx
         .update(accounts)
-        .set({ accountType: acctType })
+        .set({ accountType: acctType, persona: nextPersona })
         .where(eq(accounts.id, accountId))
 
       // Add to family with the invited role.

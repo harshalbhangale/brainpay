@@ -187,7 +187,12 @@ export async function createInterviewConversation(input: CreateConversationInput
     conversational_context: buildContext(input),
     custom_greeting: greeting,
     audio_only: false,
-    require_auth: true,
+    // NOTE: we intentionally do NOT use require_auth/private rooms. The
+    // conversation_url is already a private, unguessable, time-capped Daily room
+    // and is only delivered to the authenticated student over HTTPS. Private
+    // rooms add a meeting-token whose expiry is tied to participant_absent_timeout
+    // and which must be passed exactly — a common cause of join failures. Joining
+    // the conversation_url directly is the documented CVI approach.
     properties: {
       max_call_duration: input.maxDurationSecs ?? 360,
       participant_left_timeout: 30,

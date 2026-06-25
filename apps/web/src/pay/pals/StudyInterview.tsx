@@ -360,7 +360,8 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
       let call: DailyCall
       try {
         call = Daily.createCallObject({ subscribeToTracksAutomatically: true })
-      } catch {
+      } catch (err) {
+        console.error('[StudyInterview] createCallObject failed:', err)
         void fail("I couldn't start the video tutor. Let's try again.")
         return
       }
@@ -382,11 +383,17 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
         })
         // Before we join, an error means we never connected → let them retry.
         // After joining, ignore benign errors so we don't tear down a live call.
-        .on('error', () => { if (!joinedRef.current) void fail() })
+        .on('error', (ev) => {
+          if (joinedRef.current) return
+          const e = ev as { errorMsg?: string; error?: { msg?: string; type?: string } } | undefined
+          console.error('[StudyInterview] Daily error before join:', e?.errorMsg ?? e?.error?.msg ?? e)
+          void fail()
+        })
 
       try {
         await call.join({ url, ...(token ? { token } : {}), userName: 'Student', startVideoOff: false, startAudioOff: false })
-      } catch {
+      } catch (err) {
+        console.error('[StudyInterview] call.join failed:', err)
         void fail()
       }
     })()

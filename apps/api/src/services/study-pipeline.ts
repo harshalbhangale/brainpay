@@ -4,6 +4,7 @@ import { db } from '../db'
 import { memberships } from '../db/schema'
 import { studyCards, studyDocuments, studyTopics } from '../db/study-schema'
 import { logger } from '../logger'
+import { resolveReadUrl } from './storage'
 import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from './study-rewards'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -29,9 +30,9 @@ export async function processDocument(documentId: string, rawContent?: string) {
       // Re-processing (e.g. regenerate): reuse the previously stored source.
       text = doc.rawText
     } else if (doc.fileType === 'image') {
-      text = await extractFromImage(doc.fileUrl)
+      text = await extractFromImage((await resolveReadUrl(doc.fileUrl)) ?? doc.fileUrl)
     } else if (doc.fileType === 'pdf') {
-      text = await extractFromPdf(doc.fileUrl)
+      text = await extractFromPdf((await resolveReadUrl(doc.fileUrl)) ?? doc.fileUrl)
     } else {
       text = rawContent ?? ''
     }

@@ -21,6 +21,8 @@ const STATUS: Record<string, { label: string; color: string }> = {
   paid: { label: 'Paid', color: '#12a150' },
 }
 const AWAITING = ['submitted', 'ai_approved', 'ai_rejected', 'ai_uncertain']
+// Not yet settled — still needs the kid to act or a parent to review.
+const ACTIVE = ['pending', 'submitted', 'ai_uncertain', 'ai_rejected']
 
 export type ChoreKid = { id: string; name: string }
 
@@ -30,7 +32,6 @@ export function ChoresSection({ kids, enabled }: { kids: ChoreKid[]; enabled: bo
 
   const q = useQuery({ queryKey: ['chores'], queryFn: () => api<ChoresResponse>('/chores'), enabled })
   const chores = q.data?.chores ?? []
-  const nameById = new Map(kids.map((k) => [k.id, k.name]))
 
   const review = useMutation({
     mutationFn: ({ id, status }: { id: string; status: 'parent_approved' | 'parent_rejected' }) => api(`/chores/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
@@ -72,13 +73,30 @@ export function ChoresSection({ kids, enabled }: { kids: ChoreKid[]; enabled: bo
           <span className="pv-body" style={{ color: 'var(--pv-ink-2)' }}>{kids.length === 0 ? 'Add a kid first, then assign chores.' : 'No chores yet.'}</span>
         </Card>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {chores.map((ch, i) => (
-            <ChoreRow key={ch.id} chore={ch} who={nameById.get(ch.assignedTo) ?? 'Kid'} busy={review.isPending} reporting={report.isPending} index={i}
-              onApprove={() => review.mutate({ id: ch.id, status: 'parent_approved' })}
-              onReject={() => review.mutate({ id: ch.id, status: 'parent_rejected' })}
-              onReport={() => report.mutate(ch.id)} />
-          ))}
+        <div className="flex flex-col gap-6">
+          {kids.map((kid) => {
+            const list = chores.filter((ch) => ch.assignedTo === kid.id)
+            if (list.length === 0) return null
+            const active = list.filter((ch) => ACTIVE.includes(ch.status)).length
+            return (
+              <div key={kid.id}>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="pv-label">{kid.name}</span>
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style={active > 0 ? { background: 'var(--pv-accent-soft)', color: 'var(--pv-accent-2)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink-3)' }}>
+                    {active > 0 ? `${active} active` : 'All done'}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-2.5">
+                  {list.map((ch, i) => (
+                    <ChoreRow key={ch.id} chore={ch} who={kid.name} busy={review.isPending} reporting={report.isPending} index={i}
+                      onApprove={() => review.mutate({ id: ch.id, status: 'parent_approved' })}
+                      onReject={() => review.mutate({ id: ch.id, status: 'parent_rejected' })}
+                      onReport={() => report.mutate(ch.id)} />
+                  ))}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 

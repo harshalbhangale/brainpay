@@ -6,9 +6,12 @@
  * re-points the whole `.pv` theme underneath, and rises the new Pal into place.
  */
 import { useCallback, useState } from 'react'
+import { User } from 'lucide-react'
 import { useLocationReporter } from '../../lib/useLocationReporter'
 import { useAuthStore } from '../../stores/auth'
 import { PhoneCanvas } from '../components/shell'
+import { Avatar } from '../components/primitives'
+import { Profile } from '../screens/Profile'
 import { PALS, PAL_MAP, type PalKey } from './config'
 import { AIPal } from './AIPal'
 import { MoneyPal } from './MoneyPal'
@@ -19,6 +22,7 @@ type Reveal = { key: PalKey; x: number; y: number; leaving: boolean }
 export function PalShell() {
   const [pal, setPal] = useState<PalKey>('ai')
   const [reveal, setReveal] = useState<Reveal | null>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
   const account = useAuthStore((s) => s.account)
 
   // Kids report their device location so parents see them on the family maps.
@@ -52,23 +56,31 @@ export function PalShell() {
 
   return (
     <PhoneCanvas pal={pal}>
-      <PalRail active={pal} onSwitch={switchPal} />
+      <PalRail
+        active={pal}
+        onSwitch={switchPal}
+        onProfile={() => setProfileOpen(true)}
+        name={(account?.persona?.name as string) || 'You'}
+        photo={typeof account?.persona?.avatar === 'string' ? (account.persona.avatar as string) : undefined}
+      />
 
       {pal === 'ai' && <AIPal />}
       {pal === 'moneypal' && <MoneyPal goPal={goPal} />}
       {pal === 'studypal' && <StudyPal />}
 
       {reveal && <PalReveal reveal={reveal} />}
+      {profileOpen && <Profile onClose={() => setProfileOpen(false)} />}
     </PhoneCanvas>
   )
 }
 
 /* ───────────────────────────────────────────────────────────────── Pal rail */
-function PalRail({ active, onSwitch }: { active: PalKey; onSwitch: (k: PalKey, e: React.MouseEvent) => void }) {
+function PalRail({ active, onSwitch, onProfile, name, photo }: { active: PalKey; onSwitch: (k: PalKey, e: React.MouseEvent) => void; onProfile: () => void; name: string; photo?: string }) {
   return (
-    <div className="flex justify-center px-4 pb-1 pt-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center px-4 pb-1 pt-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+      <div />
       <div
-        className="pv-no-scrollbar flex items-center gap-1 rounded-full p-1.5"
+        className="pv-no-scrollbar flex items-center gap-1 justify-self-center rounded-full p-1.5"
         style={{
           background: 'rgba(255,255,255,0.72)',
           backdropFilter: 'blur(20px) saturate(160%)',
@@ -94,6 +106,19 @@ function PalRail({ active, onSwitch }: { active: PalKey; onSwitch: (k: PalKey, e
           )
         })}
       </div>
+
+      <button
+        onClick={onProfile}
+        aria-label="Profile and settings"
+        className="pv-press justify-self-end rounded-full"
+        style={{ boxShadow: 'var(--pv-shadow-sm)', border: '2px solid rgba(255,255,255,0.7)' }}
+      >
+        {photo ? <Avatar name={name} src={photo} size={38} /> : (
+          <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.82)', color: 'var(--pv-ink-2)' }}>
+            <User size={18} strokeWidth={2.4} />
+          </span>
+        )}
+      </button>
     </div>
   )
 }

@@ -54,14 +54,14 @@ export function FamilyView() {
             onGoTab={setTab}
           />
         )}
-        {tab === 'chores' && <ChoresTab subject={subject} members={members} />}
+        {tab === 'chores' && <ChoresTab subject={subject} members={members} isKid={account?.accountType === 'kid'} />}
         {tab === 'activity' && <ActivityTab subject={subject} members={members} />}
         {tab === 'card' && (
           <CardTab subject={subject} members={members} meAccountId={meAccountId} parentName={parentName} />
         )}
       </div>
 
-      <BottomBar tab={tab} onTab={setTab} />
+      <BottomBar tab={tab} onTab={setTab} isKid={account?.accountType === 'kid'} />
     </div>
   )
 }

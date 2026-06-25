@@ -5,7 +5,7 @@ import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { Card, SectionTitle, PressButton } from '../ui'
 import { AddChoreModal } from './modals'
-import { isKid, kidName, type Chore, type ChoresResponse, type Member, type Subject } from './types'
+import { isKid as isKidMember, kidName, type Chore, type ChoresResponse, type Member, type Subject } from './types'
 
 const STATUS: Record<string, { label: string; color: string }> = {
   pending: { label: 'To do', color: '#9aa0aa' },
@@ -20,10 +20,10 @@ const STATUS: Record<string, { label: string; color: string }> = {
 
 const AWAITING = ['submitted', 'ai_approved', 'ai_rejected', 'ai_uncertain']
 
-export function ChoresTab({ subject, members }: { subject: Subject; members: Member[] }) {
+export function ChoresTab({ subject, members, isKid }: { subject: Subject; members: Member[]; isKid?: boolean }) {
   const qc = useQueryClient()
   const [addChore, setAddChore] = useState(false)
-  const kids = members.filter(isKid)
+  const kids = members.filter(isKidMember)
 
   const q = useQuery({ queryKey: ['chores'], queryFn: () => api<ChoresResponse>('/chores') })
   const all = q.data?.chores ?? []
@@ -46,9 +46,11 @@ export function ChoresTab({ subject, members }: { subject: Subject; members: Mem
     <div className="space-y-3 p-5">
       <SectionTitle
         action={
-          <button onClick={() => setAddChore(true)} disabled={kids.length === 0} className="press flex items-center gap-1 text-sm font-bold text-grad-accent disabled:opacity-40">
-            <Plus size={15} /> New chore
-          </button>
+          !isKid && (
+            <button onClick={() => setAddChore(true)} disabled={kids.length === 0} className="press flex items-center gap-1 text-sm font-bold text-grad-accent disabled:opacity-40">
+              <Plus size={15} /> New chore
+            </button>
+          )
         }
       >
         Chores
@@ -70,6 +72,7 @@ export function ChoresTab({ subject, members }: { subject: Subject; members: Mem
             who={nameById.get(ch.assignedTo) ?? 'Kid'}
             busy={review.isPending}
             index={i}
+            isKid={isKid}
             onApprove={() => review.mutate({ id: ch.id, status: 'parent_approved' })}
             onReject={() => review.mutate({ id: ch.id, status: 'parent_rejected' })}
           />
@@ -86,6 +89,7 @@ function ChoreRow({
   who,
   busy,
   index,
+  isKid,
   onApprove,
   onReject,
 }: {
@@ -93,11 +97,13 @@ function ChoreRow({
   who: string
   busy: boolean
   index: number
+  isKid?: boolean
   onApprove: () => void
   onReject: () => void
 }) {
   const st = STATUS[chore.status] ?? { label: chore.status, color: '#9aa0aa' }
-  const canReview = AWAITING.includes(chore.status)
+  // Only parents review/approve chores — kids just see their status.
+  const canReview = !isKid && AWAITING.includes(chore.status)
   return (
     <Card className="animate-pop-in p-4" style={{ animationDelay: `${Math.min(index, 8) * 35}ms` } as React.CSSProperties}>
       <div className="flex items-center justify-between gap-3">

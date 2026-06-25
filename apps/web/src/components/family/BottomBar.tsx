@@ -8,13 +8,15 @@ const TABS: { id: FamilyTab; Icon: LucideIcon; label: string }[] = [
   { id: 'activity', Icon: Receipt, label: 'Activity' },
 ]
 
-export function BottomBar({ tab, onTab }: { tab: FamilyTab; onTab: (t: FamilyTab) => void }) {
+export function BottomBar({ tab, onTab, isKid }: { tab: FamilyTab; onTab: (t: FamilyTab) => void; isKid?: boolean }) {
+  const visibleTabs = isKid ? TABS.filter((t) => t.id !== 'card') : TABS
+
   return (
     <nav
       className="glass flex shrink-0 border-t border-border"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      {TABS.map((t) => {
+      {visibleTabs.map((t) => {
         const active = tab === t.id
         return (
           <button

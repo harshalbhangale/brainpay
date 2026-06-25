@@ -120,6 +120,20 @@ export async function completeInterview(
   let summary = input.summary
   let keepPractising = input.keepPractising ?? []
 
+  // Nothing to grade (a dropped connection, or the real transcript will arrive
+  // via the Tavus webhook). Don't finalize or award a default score — leave the
+  // interview open so a later webhook can complete it properly.
+  if (transcript.length === 0 && score == null) {
+    return {
+      ok: true,
+      brainsEarned: 0,
+      score: null,
+      summary: null,
+      keepPractising: [],
+      focus: input.focus ?? null,
+    }
+  }
+
   if (score == null && transcript.length > 0) {
     const s = await scoreInterview((iv.focusAreas as string[]) ?? [], transcript)
     score = s.score

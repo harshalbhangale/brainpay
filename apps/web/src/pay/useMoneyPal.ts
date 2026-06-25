@@ -171,10 +171,12 @@ export function useFamilyKids() {
     },
   })
 
-  const liveKids = token && fam.data?.family ? (fam.data.members ?? []).filter(isKid).map(memberToVM) : []
+  const liveKids = token ? (fam.data?.members ?? []).filter(isKid).map(memberToVM) : []
 
-  if (liveKids.length > 0) {
+  // Signed in → real family data (even when there are no kids yet). The mock
+  // showcase only applies to the signed-out public preview.
+  if (token) {
     return { live: true, loading: fam.isLoading, kids: liveKids, give }
   }
-  return { live: false, loading: token ? fam.isLoading : false, kids: KIDS.map(mockToVM), give }
+  return { live: false, loading: false, kids: KIDS.map(mockToVM), give }
 }

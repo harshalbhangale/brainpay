@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
   Target,
@@ -12,7 +13,11 @@ import {
   Loader2,
   CreditCard,
   MapPin,
+  ChevronDown,
+  Clock,
 } from 'lucide-react'
+import { api } from '../../lib/api'
+import { COUNTRIES, toE164, isValidLocal, type Country } from '../../lib/phone'
 import { Avatar, Button, Card, IconBadge, ImageUpload, Pill, PressButton, ProgressBar } from '../components/primitives'
 import { TopBar } from '../components/shell'
 import { fmt } from '../data'
@@ -22,8 +27,11 @@ import { ChoresSection } from './family/Chores'
 import { KidCardSheet, KidMapSheet } from './family/KidSheets'
 import { TopUpSheet } from './TopUpSheet'
 
+type PendingInvite = { id: string; phone: string | null; name: string | null; role: string; status: string }
+
 export function Family() {
   const { live, loading, kids: baseKids, give } = useFamilyKids()
+  const qc = useQueryClient()
   const [extra, setExtra] = useState<FamilyKidVM[]>([]) // mock-only added kids
   const [avatars, setAvatars] = useState<Record<string, string>>({})
   const [bumps, setBumps] = useState<Record<string, number>>({}) // mock-only local credits
@@ -35,6 +43,14 @@ export function Family() {
   const [topUpKid, setTopUpKid] = useState<FamilyKidVM | null>(null)
   const [cardKid, setCardKid] = useState<FamilyKidVM | null>(null)
   const [mapKid, setMapKid] = useState<FamilyKidVM | null>(null)
+
+  // Pending kid invites (parent has invited, kid hasn't joined yet).
+  const outgoingQ = useQuery({
+    queryKey: ['join-outgoing'],
+    queryFn: () => api<{ requests: PendingInvite[] }>('/join-requests/outgoing'),
+    enabled: live,
+  })
+  const pendingInvites = (outgoingQ.data?.requests ?? []).filter((r) => r.status === 'pending')
 
   const kids = useMemo(() => {
     const merged = live ? baseKids : [...baseKids, ...extra]
@@ -86,14 +102,11 @@ export function Family() {
     setAvatars((a) => ({ ...a, [id]: url }))
   }
 
-  function addKid(kid: FamilyKidVM) {
-    if (live) {
-      flash('Child invites are coming soon')
-    } else {
-      setExtra((e) => [...e, kid])
-      flash(`${kid.name} joined the family`)
-    }
+  function onInvited(childName: string) {
     setAddOpen(false)
+    flash(`Invite sent to ${childName} — they'll join when they sign in`)
+    qc.invalidateQueries({ queryKey: ['join-outgoing'] })
+    qc.invalidateQueries({ queryKey: ['pay', 'family'] })
   }
 
   return (
@@ -236,6 +249,25 @@ export function Family() {
           ))}
         </div>
 
+        {/* Pending invites — kids you've invited who haven't joined yet */}
+        {pendingInvites.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <p className="pv-label">Invited</p>
+            {pendingInvites.map((r) => (
+              <Card key={r.id} flat className="flex items-center gap-3 p-4">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-3)' }}>
+                  <Clock size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="pv-title truncate text-sm">{r.name || 'Invited'}</div>
+                  <div className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Waiting to join · {r.phone}</div>
+                </div>
+                <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-warn)' }}>Pending</span>
+              </Card>
+            ))}
+          </div>
+        )}
+
         {kids.length > 0 && (
           <PressButton
             onClick={() => setAddOpen(true)}
@@ -263,7 +295,7 @@ export function Family() {
         </div>
       )}
 
-      {addOpen && <AddChildSheet onClose={() => setAddOpen(false)} onAdd={addKid} />}
+      {addOpen && <AddChildSheet onClose={() => setAddOpen(false)} onInvited={onInvited} />}
       {topUpKid && <TopUpSheet presetKidId={topUpKid.id} onClose={() => setTopUpKid(null)} />}
       {cardKid && <KidCardSheet accountId={cardKid.id} name={cardKid.name} onClose={() => setCardKid(null)} />}
       {mapKid && <KidMapSheet accountId={mapKid.id} name={mapKid.name} location={mapKid.lastLocation} onClose={() => setMapKid(null)} />}
@@ -284,79 +316,86 @@ function OverviewStat({ Icon, label, value }: { Icon: typeof Wallet; label: stri
   )
 }
 
-const TILES: Pastel[] = ['sky', 'mint', 'butter', 'lilac', 'peach', 'blush']
-
-function AddChildSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (k: FamilyKidVM) => void }) {
+function AddChildSheet({ onClose, onInvited }: { onClose: () => void; onInvited: (name: string) => void }) {
   const [name, setName] = useState('')
-  const [age, setAge] = useState('')
-  const [photo, setPhoto] = useState('')
-  const valid = name.trim().length > 0 && Number(age) > 0
+  const [country, setCountry] = useState<Country>(COUNTRIES[0])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [local, setLocal] = useState('')
+  const [amount, setAmount] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const valid = name.trim().length > 0 && isValidLocal(local)
 
-  function submit() {
-    if (!valid) return
-    onAdd({
-      id: `kid${Date.now()}`,
-      name: name.trim(),
-      age: Number(age),
-      initials: name.trim().slice(0, 2).toUpperCase(),
-      tile: TILES[Math.floor(Math.random() * TILES.length)],
-      avatar: photo || undefined,
-      balance: 0,
-      allowance: 10,
-      cadence: 'weekly',
-      goal: { title: 'First savings goal', saved: 0, target: 100, tile: 'sky' },
-      tasksDue: 0,
-      live: false,
-    })
+  async function submit() {
+    if (!valid || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api('/join-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          phone: toE164(country.dial, local),
+          role: 'kid',
+          kidSeed: { name: name.trim() },
+          initialTopup: Math.max(0, Math.min(10000, parseInt(amount || '0', 10) || 0)),
+        }),
+      })
+      onInvited(name.trim())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send the invite')
+      setBusy(false)
+    }
   }
+
+  const field = 'mt-2 h-12 w-full rounded-2xl px-4 text-base font-semibold outline-none'
+  const fieldStyle = { background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
       <div className="absolute inset-0" style={{ background: 'rgba(11,12,15,0.45)' }} onClick={onClose} />
-      <div
-        className="pv-rise relative w-full max-w-[460px] rounded-t-[var(--pv-r-2xl)] p-6 pb-[max(24px,env(safe-area-inset-bottom))]"
-        style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}
-      >
+      <div className="pv-rise relative w-full max-w-[460px] rounded-t-[var(--pv-r-2xl)] p-6 pb-[max(24px,env(safe-area-inset-bottom))]" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}>
         <div className="mx-auto mb-5 h-1.5 w-12 rounded-full" style={{ background: 'var(--pv-line-strong)' }} />
         <div className="flex items-center justify-between">
           <h2 className="pv-h2">Add a child</h2>
-          <button onClick={onClose} aria-label="Close" className="pv-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>
-            <X size={18} />
-          </button>
+          <button onClick={onClose} aria-label="Close" className="pv-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}><X size={18} /></button>
         </div>
-
-        <div className="mt-5">
-          <div className="pv-label mb-2">Photo</div>
-          <ImageUpload value={photo} onChange={(url) => setPhoto(url)} label="Add a photo" hint="Drag & drop, choose, or snap one" />
-        </div>
+        <p className="pv-body mt-1.5" style={{ color: 'var(--pv-ink-2)' }}>We'll invite them by phone — they join by signing in with this number.</p>
 
         <label className="mt-5 block">
-          <span className="pv-label">Name</span>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Mila"
-            className="mt-2 h-12 w-full rounded-2xl px-4 text-base font-semibold outline-none"
-            style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}
-          />
+          <span className="pv-label">Child's name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mila" className={field} style={fieldStyle} />
         </label>
+
+        <div className="mt-4">
+          <span className="pv-label">Their phone</span>
+          <div className="mt-2 flex gap-2">
+            <div className="relative">
+              <button type="button" onClick={() => setPickerOpen((v) => !v)} className="pv-press flex h-12 items-center gap-1.5 rounded-2xl px-3 font-bold" style={fieldStyle}>
+                <span className="text-lg">{country.flag}</span><span>{country.dial}</span><ChevronDown size={14} style={{ color: 'var(--pv-ink-3)' }} />
+              </button>
+              {pickerOpen && (
+                <div className="pv-pop absolute left-0 top-14 z-10 w-52 overflow-hidden rounded-2xl" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}>
+                  {COUNTRIES.map((cc) => (
+                    <button key={cc.code} type="button" onClick={() => { setCountry(cc); setPickerOpen(false) }} className="pv-press flex w-full items-center gap-3 px-4 py-3 text-left">
+                      <span className="text-lg">{cc.flag}</span><span className="flex-1 font-semibold">{cc.name}</span><span className="text-sm" style={{ color: 'var(--pv-ink-3)' }}>{cc.dial}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input type="tel" inputMode="tel" value={local} onChange={(e) => setLocal(e.target.value)} placeholder="412 345 678" className="h-12 flex-1 rounded-2xl px-4 text-base font-semibold outline-none" style={fieldStyle} />
+          </div>
+        </div>
 
         <label className="mt-4 block">
-          <span className="pv-label">Age</span>
-          <input
-            value={age}
-            onChange={(e) => setAge(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
-            inputMode="numeric"
-            placeholder="e.g. 9"
-            className="mt-2 h-12 w-full rounded-2xl px-4 text-base font-semibold outline-none"
-            style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}
-          />
+          <span className="pv-label">Starting balance (optional)</span>
+          <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 5))} inputMode="numeric" placeholder="0" className={field} style={fieldStyle} />
         </label>
 
+        {error && <p className="mt-3 text-sm font-semibold" style={{ color: 'var(--pv-neg)' }}>{error}</p>}
+
         <div className="mt-6">
-          <Button variant="primary" size="lg" full disabled={!valid} onClick={submit}>
-            Add to family
-          </Button>
+          <Button variant="primary" size="lg" full disabled={!valid || busy} onClick={submit}>{busy ? 'Sending…' : 'Send invite'}</Button>
         </div>
       </div>
     </div>

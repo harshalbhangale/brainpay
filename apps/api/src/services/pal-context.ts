@@ -64,13 +64,13 @@ export async function loadPalContext(accountId: string): Promise<PalContext> {
   if (!memberRow) {
     return {
       callerId: accountId,
-      callerRole: 'unknown',
+      callerRole: caller?.accountType ?? 'unknown',
       callerName,
       callerBalance,
       familyId: null,
       familyName: null,
       kids: [],
-      isParent: false,
+      isParent: caller?.accountType === 'parent',
     }
   }
 
@@ -223,14 +223,20 @@ Rules:
     return `- ${k.name}${k.age ? ` (${k.age}yo)` : ''}: $${k.balance} AUD, streak ${k.streak}d, ${k.pendingChores} pending chores, ${goalLine}`
   }).join('\n')
 
-  return `You are PAL — a smart, slightly sarcastic family money assistant.
-You are talking to ${ctx.callerName}, a parent.
-Family has ${ctx.kids.length} kid${ctx.kids.length === 1 ? '' : 's'}:
-${kidLines || '- No kids yet.'}
+  const familyBlock = ctx.kids.length === 0
+    ? `${ctx.callerName} hasn't added any kids yet. If they ask about kids, balances, chores, allowance or goals, tell them they can add a child in the Family tab (the "Add child" button) — then you'll be able to help. Do NOT invent kids or numbers.`
+    : `${ctx.callerName}'s family — ${ctx.kids.length} kid${ctx.kids.length === 1 ? '' : 's'}:\n${kidLines}`
+
+  return `You are PAL — a smart, warm, lightly witty family money assistant for BrainPal.
+You are talking to ${ctx.callerName}, a parent. Total in their own wallet: $${ctx.callerBalance} AUD.
+
+${familyBlock}
+
+The snapshot above is current and real — it's your source of truth. When asked about a kid, balance, chores, allowance, or goals, answer DIRECTLY using these exact names and numbers. Never claim you don't have access; if a specific value isn't in the snapshot, say it isn't set up yet.
 
 Rules:
-- Be concise and direct. Parents are busy.
-- When asked about a kid, use their exact name and real numbers.
-- You can help create chores, top up kids, and set goals — but always show a preview first.
-- Tone: warm but efficient. Not sycophantic.`
+- Be concise and direct. Parents are busy. Money is AUD ($).
+- Use the kids' real names. If they have no kids yet, guide them to add one.
+- You can create chores, top up a kid, and set goals — show a preview first.
+- Warm but efficient. Not sycophantic.`
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
@@ -15,10 +15,11 @@ import {
   MapPin,
   ChevronDown,
   Clock,
+  Camera,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { COUNTRIES, toE164, isValidLocal, type Country } from '../../lib/phone'
-import { Avatar, Button, Card, IconBadge, ImageUpload, Pill, PressButton, ProgressBar } from '../components/primitives'
+import { Avatar, Button, Card, IconBadge, Pill, PressButton, ProgressBar } from '../components/primitives'
 import { TopBar } from '../components/shell'
 import { fmt } from '../data'
 import { useFamilyKids, type FamilyKidVM } from '../useMoneyPal'
@@ -171,7 +172,7 @@ export function Family() {
           {kids.map((k, i) => (
             <Card key={k.id} className="pv-stagger p-5" style={{ ['--i' as string]: i }}>
               <div className="flex items-center gap-4">
-                <ImageUpload value={k.avatar} onChange={(url) => setAvatar(k.id, url)} shape="circle" size={64} label={`${k.name}'s photo`} />
+                <KidAvatar name={k.name} src={k.avatar} onPhoto={(url) => setAvatar(k.id, url)} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="pv-h2 truncate">{k.name}</span>
@@ -313,6 +314,28 @@ function OverviewStat({ Icon, label, value }: { Icon: typeof Wallet; label: stri
         {value}
       </div>
     </div>
+  )
+}
+
+/** Kid avatar that shows the photo cleanly, with a small camera badge to change it. */
+function KidAvatar({ name, src, onPhoto }: { name: string; src?: string; onPhoto: (dataUrl: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f || !f.type.startsWith('image/')) return
+    const r = new FileReader()
+    r.onload = () => { if (typeof r.result === 'string') onPhoto(r.result) }
+    r.readAsDataURL(f)
+    e.target.value = ''
+  }
+  return (
+    <button onClick={() => ref.current?.click()} aria-label={`Change ${name}'s photo`} className="pv-press relative shrink-0 rounded-full">
+      <Avatar name={name} src={src} size={64} />
+      <span className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-accent)', color: 'var(--pv-on-accent)', boxShadow: '0 0 0 2px var(--pv-surface)' }}>
+        <Camera size={12} strokeWidth={2.6} />
+      </span>
+      <input ref={ref} type="file" accept="image/*" hidden onChange={pick} />
+    </button>
   )
 }
 

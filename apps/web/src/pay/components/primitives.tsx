@@ -307,16 +307,20 @@ export function Avatar({
   size?: number
   src?: string
 }) {
-  if (src) {
+  // A real image only when src is a URL/data-URI; otherwise treat src as an
+  // emoji/glyph (onboarding stores avatars as emoji) and render it as text.
+  const isImage = !!src && /^(data:|https?:|blob:|\/)/.test(src)
+  if (isImage) {
     return <img src={src} alt={name ?? ''} className="rounded-full object-cover" style={{ width: size, height: size }} />
   }
+  const isEmoji = !!src && !isImage
   const seed = name ?? initials ?? '?'
   const t = PASTELS[tile ?? tileFor(seed)]
-  const text = (initials ?? (name?.trim()[0] ?? '?')).slice(0, 2).toUpperCase()
+  const text = isEmoji ? (src as string) : (initials ?? (name?.trim()[0] ?? '?')).slice(0, 2).toUpperCase()
   return (
     <span
       className="inline-flex shrink-0 items-center justify-center rounded-full font-extrabold"
-      style={{ width: size, height: size, background: t.bg, color: t.ink, fontSize: size * 0.36 }}
+      style={{ width: size, height: size, background: t.bg, color: t.ink, fontSize: isEmoji ? size * 0.5 : size * 0.36 }}
     >
       {text}
     </span>

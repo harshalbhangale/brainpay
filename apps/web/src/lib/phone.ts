@@ -1,11 +1,12 @@
-export type Country = { name: string; dial: string; flag: string; code: 'AU' | 'IN' }
+export type Country = { name: string; dial: string; flag: string; code: 'AU' | 'IN' | 'US' }
 
 /**
- * Supported countries for sign-in. Product requirement: India + Australia only.
+ * Supported countries for sign-in. Product requirement: Australia, US & India.
  * (The mobile app offers more; the web client is intentionally limited.)
  */
 export const COUNTRIES: Country[] = [
   { name: 'Australia', dial: '+61', flag: '🇦🇺', code: 'AU' },
+  { name: 'United States', dial: '+1', flag: '🇺🇸', code: 'US' },
   { name: 'India', dial: '+91', flag: '🇮🇳', code: 'IN' },
 ]
 

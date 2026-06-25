@@ -224,6 +224,13 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
     )
   }
 
+  // Connection failed / we never really got an interview — let them retry
+  // instead of silently "completing" with a default score.
+  function abort(reason?: string) {
+    setError(reason ?? "I couldn't connect you to the tutor. Let's try that again.")
+    setPhase('error')
+  }
+
   // ── LIVE (Tavus video) ───────────────────────────────────────────────
   return (
     <>
@@ -231,17 +238,21 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
         title="AI Interview"
         right={<span className="flex items-center gap-1 text-[11px] font-bold" style={{ color: 'var(--pv-pos)' }}><ShieldCheck size={13} /> Proctored</span>}
       />
-      {session && <TavusStage url={session.url} token={session.token} onEnd={finish} />}
+      {session && <TavusStage url={session.url} token={session.token} onEnd={finish} onAbort={abort} />}
     </>
   )
 }
+
+// Below this many seconds with nothing said, a "completed" interview is really
+// a dropped connection — don't score it, let the kid try again.
+const MIN_REAL_INTERVIEW_SECS = 12
 
 
 // ─────────────────────────────────────────────────────────── Tavus stage
 // Joins the Tavus conversation with a Daily *call object* (no prebuilt UI, so
 // no prejoin lobby / name prompt) and renders the replica tutor's video + audio
 // directly. We only complete the interview once we've actually joined.
-function TavusStage({ url, token, onEnd }: { url: string; token: string | null; onEnd: (p: { transcript: TranscriptLine[]; durationSecs: number; focus?: Focus }) => void }) {
+function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string | null; onEnd: (p: { transcript: TranscriptLine[]; durationSecs: number; focus?: Focus }) => void; onAbort: (reason?: string) => void }) {
   const tutorVideoRef = useRef<HTMLVideoElement>(null)
   const selfVideoRef = useRef<HTMLVideoElement>(null)
   const callRef = useRef<DailyCall | null>(null)
@@ -253,15 +264,37 @@ function TavusStage({ url, token, onEnd }: { url: string; token: string | null; 
   const [status, setStatus] = useState<'connecting' | 'live'>('connecting')
   const [micOn, setMicOn] = useState(true)
 
+  // Tear down the call object once, regardless of outcome.
+  async function teardown() {
+    try { await callRef.current?.leave() } catch { /* ignore */ }
+    try { await callRef.current?.destroy() } catch { /* ignore */ }
+    callRef.current = null
+  }
+
+  // The interview actually happened: complete + score it.
   async function end() {
     if (endedRef.current) return
     endedRef.current = true
     const durationSecs = Math.round((Date.now() - startedRef.current) / 1000)
+    const transcript = transcriptRef.current.slice(-80)
+    await teardown()
+    // A real session means we joined AND either captured speech or stayed long
+    // enough for the server/webhook to have a transcript. Anything less is a
+    // dropped connection — bail out instead of awarding a default score.
+    if (!joinedRef.current || (transcript.length === 0 && durationSecs < MIN_REAL_INTERVIEW_SECS)) {
+      onAbort("We didn't quite get your interview going. Let's try again.")
+      return
+    }
     const flags = Array.from(new Set(flagsRef.current)).slice(0, 8)
-    try { await callRef.current?.leave() } catch { /* ignore */ }
-    try { await callRef.current?.destroy() } catch { /* ignore */ }
-    callRef.current = null
-    onEnd({ transcript: transcriptRef.current.slice(-80), durationSecs, focus: flags.length ? { flags } : undefined })
+    onEnd({ transcript, durationSecs, focus: flags.length ? { flags } : undefined })
+  }
+
+  // Connection failed before we ever got in — never score, just let them retry.
+  async function fail(reason?: string) {
+    if (endedRef.current) return
+    endedRef.current = true
+    await teardown()
+    onAbort(reason)
   }
 
   function toggleMic() {
@@ -328,7 +361,7 @@ function TavusStage({ url, token, onEnd }: { url: string; token: string | null; 
       try {
         call = Daily.createCallObject({ subscribeToTracksAutomatically: true })
       } catch {
-        void end()
+        void fail("I couldn't start the video tutor. Let's try again.")
         return
       }
       callRef.current = call
@@ -347,12 +380,14 @@ function TavusStage({ url, token, onEnd }: { url: string; token: string | null; 
           const left = (ev as { participant?: { local?: boolean } } | undefined)?.participant
           if (left && !left.local && joinedRef.current) void end()
         })
-        .on('error', () => { void end() })
+        // Before we join, an error means we never connected → let them retry.
+        // After joining, ignore benign errors so we don't tear down a live call.
+        .on('error', () => { if (!joinedRef.current) void fail() })
 
       try {
         await call.join({ url, ...(token ? { token } : {}), userName: 'Student', startVideoOff: false, startAudioOff: false })
       } catch {
-        void end()
+        void fail()
       }
     })()
 

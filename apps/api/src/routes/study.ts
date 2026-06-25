@@ -3,7 +3,7 @@ import { and, desc, eq, lte, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import OpenAI from 'openai'
 import { db } from '../db'
-import { accounts, ledger, memberships } from '../db/schema'
+import { accounts, families, ledger, memberships } from '../db/schema'
 import {
   studyCards,
   studyDocuments,
@@ -36,14 +36,35 @@ async function getFamilyId(accountId: string): Promise<string | null> {
   return row?.familyId ?? null
 }
 
+/**
+ * Family id for the account, creating a personal household if none exists.
+ * Solo accounts (e.g. a kid who signed up without a parent invite) otherwise
+ * have no membership, which used to 403 every family-scoped feature (StudyPal,
+ * chores). We provision a personal family so nothing dead-ends.
+ */
+async function getOrCreateFamilyId(accountId: string): Promise<string> {
+  const existing = await getFamilyId(accountId)
+  if (existing) return existing
+
+  const [acct] = await db
+    .select({ persona: accounts.persona })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1)
+  const name = ((acct?.persona as Record<string, unknown> | null)?.name as string) || 'My'
+
+  const [fam] = await db.insert(families).values({ name: `${name}'s Family`, avatar: '🏡' }).returning()
+  await db.insert(memberships).values({ familyId: fam.id, accountId, role: 'primary_parent' })
+  return fam.id
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // TOPICS
 // ═══════════════════════════════════════════════════════════════════════
 
 study.post('/study/topics', async (c) => {
   const accountId = authedAccountId(c)
-  const familyId = await getFamilyId(accountId)
-  if (!familyId) return c.json({ error: 'no_family' }, 403)
+  const familyId = await getOrCreateFamilyId(accountId)
 
   const body = await c.req.json().catch(() => ({}))
   const parsed = z.object({

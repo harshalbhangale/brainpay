@@ -12,11 +12,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ChevronLeft, ChevronRight, Flame, BookOpen, History, Clock, Eye, Trophy, GraduationCap, ShieldCheck,
+  ChevronLeft, ChevronRight, Flame, BookOpen, History, Clock, Eye, Trophy, GraduationCap, ShieldCheck, Target,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Card } from '../components/primitives'
 import { BrainCoin } from '../components/Brains'
+import { InterviewInsights, type InterviewAnalysis } from './InterviewInsights'
 
 type Child = {
   accountId: string; name: string; grade: string | null; avatar: string | null
@@ -27,7 +28,7 @@ type Focus = { lookingPct?: number; flags?: string[]; notes?: string }
 type IvRow = {
   id: string; topicTitle: string | null; topicEmoji: string | null; chapter: string | null; mode: string
   score: number | null; summary: string | null; durationSecs: number | null; brainsEarned: number | null
-  focus: Focus | null; completedAt: string | null; createdAt: string
+  focus: Focus | null; completedAt: string | null; createdAt: string; analysis?: InterviewAnalysis | null
 }
 type IvDetail = IvRow & { transcript?: { role: string; text: string }[]; keepPractising?: string[] }
 
@@ -160,6 +161,10 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
   const interviews = data?.interviews ?? []
   const scored = interviews.filter((i) => typeof i.score === 'number')
   const avg = scored.length ? Math.round((scored.reduce((a, b) => a + (b.score ?? 0), 0) / scored.length) * 10) / 10 : null
+  // Recurring focus areas across recent interviews — the parent's "where to help" at a glance.
+  const weakFreq = new Map<string, number>()
+  for (const iv of interviews) for (const w of iv.analysis?.weakPoints ?? []) weakFreq.set(w, (weakFreq.get(w) ?? 0) + 1)
+  const topFocus = [...weakFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t]) => t)
 
   return (
     <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-10 pt-1">
@@ -203,6 +208,21 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
                 )
               })}
             </div>
+          )}
+
+          {/* Recurring focus areas — quick parent analytics */}
+          {topFocus.length > 0 && (
+            <Card className="pv-rise mb-5 p-4" style={{ ['--i' as string]: 0 }}>
+              <div className="mb-2.5 flex items-center gap-2">
+                <Target size={15} style={{ color: 'var(--pv-neg)' }} />
+                <p className="pv-title text-sm">Where to help {kid.name}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {topFocus.map((t, i) => (
+                  <span key={i} className="rounded-full px-3 py-1.5 text-xs font-semibold" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>{t}</span>
+                ))}
+              </div>
+            </Card>
           )}
 
           {/* Interviews — the headline of parent oversight */}
@@ -254,9 +274,9 @@ function ParentInterviewDetail({ kidId, interviewId, onBack }: { kidId: string; 
       <Header title={iv.chapter || iv.topicTitle || 'Interview'} onBack={onBack} />
       <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <div className="pv-pop mb-5 flex flex-col items-center text-center">
-          <div className="animate-trophy flex h-24 w-24 items-center justify-center rounded-full text-3xl font-extrabold" style={{ background: tone.bg, color: tone.fg }}>{typeof iv.score === 'number' ? `${iv.score}` : '—'}</div>
-          <p className="mt-1 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>out of 10</p>
-          {iv.summary && <p className="pv-body mt-3 max-w-sm" style={{ color: 'var(--pv-ink-2)' }}>{iv.summary}</p>}
+          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full text-3xl font-extrabold" style={{ background: tone.bg, color: tone.fg }}>{typeof iv.score === 'number' ? `${iv.score}` : '—'}<span className="text-[11px] font-bold" style={{ opacity: 0.7 }}>out of 10</span></div>
+          {iv.analysis?.level && <span className="mt-3 rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide" style={{ background: tone.bg, color: tone.fg }}>{iv.analysis.level}</span>}
+          {(iv.analysis?.summary || iv.summary) && <p className="pv-body mt-3 max-w-sm" style={{ color: 'var(--pv-ink-2)' }}>{iv.analysis?.summary ?? iv.summary}</p>}
           <p className="mt-2 flex flex-wrap items-center justify-center gap-x-1.5 text-xs" style={{ color: 'var(--pv-ink-3)' }}>
             <span>{fmtAgo(iv.completedAt ?? iv.createdAt)}</span><span>·</span>
             <span className="inline-flex items-center gap-1"><Clock size={11} /> {fmtDuration(iv.durationSecs)}</span>
@@ -264,12 +284,15 @@ function ParentInterviewDetail({ kidId, interviewId, onBack }: { kidId: string; 
           </p>
         </div>
 
-        {iv.keepPractising && iv.keepPractising.length > 0 && (
+        {/* Rich analytics & insights for the parent */}
+        {iv.analysis ? (
+          <div className="mb-4"><InterviewInsights analysis={iv.analysis} audience="parent" /></div>
+        ) : iv.keepPractising && iv.keepPractising.length > 0 ? (
           <Card className="pv-rise mb-4 p-4" style={{ ['--i' as string]: 0 }}>
             <p className="pv-label mb-2">Where to help</p>
             {iv.keepPractising.map((k, i) => <p key={i} className="flex items-start gap-2 text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}><span className="pv-text-accent">•</span> {k}</p>)}
           </Card>
-        )}
+        ) : null}
 
         {(flags.length > 0 || typeof iv.focus?.lookingPct === 'number') && (
           <Card className="pv-rise mb-4 flex items-start gap-2.5 p-4" style={{ ['--i' as string]: 1 }}>

@@ -23,6 +23,7 @@ import { InterviewView } from './StudyInterview'
 import { GRADES, BOARDS, subjectsForGrade, subjectEmoji } from './subjects'
 import { ParentStudyView } from './ParentStudy'
 import { BrainCoin, Brains, BrainsPill, RewardsHelp } from '../components/Brains'
+import { InterviewInsights, type InterviewAnalysis } from './InterviewInsights'
 
 type Topic = { id: string; title: string; emoji: string; cardsDue: number; totalCards: number }
 type Stats = { streak: number; cardsDue: number; cardsMastered: number; topicsActive: number }
@@ -35,6 +36,7 @@ type InterviewRow = {
   id: string; chapter: string | null; mode: string; score: number | null; summary: string | null
   durationSecs: number | null; brainsEarned: number | null; keepPractising?: string[]; focus?: Focus | null
   completedAt: string | null; createdAt: string; topicTitle?: string | null; topicEmoji?: string | null
+  analysis?: InterviewAnalysis | null
 }
 type View = 'setup' | 'home' | 'subject' | 'concepts' | 'quiz' | 'interview' | 'chat' | 'saved' | 'history' | 'interviewDetail' | 'lesson' | 'cheatsheet'
 
@@ -1453,6 +1455,7 @@ function InterviewDetailView({ interviewId, onBack }: { interviewId: string; onB
   const iv = data?.interview
   const transcript = iv?.transcript ?? []
   const flags = iv?.focus?.flags ?? []
+  const analysis = iv?.analysis ?? null
 
   if (isLoading || !iv) {
     return (<><Header title="Interview" onBack={onBack} /><Centered><Spinner /></Centered></>)
@@ -1461,14 +1464,16 @@ function InterviewDetailView({ interviewId, onBack }: { interviewId: string; onB
 
   return (
     <>
-      <Header title={iv.chapter || 'Interview'} onBack={onBack} />
+      <Header title={iv.chapter || iv.topicTitle || 'Interview'} onBack={onBack} />
       <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <div className="pv-pop mb-5 flex flex-col items-center text-center">
-          <div className="animate-trophy flex h-24 w-24 items-center justify-center rounded-full text-3xl font-extrabold" style={{ background: tone.bg, color: tone.fg }}>
+          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full text-3xl font-extrabold" style={{ background: tone.bg, color: tone.fg }}>
             {typeof iv.score === 'number' ? `${iv.score}` : '—'}
+            <span className="text-[11px] font-bold" style={{ opacity: 0.7 }}>out of 10</span>
           </div>
-          <p className="mt-1 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>out of 10</p>
-          {iv.summary && <p className="pv-body mt-3 max-w-sm" style={{ color: 'var(--pv-ink-2)' }}>{iv.summary}</p>}
+          {analysis?.level && <span className="mt-3 rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide" style={{ background: tone.bg, color: tone.fg }}>{analysis.level}</span>}
+          {analysis?.headline && <p className="pv-h2 mt-2">{analysis.headline}</p>}
+          {(analysis?.summary || iv.summary) && <p className="pv-body mt-2 max-w-sm" style={{ color: 'var(--pv-ink-2)' }}>{analysis?.summary ?? iv.summary}</p>}
           <p className="mt-2 flex flex-wrap items-center justify-center gap-x-1.5 text-xs" style={{ color: 'var(--pv-ink-3)' }}>
             <span>{fmtAgo(iv.completedAt ?? iv.createdAt)}</span>
             <span>·</span>
@@ -1477,14 +1482,24 @@ function InterviewDetailView({ interviewId, onBack }: { interviewId: string; onB
           </p>
         </div>
 
-        {iv.keepPractising && iv.keepPractising.length > 0 && (
+        {/* Rich analytics & insights */}
+        {analysis ? (
+          <div className="mb-4">
+            <InterviewInsights analysis={analysis} audience="kid" />
+            {analysis.encouragement && (
+              <div className="pv-rise mt-3 rounded-2xl px-4 py-3.5 text-center text-sm font-semibold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                {analysis.encouragement}
+              </div>
+            )}
+          </div>
+        ) : iv.keepPractising && iv.keepPractising.length > 0 ? (
           <Card className="pv-rise mb-4 p-4" style={{ ['--i' as string]: 0 }}>
             <p className="pv-label mb-2">Keep practising</p>
             {iv.keepPractising.map((k, i) => (
               <p key={i} className="flex items-start gap-2 text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}><span className="pv-text-accent">•</span> {k}</p>
             ))}
           </Card>
-        )}
+        ) : null}
 
         {flags.length > 0 && (
           <Card className="pv-rise mb-4 flex items-start gap-2.5 p-4" style={{ ['--i' as string]: 1 }}>

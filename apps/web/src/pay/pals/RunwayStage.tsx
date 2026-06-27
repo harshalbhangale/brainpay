@@ -41,8 +41,9 @@ import { InterviewLoader } from './InterviewLoader'
 type TranscriptLine = { role: string; text: string }
 type Focus = { lookingPct?: number; flags?: string[]; notes?: string }
 
-// Hard cap for a Runway session (their limit is ~5 min). We end slightly under.
-const MAX_INTERVIEW_SECS = 295
+// Hard cap for an interview — 3 minutes (well under Runway's ~5-min session cap).
+// We end slightly under to leave room to wrap up + score cleanly.
+const MAX_INTERVIEW_SECS = 180
 // Below this, with nothing said, a "completed" call is really a dropped
 // connection — don't score it, let the kid try again.
 const MIN_REAL_INTERVIEW_SECS = 12
@@ -204,94 +205,67 @@ function Inner({
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden" style={{ background: '#0b0c0f', height: '100dvh' }}>
-      {/* ── Avatar tutor (Simon) — full-bleed ──────────────────────────── */}
-      <AvatarVideo className="absolute inset-0 h-full w-full">
-        {(s) =>
-          s.status === 'ready' ? (
-            <VideoTrack trackRef={s.videoTrackRef} className="h-full w-full object-cover" />
-          ) : null
-        }
-      </AvatarVideo>
+      {/* ── Two-up split: tutor on top, you on the bottom ──────────────── */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+        {/* Tutor (Simon) */}
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[26px]" style={{ background: 'var(--pv-surface-3)' }}>
+          <AvatarVideo className="absolute inset-0 h-full w-full">
+            {(s) =>
+              s.status === 'ready' ? (
+                <VideoTrack trackRef={s.videoTrackRef} className="h-full w-full object-cover" />
+              ) : null
+            }
+          </AvatarVideo>
 
-      {/* Top scrim for legibility of the floating chips */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-36" style={{ background: 'linear-gradient(180deg, rgba(11,12,15,0.55), transparent)' }} />
+          {/* Name pill */}
+          <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>
+            {isLive && <span className="pv-live-pulse h-2 w-2 rounded-full" style={{ background: 'var(--pv-pos)' }} />}
+            <span className="text-sm font-bold text-white">Principal Simon</span>
+          </div>
 
-      {/* ── Top bar: name + (live) timer + proctor badge ───────────────── */}
-      <div className="absolute inset-x-0 top-0 flex items-start justify-between px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))' }}>
-        <div className="flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>
-          {isLive && <span className="pv-live-pulse h-2 w-2 rounded-full" style={{ background: 'var(--pv-pos)' }} />}
-          <span className="text-sm font-bold text-white">Principal Simon</span>
-        </div>
-
-        <div className="flex flex-col items-end gap-1.5">
-          {isLive && (
-            <div
-              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold tabular-nums"
-              style={{ background: lowTime ? 'var(--pv-neg)' : 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}
-            >
-              <Clock size={13} /> {mm}:{ss}
+          {/* Timer + proctored */}
+          <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">
+            {isLive && (
+              <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold tabular-nums" style={{ background: lowTime ? 'var(--pv-neg)' : 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}>
+                <Clock size={13} /> {mm}:{ss}
+              </div>
+            )}
+            <div className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}>
+              <ShieldCheck size={12} style={{ color: 'var(--pv-pos)' }} /> Proctored
             </div>
-          )}
-          <div className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}>
-            <ShieldCheck size={12} style={{ color: 'var(--pv-pos)' }} /> Proctored
           </div>
         </div>
-      </div>
 
-      {/* ── Self-view PiP (the student) — small floating tile ──────────── */}
-      {live && (
-        <div
-          className="pv-pip-in absolute h-[150px] w-[110px] overflow-hidden rounded-[20px]"
-          style={{ right: 16, bottom: 'calc(env(safe-area-inset-bottom) + 116px)', background: '#000', boxShadow: '0 10px 30px -8px rgba(0,0,0,0.6)', border: '2px solid rgba(255,255,255,0.18)' }}
-        >
+        {/* You */}
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[26px]" style={{ background: '#000' }}>
           <UserVideo>
             {(s) =>
               s.isCameraEnabled && isTrackReference(s.trackRef) ? (
                 <VideoTrack trackRef={s.trackRef} className="h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
               ) : (
-                <div className="flex h-full w-full flex-col items-center justify-center gap-1.5" style={{ background: 'var(--pv-surface-3)' }}>
-                  <VideoOff size={18} style={{ color: 'var(--pv-ink-3)' }} />
-                  <span className="text-[10px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Camera off</span>
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2" style={{ background: 'var(--pv-surface-3)' }}>
+                  <VideoOff size={22} style={{ color: 'var(--pv-ink-3)' }} />
+                  <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Camera off</span>
                 </div>
               )
             }
           </UserVideo>
+          <div className="absolute left-3 bottom-3 rounded-full px-3 py-1.5 text-xs font-bold text-white" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>You</div>
           {!isMicEnabled && (
-            <div className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-neg)', color: '#fff' }}>
-              <MicOff size={12} />
+            <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold" style={{ background: 'var(--pv-neg)', color: '#fff' }}>
+              <MicOff size={12} /> Muted
             </div>
           )}
-          <div className="absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-bold text-white" style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.6), transparent)' }}>You</div>
         </div>
-      )}
+      </div>
 
-      {/* ── Connecting / wrapping-up overlay ───────────────────────────── */}
-      {(!live || status === 'ending') && (
-        <div className="absolute inset-0 flex flex-col" style={{ background: 'linear-gradient(160deg, #15161b 0%, #0b0c0f 100%)' }}>
-          <InterviewLoader
-            variant="dark"
-            messages={
-              status === 'ending'
-                ? ['Wrapping up your interview…', 'Scoring your answers…', 'Tallying your Brains…']
-                : status === 'waiting'
-                  ? ['Principal Simon is joining…', 'Almost there…', 'Get ready to explain out loud!']
-                  : undefined
-            }
-          />
-        </div>
-      )}
-
-      {/* Bottom scrim + call controls */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(0deg, rgba(11,12,15,0.6), transparent)' }} />
-      <div
-        className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-10"
-        style={{ paddingBottom: 'max(22px, calc(env(safe-area-inset-bottom) + 14px))' }}
-      >
+      {/* ── Controls ───────────────────────────────────────────────────── */}
+      <div className="flex flex-none items-center justify-center gap-10 px-3 pt-3.5" style={{ paddingBottom: 'max(16px, calc(env(safe-area-inset-bottom) + 8px))' }}>
         <button onClick={toggleMic} aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'} className="pv-press-lg flex flex-col items-center gap-1.5">
           <span
             className="flex h-14 w-14 items-center justify-center rounded-full"
             style={isMicEnabled
-              ? { background: 'rgba(255,255,255,0.18)', color: '#fff', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.25)' }
+              ? { background: 'rgba(255,255,255,0.16)', color: '#fff', border: '1px solid rgba(255,255,255,0.22)' }
               : { background: '#fff', color: 'var(--pv-ink)' }}
           >
             {isMicEnabled ? <Mic size={22} /> : <MicOff size={22} />}
@@ -306,6 +280,22 @@ function Inner({
           <span className="text-[11px] font-semibold text-white">End</span>
         </button>
       </div>
+
+      {/* ── Connecting / wrapping-up overlay (covers the whole call) ────── */}
+      {(!live || status === 'ending') && (
+        <div className="absolute inset-0 z-10 flex flex-col" style={{ background: 'linear-gradient(160deg, #15161b 0%, #0b0c0f 100%)' }}>
+          <InterviewLoader
+            variant="dark"
+            messages={
+              status === 'ending'
+                ? ['Wrapping up your interview…', 'Scoring your answers…', 'Tallying your Brains…']
+                : status === 'waiting'
+                  ? ['Principal Simon is joining…', 'Almost there…', 'Get ready to explain out loud!']
+                  : undefined
+            }
+          />
+        </div>
+      )}
     </div>
   )
 }

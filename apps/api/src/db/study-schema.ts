@@ -180,6 +180,10 @@ export const studyInterviews = pgTable(
     summary: text('summary'),
     keepPractising: jsonb('keep_practising').notNull().default(sql`'[]'::jsonb`),
     focus: jsonb('focus'), // { lookingPct, flags: string[], notes } — for the parent
+    // Rich AI analysis of the viva (strengths, weak points, recommendations,
+    // per-concept ratings, level, headline, encouragement). Shown to kids after
+    // the interview, in Past interviews, and to parents. Nullable for old rows.
+    analysis: jsonb('analysis'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },

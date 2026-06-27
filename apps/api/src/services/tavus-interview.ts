@@ -17,7 +17,38 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 export type TranscriptLine = { role: string; text: string }
 export type InterviewFocus = { lookingPct?: number; flags?: string[]; notes?: string }
 
-export type InterviewScore = { score: number; summary: string; keepPractising: string[] }
+/** A single concept the viva touched, with how well the student handled it. */
+export type ConceptRating = {
+  name: string
+  /** 1 = needs work · 2 = getting there · 3 = strong */
+  rating: 1 | 2 | 3
+}
+
+/**
+ * Rich, kid-friendly analysis of a spoken viva. This is the headline payload the
+ * app shows after an interview, in Past interviews, and to parents.
+ */
+export type InterviewAnalysis = {
+  score: number // 1-10
+  /** Short level label, e.g. "Beginning" | "Developing" | "Proficient" | "Mastering". */
+  level: string
+  /** A punchy, encouraging one-liner for the kid (e.g. "You really get fractions!"). */
+  headline: string
+  /** One or two warm sentences summarising how it went. */
+  summary: string
+  /** What the student did well (1-3). */
+  strengths: string[]
+  /** Specific gaps to work on (1-3). Mirrored into keepPractising for back-compat. */
+  weakPoints: string[]
+  /** Concrete, actionable next steps (2-3). */
+  recommendations: string[]
+  /** Per-concept handling, for a quick visual breakdown. */
+  concepts: ConceptRating[]
+  /** A motivating closing line for the kid. */
+  encouragement: string
+}
+
+export type InterviewScore = { score: number; summary: string; keepPractising: string[]; analysis: InterviewAnalysis }
 
 export type CompleteInput = {
   transcript?: TranscriptLine[]
@@ -36,6 +67,7 @@ export type CompleteResult = {
   summary: string | null
   keepPractising: string[]
   focus: InterviewFocus | null
+  analysis: InterviewAnalysis | null
 }
 
 async function getFamilyId(accountId: string): Promise<string | null> {
@@ -56,34 +88,87 @@ export async function scoreInterview(focusAreas: string[], transcript: Transcrip
     .slice(0, 8000)
   const concepts = focusAreas.slice(0, 20).map((f) => `- ${f}`).join('\n') || '(general review)'
 
+  const fallback = (score: number): InterviewScore => {
+    const analysis: InterviewAnalysis = {
+      score,
+      level: levelFor(score),
+      headline: 'Nice effort — every interview makes you sharper!',
+      summary: 'Good effort today. Keep explaining ideas out loud and you\'ll keep climbing.',
+      strengths: [],
+      weakPoints: [],
+      recommendations: ['Review the concepts you found tricky, then try another interview.'],
+      concepts: [],
+      encouragement: "You showed up and tried — that's how brains grow. 💪",
+    }
+    return { score, summary: analysis.summary, keepPractising: [], analysis }
+  }
+
   try {
     const res = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         {
           role: 'system',
-          content: `You are examining a student's spoken oral viva. Judge how well they EXPLAINED and REASONED about the ideas in their own words — understanding, application and the ability to think/explore, not just recall. Weigh: understanding, application, reasoning, and communication. Be honest but encouraging.
-Return ONLY JSON: {"score": <integer 1-10>, "summary": "<warm one-sentence summary>", "keepPractising": ["<1-3 specific, actionable things to practise; name the concept>"]}`,
+          content: `You are an expert, warm oral examiner analysing a child's spoken viva (oral exam). Judge how well they EXPLAINED and REASONED about ideas in their OWN words — understanding, application, reasoning and communication — not rote recall. Be honest but kind and age-appropriate; speak TO the child ("you").
+
+Return ONLY JSON with this exact shape:
+{
+  "score": <integer 1-10>,
+  "level": "<one of: Beginning, Developing, Proficient, Mastering>",
+  "headline": "<one punchy, encouraging line addressed to the child, max 8 words>",
+  "summary": "<1-2 warm sentences on how it went, addressed to the child>",
+  "strengths": ["<1-3 specific things they did well; name the concept>"],
+  "weakPoints": ["<1-3 specific gaps/misunderstandings; name the concept>"],
+  "recommendations": ["<2-3 concrete, actionable next steps; specific, not generic>"],
+  "concepts": [{"name":"<concept discussed>","rating":<1=needs work,2=getting there,3=strong>}],
+  "encouragement": "<one motivating closing line for the child>"
+}
+Only include concepts that actually came up. If the transcript is empty or too short to judge, give a low score and say so kindly.`,
         },
         {
           role: 'user',
-          content: `Concepts being reviewed:\n${concepts}\n\nTranscript:\n${convo || '(no transcript captured)'}`,
+          content: `Concepts in scope:\n${concepts}\n\nTranscript:\n${convo || '(no transcript captured)'}`,
         },
       ],
       response_format: { type: 'json_object' },
-      max_tokens: 400,
+      max_tokens: 800,
     })
     const parsed = JSON.parse(res.choices[0]?.message?.content ?? '{}')
     const score = Math.max(1, Math.min(10, Math.round(Number(parsed.score) || 5)))
-    return {
+    const strArr = (v: unknown, n: number): string[] =>
+      Array.isArray(v) ? v.slice(0, n).map((x) => String(x)).filter((s) => s.trim()) : []
+    const conceptArr: ConceptRating[] = Array.isArray(parsed.concepts)
+      ? parsed.concepts
+          .slice(0, 8)
+          .map((c: { name?: unknown; rating?: unknown }) => ({
+            name: String(c?.name ?? '').slice(0, 80),
+            rating: (Math.max(1, Math.min(3, Math.round(Number(c?.rating) || 2))) as 1 | 2 | 3),
+          }))
+          .filter((c: ConceptRating) => c.name.trim())
+      : []
+    const analysis: InterviewAnalysis = {
       score,
-      summary: typeof parsed.summary === 'string' ? parsed.summary : 'Nice effort — keep practising!',
-      keepPractising: Array.isArray(parsed.keepPractising) ? parsed.keepPractising.slice(0, 3).map(String) : [],
+      level: typeof parsed.level === 'string' && parsed.level.trim() ? parsed.level : levelFor(score),
+      headline: typeof parsed.headline === 'string' && parsed.headline.trim() ? parsed.headline : 'Great work today!',
+      summary: typeof parsed.summary === 'string' && parsed.summary.trim() ? parsed.summary : 'Nice effort — keep practising!',
+      strengths: strArr(parsed.strengths, 3),
+      weakPoints: strArr(parsed.weakPoints, 3),
+      recommendations: strArr(parsed.recommendations, 3),
+      concepts: conceptArr,
+      encouragement: typeof parsed.encouragement === 'string' && parsed.encouragement.trim() ? parsed.encouragement : "You're getting sharper every time. 🚀",
     }
+    return { score, summary: analysis.summary, keepPractising: analysis.weakPoints, analysis }
   } catch (err) {
     logger.warn({ err: String(err).slice(0, 120) }, 'study.interview_score_failed')
-    return { score: 5, summary: 'Good effort — keep practising!', keepPractising: [] }
+    return fallback(5)
   }
+}
+
+function levelFor(score: number): string {
+  if (score >= 9) return 'Mastering'
+  if (score >= 7) return 'Proficient'
+  if (score >= 4) return 'Developing'
+  return 'Beginning'
 }
 
 /**
@@ -112,6 +197,7 @@ export async function completeInterview(
       summary: iv.summary ?? null,
       keepPractising: (iv.keepPractising as string[]) ?? [],
       focus: (iv.focus as InterviewFocus | null) ?? null,
+      analysis: (iv.analysis as InterviewAnalysis | null) ?? null,
     }
   }
 
@@ -119,6 +205,7 @@ export async function completeInterview(
   let score = input.score
   let summary = input.summary
   let keepPractising = input.keepPractising ?? []
+  let analysis: InterviewAnalysis | null = null
 
   // Nothing to grade (a dropped connection, or the real transcript will arrive
   // via the Tavus webhook). Don't finalize or award a default score — leave the
@@ -131,12 +218,14 @@ export async function completeInterview(
       summary: null,
       keepPractising: [],
       focus: input.focus ?? null,
+      analysis: null,
     }
   }
 
-  if (score == null && transcript.length > 0) {
+  if (transcript.length > 0) {
     const s = await scoreInterview((iv.focusAreas as string[]) ?? [], transcript)
-    score = s.score
+    analysis = s.analysis
+    if (score == null) score = s.score
     summary = summary ?? s.summary
     if (keepPractising.length === 0) keepPractising = s.keepPractising
   }
@@ -151,6 +240,7 @@ export async function completeInterview(
       score: score ?? null,
       summary: summary ?? null,
       keepPractising,
+      analysis,
       focus: input.focus ?? null,
       durationSecs: input.durationSecs ?? 0,
       brainsEarned,
@@ -190,6 +280,7 @@ export async function completeInterview(
     summary: summary ?? null,
     keepPractising,
     focus: input.focus ?? null,
+    analysis,
   }
 }
 

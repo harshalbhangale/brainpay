@@ -759,7 +759,7 @@ study.post('/study/topics/:id/interview', async (c) => {
       grade,
       concepts: cards,
       proctor,
-      maxDurationSecs: mode === 'viva' ? 480 : 360,
+      maxDurationSecs: 180,
       callbackUrl,
     })
     await db
@@ -888,6 +888,7 @@ study.get('/study/children/:kidId/overview', async (c) => {
       durationSecs: studyInterviews.durationSecs,
       brainsEarned: studyInterviews.brainsEarned,
       focus: studyInterviews.focus,
+      analysis: studyInterviews.analysis,
       completedAt: studyInterviews.completedAt,
       createdAt: studyInterviews.createdAt,
     })
@@ -943,6 +944,7 @@ study.get('/study/children/:kidId/interviews/:id', async (c) => {
       focusAreas: iv.focusAreas,
       transcript: iv.transcript,
       focus: iv.focus,
+      analysis: iv.analysis,
       durationSecs: iv.durationSecs,
       brainsEarned: iv.brainsEarned,
       status: iv.status,
@@ -979,6 +981,7 @@ study.get('/study/interviews', async (c) => {
       brainsEarned: studyInterviews.brainsEarned,
       keepPractising: studyInterviews.keepPractising,
       focus: studyInterviews.focus,
+      analysis: studyInterviews.analysis,
       completedAt: studyInterviews.completedAt,
       createdAt: studyInterviews.createdAt,
     })
@@ -1025,6 +1028,7 @@ study.get('/study/interviews/:id', async (c) => {
       focusAreas: iv.focusAreas,
       transcript: iv.transcript,
       focus: iv.focus,
+      analysis: iv.analysis,
       durationSecs: iv.durationSecs,
       brainsEarned: iv.brainsEarned,
       status: iv.status,

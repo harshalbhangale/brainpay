@@ -18,6 +18,7 @@ import { Button } from '../components/primitives'
 import { BrainsPill } from '../components/Brains'
 import { useSessionStore } from '../lib/sessions'
 import { InterviewLoader } from './InterviewLoader'
+import { InterviewInsights, scoreTone, type InterviewAnalysis } from './InterviewInsights'
 
 // The Runway avatar stage pulls in the LiveKit/Runway client — load it lazily
 // so it stays out of the main bundle until an interview actually starts.
@@ -28,7 +29,7 @@ type Topic = { id: string; title: string; emoji: string }
 type Phase = 'intro' | 'starting' | 'live' | 'fallback' | 'scoring' | 'done' | 'error'
 type TranscriptLine = { role: string; text: string }
 type Focus = { lookingPct?: number; flags?: string[]; notes?: string }
-type Result = { brainsEarned?: number; score?: number | null; summary?: string | null; keepPractising?: string[]; focus?: Focus | null }
+type Result = { brainsEarned?: number; score?: number | null; summary?: string | null; keepPractising?: string[]; focus?: Focus | null; analysis?: InterviewAnalysis | null }
 type RunwayCreds = { sessionId: string; serverUrl: string; token: string; roomName: string; avatarId?: string }
 type StartResp = {
   interviewId: string
@@ -243,22 +244,21 @@ export function InterviewView({ topicId, initialChapter, onBack, onChat }: { top
 
   // ── DONE (results) ───────────────────────────────────────────────────
   if (phase === 'done') {
-    const score = typeof result?.score === 'number' ? result.score : null
+    const analysis = result?.analysis ?? null
+    const score = typeof result?.score === 'number' ? result.score : (analysis?.score ?? null)
     const flags = result?.focus?.flags ?? []
-    // Score tone: strong (green) / okay (accent) / low (red).
-    const tone = score == null
-      ? { bg: 'var(--pv-surface-2)', fg: 'var(--pv-ink-3)' }
-      : score >= 8 ? { bg: 'var(--pv-pos-soft)', fg: 'var(--pv-pos)' }
-      : score >= 5 ? { bg: 'var(--pv-accent-soft)', fg: 'var(--pv-accent)' }
-      : { bg: 'var(--pv-neg-soft)', fg: 'var(--pv-neg)' }
-    const headline = score == null ? 'Interview complete!' : score >= 8 ? 'Brilliant! 🎉' : score >= 5 ? 'Nice work! 💪' : 'Good try — keep going! 📚'
+    const tone = scoreTone(score)
+    const headline = analysis?.headline
+      ?? (score == null ? 'Interview complete!' : score >= 8 ? 'Brilliant! 🎉' : score >= 5 ? 'Nice work! 💪' : 'Good try — keep going! 📚')
+    // Weak points fall back to keepPractising when no rich analysis is present.
+    const fallbackWeak = result?.keepPractising ?? []
 
     return (
       <div className="relative flex h-full flex-col overflow-hidden">
         {(result?.brainsEarned ?? 0) > 0 && <Confetti />}
-        <div className="pv-no-scrollbar relative min-h-0 flex-1 overflow-y-auto px-6 py-8">
+        <div className="pv-no-scrollbar relative min-h-0 flex-1 overflow-y-auto px-5 py-8">
+          {/* ── Hero: score ring + headline ─────────────────────────────── */}
           <div className="flex flex-col items-center text-center">
-            {/* Score ring (or trophy if unscored) */}
             {score != null ? (
               <div className="animate-trophy flex h-28 w-28 flex-col items-center justify-center rounded-full" style={{ background: tone.bg, color: tone.fg }}>
                 <span className="pv-amount text-4xl leading-none">{score}</span>
@@ -270,29 +270,43 @@ export function InterviewView({ topicId, initialChapter, onBack, onChat }: { top
               </div>
             )}
 
-            <h2 className="pv-h1 pv-rise mt-5">{headline}</h2>
-            {result?.summary && <p className="pv-body pv-rise mt-2 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>{result.summary}</p>}
+            {analysis?.level && (
+              <span className="pv-rise mt-3 rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide" style={{ background: tone.bg, color: tone.fg }}>{analysis.level}</span>
+            )}
+            <h2 className="pv-h1 pv-rise mt-3 max-w-xs">{headline}</h2>
+            {(analysis?.summary || result?.summary) && (
+              <p className="pv-body pv-rise mt-2 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>{analysis?.summary ?? result?.summary}</p>
+            )}
             {(result?.brainsEarned ?? 0) > 0 && <div className="pv-rise mt-4"><BrainsPill amount={result!.brainsEarned!} pop /></div>}
+          </div>
 
-            {result?.keepPractising && result.keepPractising.length > 0 && (
-              <div className="pv-rise mt-6 w-full max-w-xs rounded-2xl p-4 text-left" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
-                <p className="pv-label mb-2">Keep practising</p>
-                {result.keepPractising.map((k, i) => (
-                  <p key={i} className="flex items-start gap-2 text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}><span className="pv-text-accent">•</span> {k}</p>
-                ))}
-              </div>
-            )}
-
-            {flags.length > 0 && (
-              <div className="pv-rise mt-3 flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
-                <Eye size={14} style={{ color: 'var(--pv-warn)' }} /> Try to keep your eyes on the screen next time.
-              </div>
-            )}
-
-            {/* Confirmation that it's logged — answers "it should appear in past interviews". */}
-            <div className="mt-6 flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
-              <History size={13} /> Saved to your Past interviews
+          {/* ── Rich insights ───────────────────────────────────────────── */}
+          {analysis ? (
+            <div className="mt-7">
+              <InterviewInsights analysis={analysis} audience="kid" />
+              {analysis.encouragement && (
+                <div className="pv-rise mt-3 rounded-2xl px-4 py-3.5 text-center text-sm font-semibold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                  {analysis.encouragement}
+                </div>
+              )}
             </div>
+          ) : fallbackWeak.length > 0 ? (
+            <div className="pv-rise mt-7 rounded-2xl p-4" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+              <p className="pv-label mb-2">Keep practising</p>
+              {fallbackWeak.map((k, i) => (
+                <p key={i} className="flex items-start gap-2 text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}><span className="pv-text-accent">•</span> {k}</p>
+              ))}
+            </div>
+          ) : null}
+
+          {flags.length > 0 && (
+            <div className="pv-rise mt-3 flex items-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
+              <Eye size={14} className="flex-none" style={{ color: 'var(--pv-warn)' }} /> Try to keep your eyes on the screen next time.
+            </div>
+          )}
+
+          <div className="mt-6 flex items-center justify-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
+            <History size={13} /> Saved to your Past interviews
           </div>
         </div>
         <div className="flex-none px-6 pb-6 pt-2">
@@ -327,6 +341,8 @@ export function InterviewView({ topicId, initialChapter, onBack, onChat }: { top
 // Below this many seconds with nothing said, a "completed" interview is really
 // a dropped connection — don't score it, let the kid try again.
 const MIN_REAL_INTERVIEW_SECS = 12
+// Hard cap for the interview — 3 minutes.
+const TAVUS_MAX_SECS = 180
 
 
 // ─────────────────────────────────────────────────────────── Tavus stage
@@ -344,6 +360,7 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
   const startedRef = useRef(Date.now())
   const [status, setStatus] = useState<'connecting' | 'live'>('connecting')
   const [micOn, setMicOn] = useState(true)
+  const [remaining, setRemaining] = useState(TAVUS_MAX_SECS)
 
   // Tear down the call object once, regardless of outcome.
   async function teardown() {
@@ -452,7 +469,7 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
       callRef.current = call
 
       call
-        .on('joined-meeting', () => { joinedRef.current = true; setStatus('live'); paint() })
+        .on('joined-meeting', () => { joinedRef.current = true; startedRef.current = Date.now(); setStatus('live'); paint() })
         .on('participant-joined', paint)
         .on('participant-updated', paint)
         .on('track-started', paint)
@@ -491,59 +508,65 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, token])
 
+  // 3-minute countdown — starts once we're live; ends the call at zero so the
+  // transcript gets scored.
+  useEffect(() => {
+    if (status !== 'live') return
+    const t = setInterval(() => {
+      const left = Math.max(0, TAVUS_MAX_SECS - Math.round((Date.now() - startedRef.current) / 1000))
+      setRemaining(left)
+      if (left <= 0) void end()
+    }, 1000)
+    return () => clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
+
+  const mm = String(Math.floor(remaining / 60)).padStart(1, '0')
+  const ss = String(remaining % 60).padStart(2, '0')
+  const lowTime = remaining <= 30
+
   return (
     <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden" style={{ background: '#0b0c0f', height: '100dvh' }}>
-      {/* Tutor — full-bleed */}
-      <video ref={tutorVideoRef} autoPlay playsInline className="absolute inset-0 h-full w-full object-cover" />
-
-      {/* Top scrim + bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-36" style={{ background: 'linear-gradient(180deg, rgba(11,12,15,0.55), transparent)' }} />
-      <div className="absolute inset-x-0 top-0 flex items-start justify-between px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))' }}>
-        <div className="flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>
-          {status === 'live' && <span className="pv-live-pulse h-2 w-2 rounded-full" style={{ background: 'var(--pv-pos)' }} />}
-          <span className="text-sm font-bold text-white">Your tutor</span>
-        </div>
-        <div className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}>
-          <ShieldCheck size={12} style={{ color: 'var(--pv-pos)' }} /> Proctored
-        </div>
-      </div>
-
-      {/* Self-view PiP — kept mounted so the track can attach; fades in when live */}
-      <div
-        className="absolute h-[150px] w-[110px] overflow-hidden rounded-[20px] transition-opacity duration-500"
-        style={{
-          right: 16,
-          bottom: 'calc(env(safe-area-inset-bottom) + 116px)',
-          background: '#000',
-          boxShadow: '0 10px 30px -8px rgba(0,0,0,0.6)',
-          border: '2px solid rgba(255,255,255,0.18)',
-          opacity: status === 'live' ? 1 : 0,
-        }}
-      >
-        <video ref={selfVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
-        {!micOn && (
-          <div className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-neg)', color: '#fff' }}>
-            <MicOff size={12} />
+      {/* ── Two-up split: tutor on top, you on the bottom ──────────────── */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+        {/* Tutor */}
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[26px]" style={{ background: 'var(--pv-surface-3)' }}>
+          <video ref={tutorVideoRef} autoPlay playsInline className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>
+            {status === 'live' && <span className="pv-live-pulse h-2 w-2 rounded-full" style={{ background: 'var(--pv-pos)' }} />}
+            <span className="text-sm font-bold text-white">Your tutor</span>
           </div>
-        )}
-        <div className="absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-bold text-white" style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.6), transparent)' }}>You</div>
+          <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">
+            {status === 'live' && (
+              <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold tabular-nums" style={{ background: lowTime ? 'var(--pv-neg)' : 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}>
+                <Clock size={13} /> {mm}:{ss}
+              </div>
+            )}
+            <div className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}>
+              <ShieldCheck size={12} style={{ color: 'var(--pv-pos)' }} /> Proctored
+            </div>
+          </div>
+        </div>
+
+        {/* You — kept mounted so the local track can attach */}
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[26px]" style={{ background: '#000' }}>
+          <video ref={selfVideoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+          <div className="absolute left-3 bottom-3 rounded-full px-3 py-1.5 text-xs font-bold text-white" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>You</div>
+          {!micOn && (
+            <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold" style={{ background: 'var(--pv-neg)', color: '#fff' }}>
+              <MicOff size={12} /> Muted
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Connecting overlay */}
-      {status === 'connecting' && (
-        <div className="absolute inset-0 flex flex-col" style={{ background: 'linear-gradient(160deg, #15161b 0%, #0b0c0f 100%)' }}>
-          <InterviewLoader variant="dark" messages={['Connecting you to your tutor…', 'Warming up the camera & mic…', 'Setting the room just right…', 'Almost there — sit up tall! ✨']} />
-        </div>
-      )}
-
-      {/* Bottom scrim + controls */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(0deg, rgba(11,12,15,0.6), transparent)' }} />
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-10" style={{ paddingBottom: 'max(22px, calc(env(safe-area-inset-bottom) + 14px))' }}>
+      {/* ── Controls ───────────────────────────────────────────────────── */}
+      <div className="flex flex-none items-center justify-center gap-10 px-3 pt-3.5" style={{ paddingBottom: 'max(16px, calc(env(safe-area-inset-bottom) + 8px))' }}>
         <button onClick={toggleMic} aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'} className="pv-press-lg flex flex-col items-center gap-1.5">
           <span
             className="flex h-14 w-14 items-center justify-center rounded-full"
             style={micOn
-              ? { background: 'rgba(255,255,255,0.18)', color: '#fff', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.25)' }
+              ? { background: 'rgba(255,255,255,0.16)', color: '#fff', border: '1px solid rgba(255,255,255,0.22)' }
               : { background: '#fff', color: 'var(--pv-ink)' }}
           >
             {micOn ? <Mic size={22} /> : <MicOff size={22} />}
@@ -557,6 +580,13 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
           <span className="text-[11px] font-semibold text-white">End</span>
         </button>
       </div>
+
+      {/* Connecting overlay (covers the whole call) */}
+      {status === 'connecting' && (
+        <div className="absolute inset-0 z-10 flex flex-col" style={{ background: 'linear-gradient(160deg, #15161b 0%, #0b0c0f 100%)' }}>
+          <InterviewLoader variant="dark" messages={['Connecting you to your tutor…', 'Warming up the camera & mic…', 'Setting the room just right…', 'Almost there — sit up tall! ✨']} />
+        </div>
+      )}
     </div>
   )
 }

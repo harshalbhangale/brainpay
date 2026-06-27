@@ -1,11 +1,14 @@
 /**
  * RunwayStage — the live Runway Characters (GWM-1) avatar interview.
  * ───────────────────────────────────────────────────────────────────────────
+ * A full-screen FaceTime-style video call: the avatar tutor (Simon) plays
+ * full-bleed, the student's webcam is a small floating self-view (PiP), and mic
+ * / end controls float over a soft scrim — all in the `.pv` design language so
+ * it sits seamlessly inside StudyPal. The surface is `fixed inset-0` so it owns
+ * the whole viewport and never scrolls on mobile.
+ *
  * Joins the LiveKit room minted by our server (POST /study/topics/:id/interview
- * → { provider:'runway', runway: SessionCredentials }) and renders the avatar
- * tutor full-bleed with a proctor self-view, mic control, a 5-minute countdown
- * and graceful connect/retry states — all in the `.pv` design language so it
- * sits seamlessly inside StudyPal.
+ * → { provider:'runway', runway: SessionCredentials }).
  *
  * Lifecycle is driven by `useAvatarStatus()`:
  *   connecting → waiting → ready → (ending) → ended | error
@@ -31,8 +34,9 @@ import {
   isTrackReference,
   type SessionCredentials,
 } from '@runwayml/avatars-react'
-import { Mic, MicOff, PhoneOff, Clock, VideoOff } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Clock, VideoOff, ShieldCheck } from 'lucide-react'
 import { api } from '../../lib/api'
+import { InterviewLoader } from './InterviewLoader'
 
 type TranscriptLine = { role: string; text: string }
 type Focus = { lookingPct?: number; flags?: string[]; notes?: string }
@@ -199,151 +203,109 @@ function Inner({
   const lowTime = remaining <= 30
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-4 pb-4">
-      {/* ── Interviewer (Simon) — top tile ─────────────────────────────── */}
-      <div
-        className="relative min-h-0 flex-1 overflow-hidden rounded-[24px]"
-        style={{ background: 'var(--pv-surface-3)', boxShadow: 'var(--pv-shadow-lg)' }}
-      >
-        <AvatarVideo className="absolute inset-0 h-full w-full">
-          {(s) =>
-            s.status === 'ready' ? (
-              <VideoTrack trackRef={s.videoTrackRef} className="h-full w-full object-cover" />
-            ) : null
-          }
-        </AvatarVideo>
+    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden" style={{ background: '#0b0c0f', height: '100dvh' }}>
+      {/* ── Avatar tutor (Simon) — full-bleed ──────────────────────────── */}
+      <AvatarVideo className="absolute inset-0 h-full w-full">
+        {(s) =>
+          s.status === 'ready' ? (
+            <VideoTrack trackRef={s.videoTrackRef} className="h-full w-full object-cover" />
+          ) : null
+        }
+      </AvatarVideo>
 
-        {/* Time-remaining pill */}
-        {isLive && (
-          <div
-            className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold tabular-nums"
-            style={{ background: lowTime ? 'var(--pv-neg)' : 'rgba(11,12,15,0.55)', color: '#fff', backdropFilter: 'blur(6px)' }}
-          >
-            <Clock size={13} /> {mm}:{ss}
+      {/* Top scrim for legibility of the floating chips */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-36" style={{ background: 'linear-gradient(180deg, rgba(11,12,15,0.55), transparent)' }} />
+
+      {/* ── Top bar: name + (live) timer + proctor badge ───────────────── */}
+      <div className="absolute inset-x-0 top-0 flex items-start justify-between px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))' }}>
+        <div className="flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>
+          {isLive && <span className="pv-live-pulse h-2 w-2 rounded-full" style={{ background: 'var(--pv-pos)' }} />}
+          <span className="text-sm font-bold text-white">Principal Simon</span>
+        </div>
+
+        <div className="flex flex-col items-end gap-1.5">
+          {isLive && (
+            <div
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold tabular-nums"
+              style={{ background: lowTime ? 'var(--pv-neg)' : 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}
+            >
+              <Clock size={13} /> {mm}:{ss}
+            </div>
+          )}
+          <div className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}>
+            <ShieldCheck size={12} style={{ color: 'var(--pv-pos)' }} /> Proctored
           </div>
-        )}
-
-        {/* Live badge */}
-        {isLive && (
-          <div
-            className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold"
-            style={{ background: 'rgba(11,12,15,0.55)', color: '#fff', backdropFilter: 'blur(6px)' }}
-          >
-            <span className="h-2 w-2 animate-pulse rounded-full" style={{ background: 'var(--pv-pos)' }} /> LIVE
-          </div>
-        )}
-
-        <NameTag label="Principal Simon" />
-
-        {/* Connecting / waiting / wrapping-up overlay. Until we're live (which
-            includes the initial Disconnected→'ended' state) we always show the
-            connecting state so a blank tile never shows. */}
-        {(!live || status === 'ending') && (
-          <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-3"
-            style={{ background: 'rgba(11,12,15,0.55)' }}
-          >
-            <Spinner />
-            <p className="text-sm font-semibold text-white">
-              {status === 'ending'
-                ? 'Wrapping up…'
-                : status === 'waiting'
-                  ? 'Almost there…'
-                  : 'Connecting you to Principal Simon…'}
-            </p>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* ── You — bottom tile ──────────────────────────────────────────── */}
-      <div
-        className="relative min-h-0 flex-1 overflow-hidden rounded-[24px]"
-        style={{ background: '#000', boxShadow: 'var(--pv-shadow-lg)' }}
-      >
-        <UserVideo>
-          {(s) =>
-            s.isCameraEnabled && isTrackReference(s.trackRef) ? (
-              <VideoTrack
-                trackRef={s.trackRef}
-                className="h-full w-full object-cover"
-                style={{ transform: 'scaleX(-1)' }}
-              />
-            ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2" style={{ background: 'var(--pv-surface-3)' }}>
-                <VideoOff size={22} style={{ color: 'var(--pv-ink-3)' }} />
-                <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Camera off</span>
-              </div>
-            )
-          }
-        </UserVideo>
-
-        <NameTag label="You" />
-
-        {/* Muted indicator */}
-        {!isMicEnabled && (
-          <div
-            className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold"
-            style={{ background: 'var(--pv-neg)', color: '#fff' }}
-          >
-            <MicOff size={12} /> Muted
-          </div>
-        )}
-      </div>
-
-      {/* ── Call controls ──────────────────────────────────────────────── */}
-      <div className="flex flex-none items-center justify-center gap-8 pt-1">
-        <button
-          onClick={toggleMic}
-          aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
-          className="pv-press-lg flex flex-col items-center gap-1.5"
+      {/* ── Self-view PiP (the student) — small floating tile ──────────── */}
+      {live && (
+        <div
+          className="pv-pip-in absolute h-[150px] w-[110px] overflow-hidden rounded-[20px]"
+          style={{ right: 16, bottom: 'calc(env(safe-area-inset-bottom) + 116px)', background: '#000', boxShadow: '0 10px 30px -8px rgba(0,0,0,0.6)', border: '2px solid rgba(255,255,255,0.18)' }}
         >
+          <UserVideo>
+            {(s) =>
+              s.isCameraEnabled && isTrackReference(s.trackRef) ? (
+                <VideoTrack trackRef={s.trackRef} className="h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+              ) : (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-1.5" style={{ background: 'var(--pv-surface-3)' }}>
+                  <VideoOff size={18} style={{ color: 'var(--pv-ink-3)' }} />
+                  <span className="text-[10px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Camera off</span>
+                </div>
+              )
+            }
+          </UserVideo>
+          {!isMicEnabled && (
+            <div className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-neg)', color: '#fff' }}>
+              <MicOff size={12} />
+            </div>
+          )}
+          <div className="absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-bold text-white" style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.6), transparent)' }}>You</div>
+        </div>
+      )}
+
+      {/* ── Connecting / wrapping-up overlay ───────────────────────────── */}
+      {(!live || status === 'ending') && (
+        <div className="absolute inset-0 flex flex-col" style={{ background: 'linear-gradient(160deg, #15161b 0%, #0b0c0f 100%)' }}>
+          <InterviewLoader
+            variant="dark"
+            messages={
+              status === 'ending'
+                ? ['Wrapping up your interview…', 'Scoring your answers…', 'Tallying your Brains…']
+                : status === 'waiting'
+                  ? ['Principal Simon is joining…', 'Almost there…', 'Get ready to explain out loud!']
+                  : undefined
+            }
+          />
+        </div>
+      )}
+
+      {/* Bottom scrim + call controls */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(0deg, rgba(11,12,15,0.6), transparent)' }} />
+      <div
+        className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-10"
+        style={{ paddingBottom: 'max(22px, calc(env(safe-area-inset-bottom) + 14px))' }}
+      >
+        <button onClick={toggleMic} aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'} className="pv-press-lg flex flex-col items-center gap-1.5">
           <span
             className="flex h-14 w-14 items-center justify-center rounded-full"
             style={isMicEnabled
-              ? { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }
-              : { background: 'var(--pv-ink)', color: '#fff', boxShadow: 'var(--pv-shadow-md)' }}
+              ? { background: 'rgba(255,255,255,0.18)', color: '#fff', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.25)' }
+              : { background: '#fff', color: 'var(--pv-ink)' }}
           >
             {isMicEnabled ? <Mic size={22} /> : <MicOff size={22} />}
           </span>
-          <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
-            {isMicEnabled ? 'Mic on' : 'Muted'}
-          </span>
+          <span className="text-[11px] font-semibold text-white">{isMicEnabled ? 'Mic on' : 'Muted'}</span>
         </button>
 
-        <button
-          onClick={() => void manualEnd()}
-          aria-label="End interview"
-          className="pv-press-lg flex flex-col items-center gap-1.5"
-        >
-          <span
-            className="flex h-16 w-16 items-center justify-center rounded-full text-white"
-            style={{ background: 'var(--pv-neg)', boxShadow: '0 12px 30px -8px rgba(229,72,77,0.6)' }}
-          >
+        <button onClick={() => void manualEnd()} aria-label="End interview" className="pv-press-lg flex flex-col items-center gap-1.5">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full text-white" style={{ background: 'var(--pv-neg)', boxShadow: '0 12px 30px -8px rgba(229,72,77,0.7)' }}>
             <PhoneOff size={24} strokeWidth={2.4} />
           </span>
-          <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>End</span>
+          <span className="text-[11px] font-semibold text-white">End</span>
         </button>
       </div>
-    </div>
-  )
-}
-
-function NameTag({ label }: { label: string }) {
-  return (
-    <div
-      className="absolute bottom-3 left-3 rounded-full px-3 py-1.5 text-xs font-bold"
-      style={{ background: 'rgba(11,12,15,0.55)', color: '#fff', backdropFilter: 'blur(6px)' }}
-    >
-      {label}
-    </div>
-  )
-}
-
-function Spinner() {
-  return (
-    <div className="relative h-14 w-14">
-      <div className="absolute inset-0 rounded-full" style={{ border: '3px solid rgba(255,255,255,0.25)' }} />
-      <div className="absolute inset-0 animate-spin rounded-full" style={{ border: '3px solid transparent', borderTopColor: '#fff' }} />
     </div>
   )
 }

@@ -11,11 +11,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DailyCall } from '@daily-co/daily-js'
 import {
   ChevronLeft, ChevronRight, Mic, MicOff, Video, Trophy, Sparkles, Check, X, ShieldCheck, Eye, BookOpen, PhoneOff,
+  Clock, VideoOff, History,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Button } from '../components/primitives'
 import { BrainsPill } from '../components/Brains'
 import { useSessionStore } from '../lib/sessions'
+import { InterviewLoader } from './InterviewLoader'
 
 // The Runway avatar stage pulls in the LiveKit/Runway client — load it lazily
 // so it stays out of the main bundle until an interview actually starts.
@@ -56,10 +58,9 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 function LiveLoading() {
   return (
-    <Centered>
-      <Spinner />
-      <p className="pv-title mt-4">Waking up your tutor…</p>
-    </Centered>
+    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: 'linear-gradient(160deg, #15161b 0%, #0b0c0f 100%)', height: '100dvh' }}>
+      <InterviewLoader variant="dark" />
+    </div>
   )
 }
 
@@ -188,10 +189,13 @@ export function InterviewView({ topicId, initialChapter, onBack, onChat }: { top
     return (
       <>
         <Header title="AI Interview" />
-        <Centered>
-          <Spinner />
-          <p className="pv-title mt-4">{phase === 'starting' ? 'Waking up your tutor…' : 'Scoring your answers…'}</p>
-        </Centered>
+        <InterviewLoader
+          messages={
+            phase === 'scoring'
+              ? ['Scoring your answers…', 'Reading your explanations…', 'Tallying your Brains…', 'Writing your feedback…']
+              : ['Setting up your interview…', 'Asking for camera & mic…', 'Skimming your lesson notes…', 'Waking up your tutor…']
+          }
+        />
       </>
     )
   }
@@ -239,34 +243,59 @@ export function InterviewView({ topicId, initialChapter, onBack, onChat }: { top
 
   // ── DONE (results) ───────────────────────────────────────────────────
   if (phase === 'done') {
-    const scorePct = typeof result?.score === 'number' ? result.score * 10 : null
+    const score = typeof result?.score === 'number' ? result.score : null
     const flags = result?.focus?.flags ?? []
+    // Score tone: strong (green) / okay (accent) / low (red).
+    const tone = score == null
+      ? { bg: 'var(--pv-surface-2)', fg: 'var(--pv-ink-3)' }
+      : score >= 8 ? { bg: 'var(--pv-pos-soft)', fg: 'var(--pv-pos)' }
+      : score >= 5 ? { bg: 'var(--pv-accent-soft)', fg: 'var(--pv-accent)' }
+      : { bg: 'var(--pv-neg-soft)', fg: 'var(--pv-neg)' }
+    const headline = score == null ? 'Interview complete!' : score >= 8 ? 'Brilliant! 🎉' : score >= 5 ? 'Nice work! 💪' : 'Good try — keep going! 📚'
+
     return (
       <div className="relative flex h-full flex-col overflow-hidden">
         {(result?.brainsEarned ?? 0) > 0 && <Confetti />}
-        <div className="relative flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-          <div className="animate-trophy flex h-28 w-28 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
-            <Trophy size={44} />
+        <div className="pv-no-scrollbar relative min-h-0 flex-1 overflow-y-auto px-6 py-8">
+          <div className="flex flex-col items-center text-center">
+            {/* Score ring (or trophy if unscored) */}
+            {score != null ? (
+              <div className="animate-trophy flex h-28 w-28 flex-col items-center justify-center rounded-full" style={{ background: tone.bg, color: tone.fg }}>
+                <span className="pv-amount text-4xl leading-none">{score}</span>
+                <span className="text-[11px] font-bold" style={{ opacity: 0.7 }}>out of 10</span>
+              </div>
+            ) : (
+              <div className="animate-trophy flex h-28 w-28 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                <Trophy size={44} />
+              </div>
+            )}
+
+            <h2 className="pv-h1 pv-rise mt-5">{headline}</h2>
+            {result?.summary && <p className="pv-body pv-rise mt-2 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>{result.summary}</p>}
+            {(result?.brainsEarned ?? 0) > 0 && <div className="pv-rise mt-4"><BrainsPill amount={result!.brainsEarned!} pop /></div>}
+
+            {result?.keepPractising && result.keepPractising.length > 0 && (
+              <div className="pv-rise mt-6 w-full max-w-xs rounded-2xl p-4 text-left" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                <p className="pv-label mb-2">Keep practising</p>
+                {result.keepPractising.map((k, i) => (
+                  <p key={i} className="flex items-start gap-2 text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}><span className="pv-text-accent">•</span> {k}</p>
+                ))}
+              </div>
+            )}
+
+            {flags.length > 0 && (
+              <div className="pv-rise mt-3 flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                <Eye size={14} style={{ color: 'var(--pv-warn)' }} /> Try to keep your eyes on the screen next time.
+              </div>
+            )}
+
+            {/* Confirmation that it's logged — answers "it should appear in past interviews". */}
+            <div className="mt-6 flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
+              <History size={13} /> Saved to your Past interviews
+            </div>
           </div>
-          <h2 className="pv-h1">Interview complete!</h2>
-          {result?.summary && <p className="pv-body max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>{result.summary}</p>}
-          {scorePct != null && <p className="text-sm font-semibold pv-text-accent">Score: {result?.score}/10</p>}
-          {(result?.brainsEarned ?? 0) > 0 && (
-            <BrainsPill amount={result!.brainsEarned!} pop />
-          )}
-          {result?.keepPractising && result.keepPractising.length > 0 && (
-            <div className="mt-1 w-full max-w-xs text-left">
-              <p className="pv-label mb-1">Keep practising</p>
-              {result.keepPractising.map((k, i) => <p key={i} className="text-sm">• {k}</p>)}
-            </div>
-          )}
-          {flags.length > 0 && (
-            <div className="mt-1 flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
-              <Eye size={14} style={{ color: 'var(--pv-warn)' }} /> Try to keep your eyes on the screen next time.
-            </div>
-          )}
         </div>
-        <div className="flex-none px-6 pb-6">
+        <div className="flex-none px-6 pb-6 pt-2">
           <Button variant="accent" size="lg" full onClick={onBack}>Back to subject</Button>
         </div>
       </div>
@@ -282,22 +311,17 @@ export function InterviewView({ topicId, initialChapter, onBack, onChat }: { top
     setPhase('error')
   }
 
-  // ── LIVE (Tavus video) ───────────────────────────────────────────────
-  return (
-    <>
-      <Header
-        title="AI Interview"
-        right={<span className="flex items-center gap-1 text-[11px] font-bold" style={{ color: 'var(--pv-pos)' }}><ShieldCheck size={13} /> Proctored</span>}
-      />
-      {session?.provider === 'runway' && session.runway ? (
-        <Suspense fallback={<LiveLoading />}>
-          <RunwayStage interviewId={session.interviewId} credentials={session.runway} onEnd={finish} onAbort={abort} />
-        </Suspense>
-      ) : session ? (
-        <TavusStage url={session.url} token={session.token} onEnd={finish} onAbort={abort} />
-      ) : null}
-    </>
-  )
+  // ── LIVE (full-screen video call) ────────────────────────────────────
+  // RunwayStage / TavusStage are `fixed inset-0` surfaces that own the whole
+  // viewport, so we render them bare — no in-flow header that would add height
+  // and cause the page to scroll on mobile.
+  return session?.provider === 'runway' && session.runway ? (
+    <Suspense fallback={<LiveLoading />}>
+      <RunwayStage interviewId={session.interviewId} credentials={session.runway} onEnd={finish} onAbort={abort} />
+    </Suspense>
+  ) : session ? (
+    <TavusStage url={session.url} token={session.token} onEnd={finish} onAbort={abort} />
+  ) : null
 }
 
 // Below this many seconds with nothing said, a "completed" interview is really
@@ -468,33 +492,69 @@ function TavusStage({ url, token, onEnd, onAbort }: { url: string; token: string
   }, [url, token])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-[24px]" style={{ background: 'var(--pv-surface-3)', boxShadow: 'var(--pv-shadow-lg)' }}>
-        <video ref={tutorVideoRef} autoPlay playsInline className="h-full w-full object-cover" />
+    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden" style={{ background: '#0b0c0f', height: '100dvh' }}>
+      {/* Tutor — full-bleed */}
+      <video ref={tutorVideoRef} autoPlay playsInline className="absolute inset-0 h-full w-full object-cover" />
 
-        {/* Kid self-view (proctor) */}
-        <video ref={selfVideoRef} autoPlay playsInline muted className="absolute bottom-3 right-3 h-28 w-20 rounded-xl object-cover" style={{ transform: 'scaleX(-1)', boxShadow: 'var(--pv-shadow-md)', background: '#000' }} />
-
-        {status === 'connecting' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: 'rgba(11,12,15,0.55)' }}>
-            <Spinner />
-            <p className="text-sm font-semibold text-white">Connecting you to your tutor…</p>
-          </div>
-        )}
+      {/* Top scrim + bar */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-36" style={{ background: 'linear-gradient(180deg, rgba(11,12,15,0.55), transparent)' }} />
+      <div className="absolute inset-x-0 top-0 flex items-start justify-between px-4" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))' }}>
+        <div className="flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>
+          {status === 'live' && <span className="pv-live-pulse h-2 w-2 rounded-full" style={{ background: 'var(--pv-pos)' }} />}
+          <span className="text-sm font-bold text-white">Your tutor</span>
+        </div>
+        <div className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(11,12,15,0.5)', color: '#fff', backdropFilter: 'blur(8px)' }}>
+          <ShieldCheck size={12} style={{ color: 'var(--pv-pos)' }} /> Proctored
+        </div>
       </div>
 
-      <div className="flex flex-none items-center justify-center gap-8 pt-4">
+      {/* Self-view PiP — kept mounted so the track can attach; fades in when live */}
+      <div
+        className="absolute h-[150px] w-[110px] overflow-hidden rounded-[20px] transition-opacity duration-500"
+        style={{
+          right: 16,
+          bottom: 'calc(env(safe-area-inset-bottom) + 116px)',
+          background: '#000',
+          boxShadow: '0 10px 30px -8px rgba(0,0,0,0.6)',
+          border: '2px solid rgba(255,255,255,0.18)',
+          opacity: status === 'live' ? 1 : 0,
+        }}
+      >
+        <video ref={selfVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+        {!micOn && (
+          <div className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-neg)', color: '#fff' }}>
+            <MicOff size={12} />
+          </div>
+        )}
+        <div className="absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-bold text-white" style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.6), transparent)' }}>You</div>
+      </div>
+
+      {/* Connecting overlay */}
+      {status === 'connecting' && (
+        <div className="absolute inset-0 flex flex-col" style={{ background: 'linear-gradient(160deg, #15161b 0%, #0b0c0f 100%)' }}>
+          <InterviewLoader variant="dark" messages={['Connecting you to your tutor…', 'Warming up the camera & mic…', 'Setting the room just right…', 'Almost there — sit up tall! ✨']} />
+        </div>
+      )}
+
+      {/* Bottom scrim + controls */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40" style={{ background: 'linear-gradient(0deg, rgba(11,12,15,0.6), transparent)' }} />
+      <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-10" style={{ paddingBottom: 'max(22px, calc(env(safe-area-inset-bottom) + 14px))' }}>
         <button onClick={toggleMic} aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'} className="pv-press-lg flex flex-col items-center gap-1.5">
-          <span className="flex h-14 w-14 items-center justify-center rounded-full" style={micOn ? { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' } : { background: 'var(--pv-ink)', color: '#fff', boxShadow: 'var(--pv-shadow-md)' }}>
+          <span
+            className="flex h-14 w-14 items-center justify-center rounded-full"
+            style={micOn
+              ? { background: 'rgba(255,255,255,0.18)', color: '#fff', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.25)' }
+              : { background: '#fff', color: 'var(--pv-ink)' }}
+          >
             {micOn ? <Mic size={22} /> : <MicOff size={22} />}
           </span>
-          <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{micOn ? 'Mic on' : 'Muted'}</span>
+          <span className="text-[11px] font-semibold text-white">{micOn ? 'Mic on' : 'Muted'}</span>
         </button>
         <button onClick={() => void end()} aria-label="End interview" className="pv-press-lg flex flex-col items-center gap-1.5">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full text-white" style={{ background: 'var(--pv-neg)', boxShadow: '0 12px 30px -8px rgba(229,72,77,0.6)' }}>
+          <span className="flex h-16 w-16 items-center justify-center rounded-full text-white" style={{ background: 'var(--pv-neg)', boxShadow: '0 12px 30px -8px rgba(229,72,77,0.7)' }}>
             <PhoneOff size={24} strokeWidth={2.4} />
           </span>
-          <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>End</span>
+          <span className="text-[11px] font-semibold text-white">End</span>
         </button>
       </div>
     </div>
@@ -526,15 +586,6 @@ function ChapterRow({ label, sub, active, onClick }: { label: string; sub: strin
       </div>
       <ChevronRight size={16} style={{ opacity: 0.6 }} />
     </button>
-  )
-}
-
-function Spinner() {
-  return (
-    <div className="relative h-14 w-14">
-      <div className="absolute inset-0 rounded-full" style={{ border: '3px solid var(--pv-surface-3)' }} />
-      <div className="absolute inset-0 animate-spin rounded-full" style={{ border: '3px solid transparent', borderTopColor: 'var(--pv-accent)' }} />
-    </div>
   )
 }
 

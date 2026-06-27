@@ -421,6 +421,74 @@
 }
 .pv .pv-drawer-row:active { transform: scale(0.97); transition: transform 0.08s ease-out; }
 
+/* ════════════════════════════════════════════════════════════════════════════
+   AI INTERVIEW — full-screen video call + a delightful "connecting" loader.
+   The loader is a living illustration: a breathing tutor orb, radiating sonar
+   rings, and a ring of orbiting sparkles, under rotating status copy.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* The tutor orb gently breathes while we connect. */
+@keyframes pv-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.07); }
+}
+.pv .pv-breathe { animation: pv-breathe 2.6s ease-in-out infinite; }
+
+/* Sonar rings radiate outward from the orb and fade. */
+@keyframes pv-radiate {
+  0%   { transform: scale(0.55); opacity: 0.6; }
+  80%  { opacity: 0; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.pv .pv-radiate { animation: pv-radiate 2.8s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+
+/* A halo of sparkles slowly orbits the orb (container spins, dots counter-spin). */
+@keyframes pv-orbit { to { transform: rotate(360deg); } }
+.pv .pv-orbit { animation: pv-orbit 11s linear infinite; }
+.pv .pv-orbit-rev { animation: pv-orbit 6s linear infinite reverse; }
+
+/* Individual sparkle twinkle. */
+@keyframes pv-twinkle {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+.pv .pv-twinkle { animation: pv-twinkle 1.8s ease-in-out infinite; }
+
+/* Gentle vertical bob for floating bits. */
+@keyframes pv-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+.pv .pv-bob { animation: pv-bob 3.2s ease-in-out infinite; }
+
+/* Rotating status message swaps with a soft rise. */
+@keyframes pv-msg-in {
+  from { opacity: 0; transform: translateY(8px); filter: blur(2px); }
+  to   { opacity: 1; transform: translateY(0);  filter: blur(0); }
+}
+.pv .pv-msg-in { animation: pv-msg-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* The three loading progress dots. */
+@keyframes pv-dot-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50%      { opacity: 1;   transform: scale(1.15); }
+}
+.pv .pv-dot-pulse { animation: pv-dot-pulse 1.2s ease-in-out infinite; }
+
+/* Live recording indicator pulse. */
+@keyframes pv-live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(0.8); }
+}
+.pv .pv-live-pulse { animation: pv-live-pulse 1.4s ease-in-out infinite; }
+
+/* The self-view PiP springs in when the call goes live. */
+@keyframes pv-pip-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.85); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pv .pv-pip-in { animation: pv-pip-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
 @media (prefers-reduced-motion: reduce) {
   .pv *, .pv *::before, .pv *::after {
     animation-duration: 0.01ms !important;

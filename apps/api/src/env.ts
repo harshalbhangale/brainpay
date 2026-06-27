@@ -109,6 +109,15 @@ const EnvSchema = z.object({
   // Tavus → our /study/tavus/webhook calls.
   TAVUS_WEBHOOK_SECRET: z.string().min(1).optional(),
 
+  // Runway Characters (GWM-1) — real-time conversational avatar for StudyPal
+  // interviews. Server-side only. When RUNWAYML_API_SECRET + RUNWAY_AVATAR_ID
+  // are set, the interview uses the Runway avatar; otherwise it falls back to
+  // Tavus, then the legacy Gemini-Live voice tutor, so nothing dead-ends.
+  RUNWAYML_API_SECRET: z.string().min(1).optional(),
+  RUNWAY_AVATAR_ID: z.string().min(1).optional(),
+  RUNWAY_API_BASE: z.string().url().default('https://api.dev.runwayml.com'),
+  RUNWAY_API_VERSION: z.string().default('2024-11-06'),
+
   // Internal cron secret — guards unauthenticated cron endpoints
   // (e.g. POST /study/nudge-check) via the x-cron-key header.
   CRON_SECRET: z.string().min(1).optional(),

@@ -1,4 +1,14 @@
-{
-  "mcpServers": {
+  {
+    "mcpServers": {
+      "tavus": {
+        "type": "http",
+        "url": "https://docs.tavus.io/mcp",
+        "disabled": false
+      },
+      "linear": {
+        "type": "http",
+        "url": "https://mcp.linear.app/mcp",
+        "disabled": false
+      }
+    }
   }
-}

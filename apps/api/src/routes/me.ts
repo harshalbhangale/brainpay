@@ -94,7 +94,22 @@ me.patch('/me', async (c) => {
 })
 
 // ─── POST /me/location ────────────────────────────────────────────────
-// Stores the caller's latest device location (kid app reports periodically).
+// Stores the caller's latest device location AND appends it to a capped,
+// de-duped movement trail (kept inside the same lastLocation JSON, so it rides
+// along in /family with no schema change). The trail powers the family map's
+// animated journey view — only real, recorded points, never fabricated.
+type TrailPoint = { lat: number; lng: number; at: string; place?: string | null }
+
+function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371000
+  const dLat = ((bLat - aLat) * Math.PI) / 180
+  const dLng = ((bLng - aLng) * Math.PI) / 180
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)))
+}
+
 me.post('/me/location', async (c) => {
   const accountId = authedAccountId(c)
   const body = (await c.req.json().catch(() => ({}))) as { lat?: number; lng?: number; accuracy?: number }
@@ -104,9 +119,23 @@ me.post('/me/location', async (c) => {
   }
   try {
     const place = await reverseGeocode(lat, lng)
+    const at = new Date().toISOString()
+
+    // Append to the movement trail only when the device has actually moved
+    // (>25m) or enough time passed (>2min), so the trail stays meaningful.
+    const prev = await db.query.accounts.findFirst({ where: eq(accounts.id, accountId) })
+    const prevLoc = (prev?.lastLocation ?? null) as { trail?: TrailPoint[] } | null
+    const trail: TrailPoint[] = Array.isArray(prevLoc?.trail) ? prevLoc!.trail! : []
+    const last = trail[trail.length - 1]
+    const moved =
+      !last ||
+      haversineMeters(last.lat, last.lng, lat, lng) > 25 ||
+      Date.now() - Date.parse(last.at) > 120_000
+    const nextTrail = moved ? [...trail, { lat, lng, at, place }].slice(-60) : trail
+
     await db
       .update(accounts)
-      .set({ lastLocation: { lat, lng, accuracy: accuracy ?? null, place, at: new Date().toISOString() } })
+      .set({ lastLocation: { lat, lng, accuracy: accuracy ?? null, place, at, trail: nextTrail } })
       .where(eq(accounts.id, accountId))
     return c.json({ ok: true })
   } catch (err) {

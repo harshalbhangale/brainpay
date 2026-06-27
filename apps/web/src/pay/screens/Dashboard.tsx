@@ -20,7 +20,7 @@ import type { Pastel } from '../tokens'
 
 const AWAITING = ['submitted', 'ai_approved', 'ai_rejected', 'ai_uncertain']
 
-export function Dashboard({ go, onTopUp }: { go: (t: TabKey) => void; goPal?: unknown; onTopUp: () => void }) {
+export function Dashboard({ go, onTopUp, onRewards, onCard }: { go: (t: TabKey) => void; goPal?: unknown; onTopUp: () => void; onRewards?: () => void; onCard?: () => void }) {
   const account = useAuthStore((s) => s.account)
   const isKid = account?.accountType === 'kid'
   const persona = (account?.persona ?? {}) as Record<string, unknown>
@@ -73,7 +73,7 @@ export function Dashboard({ go, onTopUp }: { go: (t: TabKey) => void; goPal?: un
         </Card>
 
         {/* Your card — use anywhere, tap to pay */}
-        <CardStrip last4={cardLast4(accountId)} name={firstName} onClick={() => go('cards')} />
+        <CardStrip last4={cardLast4(accountId)} name={firstName} onClick={() => (onCard ? onCard() : go('cards'))} />
 
 
         {/* Kids (parent only) — cute chips */}
@@ -116,7 +116,7 @@ export function Dashboard({ go, onTopUp }: { go: (t: TabKey) => void; goPal?: un
             label="Rewards"
             value={fmt(earned, { cents: false })}
             sub={isKid ? 'earned so far' : 'in this month'}
-            onClick={() => go('activity')}
+            onClick={() => (onRewards ? onRewards() : go('activity'))}
           />
         </div>
 

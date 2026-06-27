@@ -360,6 +360,36 @@ joinRequests.post('/join-requests/:id/decline', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+// ─── POST /join-requests/:id/revoke ───────────────────────────────────
+// Parent cancels a pending invite they sent (before the kid joins). Scoped to
+// the caller's own family so a parent can never revoke another family's invite.
+joinRequests.post('/join-requests/:id/revoke', requireAuth, async (c) => {
+  const accountId = authedAccountId(c)
+  const requestId = c.req.param('id')
+
+  const [memberRow] = await db
+    .select({ familyId: memberships.familyId, role: memberships.role })
+    .from(memberships)
+    .where(eq(memberships.accountId, accountId))
+    .limit(1)
+  if (!memberRow) return c.json({ error: 'no_family' }, 403)
+  if (!['primary_parent', 'co_parent'].includes(memberRow.role)) return c.json({ error: 'only_parents_can_revoke' }, 403)
+
+  const { invites } = await import('../db/schema')
+  const request = await db.query.invites.findFirst({ where: eq(invites.id, requestId) })
+  if (!request) return c.json({ error: 'not_found' }, 404)
+  if (request.familyId !== memberRow.familyId) return c.json({ error: 'not_your_family' }, 403)
+  if (request.status !== 'pending') return c.json({ error: 'already_used', status: request.status }, 410)
+
+  await db
+    .update(invites)
+    .set({ status: 'revoked', revokedAt: new Date() })
+    .where(eq(invites.id, requestId))
+
+  logger.info({ requestId, by: accountId }, 'join_request.revoked')
+  return c.json({ ok: true })
+})
+
 function generateCode(): string {
   const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   let s = ''

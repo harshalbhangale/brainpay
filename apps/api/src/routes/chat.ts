@@ -1,14 +1,13 @@
 import { Hono } from 'hono'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../db'
-import { accounts, chatMessages, chores, goals, memberships } from '../db/schema'
+import { accounts, chatMessages, chores, goals, ledger, inbox, familyRules, memoryFacts, memberships } from '../db/schema'
 import { authedAccountId, requireAuth, type AuthVars } from '../middleware/auth'
 import { logger } from '../logger'
 import { llm } from '../services/llm'
 import { loadPalContext, contextToSystemPrompt } from '../services/pal-context'
 import { parseIntent } from '../services/pal-intent'
-import { sql } from 'drizzle-orm'
 import { toFile } from 'openai'
 
 /**
@@ -153,7 +152,7 @@ chat.post('/chat/execute', async (c) => {
   const parsed = z
     .object({
       intent: z.object({
-        kind: z.enum(['add_chore', 'topup', 'set_goal']),
+        kind: z.enum(['add_chore', 'topup', 'set_goal', 'contribute_goal', 'send_note', 'create_rule', 'remember']),
         kidName: z.string().optional(),
         kidAccountId: z.string().uuid().optional(),
         title: z.string().optional(),
@@ -162,6 +161,9 @@ chat.post('/chat/execute', async (c) => {
         note: z.string().optional(),
         goalName: z.string().optional(),
         targetBrains: z.number().int().positive().optional(),
+        message: z.string().max(500).optional(),
+        ruleText: z.string().max(300).optional(),
+        fact: z.string().max(300).optional(),
       }),
     })
     .safeParse(body)
@@ -243,7 +245,6 @@ chat.post('/chat/execute', async (c) => {
       .set({ cachedBalance: sql`${accounts.cachedBalance} + ${intent.brainsDelta}` })
       .where(eq(accounts.id, intent.kidAccountId))
 
-    const { ledger } = await import('../db/schema')
     await db.insert(ledger).values({
       familyId,
       accountId: intent.kidAccountId,
@@ -292,6 +293,139 @@ chat.post('/chat/execute', async (c) => {
       kind: 'set_goal',
       result: { goal },
       confirmationMessage: `Goal "${goal.name}" set for ${intent.kidName ?? 'kid'} — $${goal.targetBrains} target.`,
+    })
+  }
+
+  // ── contribute_goal ──────────────────────────────────────────────────
+  // Add Brains of progress toward a kid's existing savings goal. A parent can
+  // do it for any kid; a kid can do it for their own goal.
+  if (intent.kind === 'contribute_goal') {
+    if (!intent.kidAccountId) return c.json({ error: 'kid_not_found' }, 400)
+    if (!intent.brainsDelta) return c.json({ error: 'amount_required' }, 400)
+    if (!isParent && intent.kidAccountId !== actorId) return c.json({ error: 'not_allowed' }, 403)
+
+    const [goal] = await db
+      .select()
+      .from(goals)
+      .where(
+        intent.goalName
+          ? and(eq(goals.accountId, intent.kidAccountId), eq(goals.status, 'active'), ilike(goals.name, `%${intent.goalName}%`))
+          : and(eq(goals.accountId, intent.kidAccountId), eq(goals.status, 'active')),
+      )
+      .orderBy(desc(goals.createdAt))
+      .limit(1)
+
+    if (!goal) return c.json({ error: 'goal_not_found' }, 404)
+
+    const current = goal.currentBrains + intent.brainsDelta
+    const completed = current >= goal.targetBrains
+    await db
+      .update(goals)
+      .set({ currentBrains: current, status: completed ? 'completed' : 'active', completedAt: completed ? new Date() : null })
+      .where(eq(goals.id, goal.id))
+
+    const [kidAcct] = await db
+      .select({ cachedBalance: accounts.cachedBalance })
+      .from(accounts)
+      .where(eq(accounts.id, intent.kidAccountId))
+      .limit(1)
+
+    await db.insert(ledger).values({
+      familyId,
+      accountId: intent.kidAccountId,
+      actorId,
+      kind: 'goal_lock',
+      brainsDelta: intent.brainsDelta,
+      balanceAfter: kidAcct?.cachedBalance ?? 0,
+      metadata: { goalId: goal.id, source: 'chat_goal' },
+    })
+
+    logger.info({ goalId: goal.id, brainsDelta: intent.brainsDelta, via: 'chat' }, 'chat.execute.contribute_goal')
+    return c.json({
+      ok: true,
+      kind: 'contribute_goal',
+      result: { goalId: goal.id, currentBrains: current, completed },
+      confirmationMessage: completed
+        ? `🎉 ${intent.kidName ?? 'They'} reached the "${goal.name}" goal! Added $${intent.brainsDelta}.`
+        : `Added $${intent.brainsDelta} toward ${intent.kidName ?? 'their'} "${goal.name}" — $${current} of $${goal.targetBrains}.`,
+    })
+  }
+
+  // ── send_note ─────────────────────────────────────────────────────────
+  // Drop a message into a kid's in-app inbox.
+  if (intent.kind === 'send_note') {
+    if (!isParent) return c.json({ error: 'only_parents_can_send_notes' }, 403)
+    if (!intent.kidAccountId) return c.json({ error: 'kid_not_found' }, 400)
+    if (!intent.message) return c.json({ error: 'message_required' }, 400)
+
+    const [kidMember] = await db
+      .select({ familyId: memberships.familyId })
+      .from(memberships)
+      .where(eq(memberships.accountId, intent.kidAccountId))
+      .limit(1)
+    if (!kidMember || kidMember.familyId !== familyId) return c.json({ error: 'kid_not_in_family' }, 403)
+
+    await db.insert(inbox).values({
+      accountId: intent.kidAccountId,
+      kind: 'message',
+      title: 'A message from your parent',
+      body: intent.message,
+      metadata: { fromAccountId: actorId, source: 'chat' },
+    })
+
+    logger.info({ kidAccountId: intent.kidAccountId, via: 'chat' }, 'chat.execute.send_note')
+    return c.json({
+      ok: true,
+      kind: 'send_note',
+      confirmationMessage: `Sent ${intent.kidName ?? 'your kid'} your message.`,
+    })
+  }
+
+  // ── create_rule ───────────────────────────────────────────────────────
+  // Record a family rule / limit (parents only).
+  if (intent.kind === 'create_rule') {
+    if (!isParent) return c.json({ error: 'only_parents_can_set_rules' }, 403)
+    if (!intent.ruleText) return c.json({ error: 'rule_required' }, 400)
+
+    const [rule] = await db
+      .insert(familyRules)
+      .values({ familyId, kind: 'custom', value: { text: intent.ruleText }, status: 'confirmed', createdBy: actorId })
+      .returning()
+
+    logger.info({ ruleId: rule.id, via: 'chat' }, 'chat.execute.create_rule')
+    return c.json({
+      ok: true,
+      kind: 'create_rule',
+      result: { rule },
+      confirmationMessage: `Added a family rule: "${intent.ruleText}".`,
+    })
+  }
+
+  // ── remember ──────────────────────────────────────────────────────────
+  // Save a personal memory fact PAL can use later. Subject defaults to caller.
+  if (intent.kind === 'remember') {
+    if (!intent.fact) return c.json({ error: 'fact_required' }, 400)
+    const subjectId = intent.kidAccountId ?? actorId
+
+    await db.insert(memoryFacts).values({
+      familyId,
+      accountId: subjectId,
+      layer: 'personal',
+      key: 'note',
+      value: { text: intent.fact },
+      source: 'chat',
+      status: 'confirmed',
+      confirmedBy: actorId,
+      confirmedAt: new Date(),
+    })
+
+    logger.info({ subjectId, via: 'chat' }, 'chat.execute.remember')
+    return c.json({
+      ok: true,
+      kind: 'remember',
+      confirmationMessage: intent.kidName
+        ? `Got it — I'll remember that about ${intent.kidName}.`
+        : `Got it — I'll remember that.`,
     })
   }
 

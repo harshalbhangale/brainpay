@@ -25,6 +25,29 @@ export function staticMapUrl(
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`
 }
 
+/**
+ * A plain static-map backdrop at an explicit center + zoom (no markers), so an
+ * SVG overlay drawn with the matching Mercator projection lines up exactly.
+ * `style=feature:poi|...` mutes clutter for a cleaner canvas.
+ */
+export function staticBackdropUrl(
+  center: LatLng,
+  zoom: number,
+  opts: { width?: number; height?: number; scale?: 1 | 2 } = {},
+): string {
+  const { width = 640, height = 600, scale = 2 } = opts
+  const params = new URLSearchParams()
+  params.set('center', `${center.lat},${center.lng}`)
+  params.set('zoom', String(Math.round(zoom)))
+  params.set('size', `${width}x${height}`)
+  params.set('scale', String(scale))
+  params.set('maptype', 'roadmap')
+  params.append('style', 'feature:poi|visibility:off')
+  params.append('style', 'feature:transit|visibility:off')
+  params.set('key', KEY)
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`
+}
+
 /** An interactive embedded map (pan/zoom) centered on a point. */
 export function embedMapUrl(center: LatLng, zoom = 15): string {
   return `https://www.google.com/maps/embed/v1/view?key=${KEY}&center=${center.lat},${center.lng}&zoom=${zoom}&maptype=roadmap`

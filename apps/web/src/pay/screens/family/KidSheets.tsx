@@ -3,25 +3,18 @@
  * Reuses lib/card (deterministic PAN + persisted controls) and lib/maps.
  */
 import { useState } from 'react'
-import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, X, MapPin, type LucideIcon } from 'lucide-react'
+import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, MapPin, type LucideIcon } from 'lucide-react'
 import { useCardSettings, cardNumber, cardExpiry, cardCvv, cardLast4, maskedNumber } from '../../../lib/card'
 import { aud } from '../../../lib/format'
 import { staticMapUrl, embedMapUrl } from '../../../lib/maps'
 import { Button, Card } from '../../components/primitives'
+import { BottomSheet } from '../../components/BottomSheet'
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
-      <div className="absolute inset-0" style={{ background: 'rgba(11,12,15,0.45)' }} onClick={onClose} />
-      <div className="pv-rise relative max-h-[92%] w-full max-w-[460px] overflow-y-auto rounded-t-[var(--pv-r-2xl)] p-6 pb-[max(24px,env(safe-area-inset-bottom))]" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}>
-        <div className="mx-auto mb-5 h-1.5 w-12 rounded-full" style={{ background: 'var(--pv-line-strong)' }} />
-        <div className="flex items-center justify-between">
-          <h2 className="pv-h2">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="pv-press flex h-9 w-9 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}><X size={18} /></button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <BottomSheet title={title} onClose={onClose}>
+      {children}
+    </BottomSheet>
   )
 }
 

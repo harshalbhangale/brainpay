@@ -18,7 +18,7 @@ import type { PalContext } from './pal-context'
  *   query        — just a question, no action needed
  */
 
-export type IntentKind = 'add_chore' | 'topup' | 'set_goal' | 'query'
+export type IntentKind = 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'query'
 
 export type AddChoreIntent = {
   kind: 'add_chore'
@@ -44,11 +44,46 @@ export type SetGoalIntent = {
   targetBrains: number
 }
 
+export type ContributeGoalIntent = {
+  kind: 'contribute_goal'
+  kidName: string
+  kidAccountId?: string
+  goalName?: string
+  brainsDelta: number
+}
+
+export type SendNoteIntent = {
+  kind: 'send_note'
+  kidName: string
+  kidAccountId?: string
+  message: string
+}
+
+export type CreateRuleIntent = {
+  kind: 'create_rule'
+  ruleText: string
+}
+
+export type RememberIntent = {
+  kind: 'remember'
+  fact: string
+  kidName?: string
+  kidAccountId?: string
+}
+
 export type QueryIntent = {
   kind: 'query'
 }
 
-export type ParsedIntent = AddChoreIntent | TopupIntent | SetGoalIntent | QueryIntent
+export type ParsedIntent =
+  | AddChoreIntent
+  | TopupIntent
+  | SetGoalIntent
+  | ContributeGoalIntent
+  | SendNoteIntent
+  | CreateRuleIntent
+  | RememberIntent
+  | QueryIntent
 
 const INTENT_SYSTEM = `You are an intent parser for a family money app called MoneyPal.
 
@@ -58,14 +93,24 @@ Return one of these shapes:
 1. { "kind": "add_chore", "kidName": string, "title": string, "rewardBrains": number }
 2. { "kind": "topup", "kidName": string, "brainsDelta": number, "note": string | null }
 3. { "kind": "set_goal", "kidName": string, "goalName": string, "targetBrains": number }
-4. { "kind": "query" }
+4. { "kind": "contribute_goal", "kidName": string, "goalName": string | null, "brainsDelta": number }
+5. { "kind": "send_note", "kidName": string, "message": string }
+6. { "kind": "create_rule", "ruleText": string }
+7. { "kind": "remember", "fact": string, "kidName": string | null }
+8. { "kind": "query" }
 
 Rules:
 - Use "query" for anything that is just a question or conversation (no action needed).
+- add_chore: create a chore/task for a kid to earn a reward.
+- topup: add money to a kid's wallet/balance.
+- set_goal: create a NEW savings goal for a kid.
+- contribute_goal: add money/progress TOWARD a kid's EXISTING goal (e.g. "put $5 toward Mia's bike"). goalName is the goal it targets, or null for their current goal.
+- send_note: send a short message/note to a kid (e.g. "tell Sam I'm proud of him").
+- create_rule: set a family rule or limit (e.g. "no spending over $20", "sugar limit 30g a day"). Put the whole rule in ruleText.
+- remember: store a fact PAL should remember (e.g. "remember Mia loves dinosaurs", "remember I get paid on the 1st"). kidName is who it's about, or null if about the speaker/family.
 - Extract kid names from the message. Match to the family context if possible.
-- For topup: 1 AUD = 100 Brains. If user says "$10", brainsDelta = 1000.
-- For chores: default rewardBrains = 50 if not specified.
-- For goals: default targetBrains = 500 if not specified.
+- Money: 1 AUD = 100 Brains. "$10" → 1000. Applies to topup, contribute_goal, rewards, and targets.
+- Defaults: chore reward = 50; new goal target = 500.
 - Never invent kids that aren't in the family context.
 - Return ONLY valid JSON. No explanation.`
 
@@ -75,7 +120,11 @@ export async function parseIntent(
 ): Promise<ParsedIntent> {
   // Quick heuristic — skip LLM call for obvious queries.
   const lower = message.toLowerCase()
-  const actionWords = ['add chore', 'create chore', 'top up', 'topup', 'send', 'set goal', 'add goal']
+  const actionWords = [
+    'add chore', 'create chore', 'chore', 'top up', 'topup', 'send', 'set goal', 'add goal', 'new goal',
+    'goal', 'save', 'saving', 'contribute', 'toward', 'towards', 'put $', 'message', 'tell ', 'note',
+    'remember', 'remind', 'rule', 'limit', 'allowance',
+  ]
   const hasAction = actionWords.some((w) => lower.includes(w))
 
   if (!hasAction) return { kind: 'query' }
@@ -99,13 +148,13 @@ export async function parseIntent(
 
     const raw = JSON.parse(resp.choices[0]?.message?.content ?? '{}') as ParsedIntent
 
-    // Resolve kidAccountId from name.
+    // Resolve kidAccountId from name (for any intent that names a kid).
     if ('kidName' in raw && raw.kidName) {
       const match = ctx.kids.find(
-        (k) => k.name.toLowerCase() === raw.kidName.toLowerCase(),
+        (k) => k.name.toLowerCase() === raw.kidName!.toLowerCase(),
       )
       if (match) {
-        (raw as AddChoreIntent | TopupIntent | SetGoalIntent).kidAccountId = match.accountId
+        (raw as AddChoreIntent | TopupIntent | SetGoalIntent | ContributeGoalIntent | SendNoteIntent | RememberIntent).kidAccountId = match.accountId
       }
     }
 

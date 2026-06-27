@@ -47,7 +47,7 @@ export function VrmCompanion({
     setLoading(true)
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     mount.appendChild(renderer.domElement)
     renderer.domElement.style.width = '100%'
@@ -138,9 +138,17 @@ export function VrmCompanion({
     const bone = (n: Parameters<NonNullable<VRM['humanoid']>['getNormalizedBoneNode']>[0]) =>
       vrm?.humanoid?.getNormalizedBoneNode(n) ?? null
 
-    const tick = () => {
+    // Render at ~30fps (plenty for idle motion + lip-sync) and pause entirely
+    // when the tab is hidden — halves CPU/GPU vs an unthrottled rAF, which is
+    // the main cause of jank while the realtime audio pipeline also runs.
+    const FRAME_MS = 1000 / 30
+    let lastFrame = 0
+    const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
-      const dt = clock.getDelta()
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (now - lastFrame < FRAME_MS) return
+      lastFrame = now
+      const dt = Math.min(clock.getDelta(), 0.05)
       const t = clock.elapsedTime
 
       if (vrm) {
@@ -226,7 +234,7 @@ export function VrmCompanion({
 
       renderer.render(scene, camera)
     }
-    tick()
+    raf = requestAnimationFrame(tick)
 
     const ro = new ResizeObserver(() => resize())
     ro.observe(mount)

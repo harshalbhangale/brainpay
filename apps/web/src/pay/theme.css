@@ -308,6 +308,119 @@
   transition: transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+   FAMILY MAP TRAIL — candy-crush-style animated journey overlay.
+   ════════════════════════════════════════════════════════════════════════════ */
+/* Route lines use pathLength="1", so dashoffset 1→0 "draws" the path. */
+@keyframes pv-trail-draw { to { stroke-dashoffset: 0; } }
+.pv .pv-trail-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: pv-trail-draw 1.7s cubic-bezier(0.45, 0, 0.25, 1) forwards;
+}
+/* Stops pop in one after another (animation-delay set inline per index). */
+@keyframes pv-trail-stop { 0% { opacity: 0; transform: scale(0); } 60% { transform: scale(1.25); } 100% { opacity: 1; transform: scale(1); } }
+.pv .pv-trail-stop {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: pv-trail-stop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+/* The current/last point gently pulses. */
+@keyframes pv-trail-pulse { 0%, 100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(2.1); opacity: 0; } }
+.pv .pv-trail-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pv-trail-pulse 2s ease-out infinite;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   BOTTOM SHEET — portaled to <body>, pinned to the viewport. Scrim fades,
+   panel springs up from the bottom edge.
+   ════════════════════════════════════════════════════════════════════════════ */
+@keyframes pv-sheet-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+.pv .pv-sheet-scrim {
+  background: rgba(11, 12, 15, 0.45);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: pv-sheet-scrim-in 0.28s ease both;
+}
+@keyframes pv-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.pv .pv-sheet-panel { animation: pv-sheet-up 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SIDE DRAWER — left-edge swipe navigation (ChatGPT-style), premium spring.
+   The scrim dims + blurs the app; the panel slides in on a spring. While the
+   user drags, JS drives transform/opacity inline (see SwipeDrawer); when idle
+   these transitions take over so open/close settles with a tactile overshoot.
+   ════════════════════════════════════════════════════════════════════════════ */
+.pv .pv-drawer-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: rgba(11, 12, 15, 0.34);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pv .pv-drawer-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  background: var(--pv-surface);
+  border-top-right-radius: var(--pv-r-2xl);
+  border-bottom-right-radius: var(--pv-r-2xl);
+  box-shadow: var(--pv-shadow-lg);
+  /* Spring slide; overridden inline while dragging. */
+  transition: transform 0.46s cubic-bezier(0.34, 1.4, 0.5, 1);
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The thin always-present edge zone that catches an opening swipe when closed. */
+.pv .pv-drawer-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 22px;
+  z-index: 40;
+  touch-action: pan-y;
+}
+
+/* Soft grab handle on the panel's right edge — hints "drag me". */
+.pv .pv-drawer-handle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  height: 46px;
+  width: 4px;
+  transform: translateY(-50%);
+  border-radius: var(--pv-r-pill);
+  background: var(--pv-line-strong);
+}
+
+/* Staggered entrance for drawer rows — set --i per item. Replays each open
+   because the panel content is only mounted while open/dragging. */
+@keyframes pv-drawer-item {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.pv .pv-drawer-item {
+  animation: pv-drawer-item 0.44s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(60ms + var(--i, 0) * 45ms);
+}
+
+/* Active Pal row — accent wash + a springy press. */
+.pv .pv-drawer-row {
+  transition: transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.25s ease, color 0.25s ease;
+}
+.pv .pv-drawer-row:active { transform: scale(0.97); transition: transform 0.08s ease-out; }
+
 @media (prefers-reduced-motion: reduce) {
   .pv *, .pv *::before, .pv *::after {
     animation-duration: 0.01ms !important;

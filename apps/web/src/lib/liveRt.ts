@@ -78,6 +78,7 @@ export type LiveRtSocket = {
   start: (role: LiveRole, mode: LiveMode, persona?: Record<string, unknown>, interview?: InterviewContext, voice?: string) => void
   sendFrame: (jpeg: Uint8Array) => void
   sendMicPcm: (pcm: Int16Array) => void
+  sendText: (text: string) => void
   setMic: (on: boolean) => void
   setSpeaker: (on: boolean) => void
   interrupt: () => void
@@ -177,6 +178,7 @@ export function connectLiveRt(handlers: LiveRtHandlers, token?: string | null): 
       out.set(bytes, 1)
       ws.send(out.buffer)
     },
+    sendText: (text) => sendJson({ type: 'text', text }),
     setMic: (on) => sendJson({ type: 'mic', on }),
     setSpeaker: (on) => sendJson({ type: 'speaker', on }),
     interrupt: () => sendJson({ type: 'interrupt' }),

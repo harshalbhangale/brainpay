@@ -229,6 +229,21 @@ export async function onGeminiLiveMessage(ws: WebSocket, data: Buffer) {
     case 'mic':
       state.micOn = msg.on !== false
       break
+    case 'text': {
+      // Typed user turn (onboarding "type instead", or any text reply). Inject
+      // it as a user turn so PAL responds exactly as it would to speech.
+      const text = typeof msg.text === 'string' ? msg.text.trim() : ''
+      if (text && state.live) {
+        if (USE_ELEVEN) cancelSpeech(state)
+        send(ws, { type: 'transcript.user', text })
+        try {
+          state.live.sendClientContent({ turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true })
+        } catch (err) {
+          logger.warn({ err: String(err) }, 'live.text_failed')
+        }
+      }
+      break
+    }
     case 'speaker':
       state.speakerOn = msg.on !== false
       if (!state.speakerOn && USE_ELEVEN) cancelSpeech(state)

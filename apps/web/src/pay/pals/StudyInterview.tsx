@@ -6,7 +6,7 @@
  * the captured transcript and show results + a gentle focus note. If Tavus is
  * unavailable the backend returns provider:'legacy' and we offer the lesson chat.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DailyCall } from '@daily-co/daily-js'
 import {
@@ -14,6 +14,12 @@ import {
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Button } from '../components/primitives'
+import { BrainsPill } from '../components/Brains'
+import { useSessionStore } from '../lib/sessions'
+
+// The Runway avatar stage pulls in the LiveKit/Runway client — load it lazily
+// so it stays out of the main bundle until an interview actually starts.
+const RunwayStage = lazy(() => import('./RunwayStage').then((m) => ({ default: m.RunwayStage })))
 
 type Chapter = { chapter: string; total: number; due: number; mastered: number }
 type Topic = { id: string; title: string; emoji: string }
@@ -21,7 +27,14 @@ type Phase = 'intro' | 'starting' | 'live' | 'fallback' | 'scoring' | 'done' | '
 type TranscriptLine = { role: string; text: string }
 type Focus = { lookingPct?: number; flags?: string[]; notes?: string }
 type Result = { brainsEarned?: number; score?: number | null; summary?: string | null; keepPractising?: string[]; focus?: Focus | null }
-type StartResp = { interviewId: string; provider: 'tavus' | 'legacy'; conversationUrl?: string; token?: string | null }
+type RunwayCreds = { sessionId: string; serverUrl: string; token: string; roomName: string; avatarId?: string }
+type StartResp = {
+  interviewId: string
+  provider: 'tavus' | 'legacy' | 'runway'
+  conversationUrl?: string
+  token?: string | null
+  runway?: RunwayCreds
+}
 
 function Header({ title, onBack, right }: { title: string; onBack?: () => void; right?: React.ReactNode }) {
   return (
@@ -41,8 +54,17 @@ function Centered({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">{children}</div>
 }
 
+function LiveLoading() {
+  return (
+    <Centered>
+      <Spinner />
+      <p className="pv-title mt-4">Waking up your tutor…</p>
+    </Centered>
+  )
+}
 
-export function InterviewView({ topicId, onBack, onChat }: { topicId: string; onBack: () => void; onChat?: () => void }) {
+
+export function InterviewView({ topicId, initialChapter, onBack, onChat }: { topicId: string; initialChapter?: string; onBack: () => void; onChat?: () => void }) {
   const qc = useQueryClient()
   const { data: topicData } = useQuery({ queryKey: ['study-topic', topicId], queryFn: () => api<{ topic: Topic }>(`/study/topics/${topicId}`) })
   const { data: chaptersData } = useQuery({ queryKey: ['study-chapters', topicId], queryFn: () => api<{ chapters: Chapter[] }>(`/study/topics/${topicId}/chapters`) })
@@ -50,8 +72,8 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
   const chapters = (chaptersData?.chapters ?? []).filter((ch) => ch.total > 0)
 
   const [phase, setPhase] = useState<Phase>('intro')
-  const [chapter, setChapter] = useState<string | null>(null) // null = weak spots
-  const [session, setSession] = useState<{ interviewId: string; url: string; token: string | null } | null>(null)
+  const [chapter, setChapter] = useState<string | null>(initialChapter ?? null) // null = weak spots
+  const [session, setSession] = useState<{ interviewId: string; provider: 'tavus' | 'runway'; url: string; token: string | null; runway?: RunwayCreds } | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
@@ -74,11 +96,14 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
         method: 'POST',
         body: JSON.stringify({ chapter: chapter ?? undefined }),
       })
-      if (res.provider === 'tavus' && res.conversationUrl) {
-        setSession({ interviewId: res.interviewId, url: res.conversationUrl, token: res.token ?? null })
+      if (res.provider === 'runway' && res.runway) {
+        setSession({ interviewId: res.interviewId, provider: 'runway', url: '', token: null, runway: res.runway })
+        setPhase('live')
+      } else if (res.provider === 'tavus' && res.conversationUrl) {
+        setSession({ interviewId: res.interviewId, provider: 'tavus', url: res.conversationUrl, token: res.token ?? null })
         setPhase('live')
       } else {
-        setSession({ interviewId: res.interviewId, url: '', token: null })
+        setSession({ interviewId: res.interviewId, provider: 'tavus', url: '', token: null })
         setPhase('fallback')
       }
     } catch (err) {
@@ -91,6 +116,11 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
 
   async function finish(payload: { transcript: TranscriptLine[]; durationSecs: number; focus?: Focus }) {
     if (!session) return
+    // Record the interview into the History log as an avatar session.
+    if (payload.transcript.length > 0) {
+      const sid = useSessionStore.getState().start('avatar', topic?.title ? `Tutor · ${topic.title}` : 'Tutor interview')
+      useSessionStore.getState().append(sid, payload.transcript.map((t) => ({ role: t.role, text: t.text })))
+    }
     setPhase('scoring')
     try {
       const res = await api<Result>(`/study/interviews/${session.interviewId}/complete`, {
@@ -103,6 +133,7 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
     }
     qc.invalidateQueries({ queryKey: ['study-stats'] })
     qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
+    qc.invalidateQueries({ queryKey: ['study-interviews', topicId] })
     setPhase('done')
   }
 
@@ -126,13 +157,23 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
             <Video size={16} /> Your camera stays on so the tutor can keep you focused.
           </div>
 
-          <p className="pv-label mb-2 mt-5">Pick what to review</p>
-          <div className="flex flex-col gap-2.5">
-            <ChapterRow label="Weak spots" sub="Concepts you haven't mastered yet" active={chapter === null} onClick={() => setChapter(null)} />
-            {chapters.map((ch) => (
-              <ChapterRow key={ch.chapter} label={ch.chapter} sub={`${ch.total} concepts · ${ch.due} to review`} active={chapter === ch.chapter} onClick={() => setChapter(ch.chapter)} />
-            ))}
-          </div>
+          <p className="pv-label mb-2 mt-5">{initialChapter ? 'This lesson' : 'Pick what to review'}</p>
+          {initialChapter ? (
+            <div className="flex items-center gap-3 rounded-2xl px-4 py-3.5" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.25)' }}><BookOpen size={16} /></span>
+              <div className="min-w-0 flex-1">
+                <div className="pv-title text-sm">{initialChapter}</div>
+                <div className="text-xs font-medium" style={{ opacity: 0.85 }}>You'll be examined on this lesson</div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              <ChapterRow label="Weak spots" sub="Concepts you haven't mastered yet" active={chapter === null} onClick={() => setChapter(null)} />
+              {chapters.map((ch) => (
+                <ChapterRow key={ch.chapter} label={ch.chapter} sub={`${ch.total} concepts · ${ch.due} to review`} active={chapter === ch.chapter} onClick={() => setChapter(ch.chapter)} />
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex-none px-6 pb-6 pt-2">
           <Button variant="accent" size="lg" full leadingIcon={Mic} onClick={start}>Start interview</Button>
@@ -211,7 +252,7 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
           {result?.summary && <p className="pv-body max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>{result.summary}</p>}
           {scorePct != null && <p className="text-sm font-semibold pv-text-accent">Score: {result?.score}/10</p>}
           {(result?.brainsEarned ?? 0) > 0 && (
-            <p className="rounded-full px-5 py-2.5 font-bold pv-text-accent" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>+{result!.brainsEarned} 🧠 earned</p>
+            <BrainsPill amount={result!.brainsEarned!} pop />
           )}
           {result?.keepPractising && result.keepPractising.length > 0 && (
             <div className="mt-1 w-full max-w-xs text-left">
@@ -248,7 +289,13 @@ export function InterviewView({ topicId, onBack, onChat }: { topicId: string; on
         title="AI Interview"
         right={<span className="flex items-center gap-1 text-[11px] font-bold" style={{ color: 'var(--pv-pos)' }}><ShieldCheck size={13} /> Proctored</span>}
       />
-      {session && <TavusStage url={session.url} token={session.token} onEnd={finish} onAbort={abort} />}
+      {session?.provider === 'runway' && session.runway ? (
+        <Suspense fallback={<LiveLoading />}>
+          <RunwayStage interviewId={session.interviewId} credentials={session.runway} onEnd={finish} onAbort={abort} />
+        </Suspense>
+      ) : session ? (
+        <TavusStage url={session.url} token={session.token} onEnd={finish} onAbort={abort} />
+      ) : null}
     </>
   )
 }

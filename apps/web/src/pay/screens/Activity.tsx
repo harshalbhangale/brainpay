@@ -13,8 +13,8 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'pending', label: 'Pending' },
 ]
 
-export function Activity() {
-  const [filter, setFilter] = useState<Filter>('all')
+export function Activity({ initialFilter = 'all' }: { initialFilter?: Filter }) {
+  const [filter, setFilter] = useState<Filter>(initialFilter)
   const [q, setQ] = useState('')
   const wallet = useWallet()
   const all = wallet.txns

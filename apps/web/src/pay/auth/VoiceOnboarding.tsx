@@ -4,7 +4,7 @@
  * restyled to `.pv`. `onTypeInstead` falls back to the wizard.
  */
 import { useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, Keyboard, Check } from 'lucide-react'
+import { Mic, MicOff, Keyboard, Check, ArrowUp } from 'lucide-react'
 import { useAuthStore, type Account } from '../../stores/auth'
 import { connectLiveRt, type LiveRtSocket } from '../../lib/liveRt'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../../lib/liveAudio'
@@ -22,6 +22,9 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
   const [micOn, setMicOn] = useState(true)
   const [speaking, setSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [typing, setTyping] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [micBlocked, setMicBlocked] = useState(false)
 
   const sockRef = useRef<LiveRtSocket | null>(null)
   const micRef = useRef<MicCaptureHandle | null>(null)
@@ -54,9 +57,12 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
           if (micOnRef.current && sockRef.current?.isOpen()) sockRef.current.sendMicPcm(pcm)
         })
       } catch {
-        setError('I need your microphone to chat. Allow it, or type your answers instead.')
-        setPhase('error')
-        return
+        // No mic? Don't dead-end — connect anyway and let them type to Mika.
+        micOnRef.current = false
+        setMicOn(false)
+        setMicBlocked(true)
+        setTyping(true)
+        setError('Mic is off — type your answers and Mika will reply.')
       }
       if (disposed) return
       const mode = role === 'parent' ? 'onboard_parent' : 'onboard_kid'
@@ -95,6 +101,22 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
     })
   }
 
+  function openTyping() {
+    setTyping(true)
+    micOnRef.current = false
+    setMicOn(false)
+    sockRef.current?.setMic(false)
+  }
+
+  function sendDraft() {
+    const text = draft.trim()
+    if (!text || !sockRef.current?.isOpen()) return
+    sockRef.current.sendText(text)
+    setUserLine(text)
+    setPalLine('')
+    setDraft('')
+  }
+
   const mood: CompanionMood = speaking ? 'happy' : 'neutral'
 
   return (
@@ -104,7 +126,7 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
           {phase === 'live' ? 'Meeting Mika' : phase === 'saving' ? 'Saving…' : phase === 'done' ? 'All set!' : 'Connecting…'}
         </span>
         <button onClick={onTypeInstead} className="pv-press flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
-          <Keyboard size={14} /> Type instead
+          <Keyboard size={14} /> Use a form
         </button>
       </div>
 
@@ -129,13 +151,42 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
         {error && <div className="rounded-2xl px-3.5 py-2 text-center text-sm font-semibold" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>{error}</div>}
       </div>
 
-      <div className="flex items-center justify-center px-6 pb-8 pt-2">
-        <button onClick={toggleMic} className="pv-press-lg flex flex-col items-center gap-1.5">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full" style={micOn ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
-            {micOn ? <Mic size={26} /> : <MicOff size={26} />}
-          </span>
-          <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-2)' }}>{micOn ? 'Listening' : 'Muted'}</span>
-        </button>
+      <div className="px-5 pb-8 pt-2">
+        {typing ? (
+          <form onSubmit={(e) => { e.preventDefault(); sendDraft() }} className="flex items-center gap-2">
+            {!micBlocked && (
+              <button type="button" onClick={() => setTyping(false)} aria-label="Back to voice" className="pv-press flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink-2)' }}>
+                <Mic size={20} />
+              </button>
+            )}
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type your answer…"
+              className="h-12 flex-1 rounded-full px-4 outline-none"
+              style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink)' }}
+            />
+            <button type="submit" disabled={!draft.trim()} aria-label="Send" className="pv-press-lg pv-sheen flex h-12 w-12 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: draft.trim() ? 'var(--pv-shadow-pop)' : undefined }}>
+              <ArrowUp size={20} strokeWidth={2.8} />
+            </button>
+          </form>
+        ) : (
+          <div className="flex items-center justify-center gap-6">
+            <button onClick={toggleMic} className="pv-press-lg flex flex-col items-center gap-1.5">
+              <span className="flex h-16 w-16 items-center justify-center rounded-full" style={micOn ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                {micOn ? <Mic size={26} /> : <MicOff size={26} />}
+              </span>
+              <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-2)' }}>{micOn ? 'Listening' : 'Muted'}</span>
+            </button>
+            <button onClick={openTyping} className="pv-press-lg flex flex-col items-center gap-1.5">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                <Keyboard size={22} />
+              </span>
+              <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-2)' }}>Type</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

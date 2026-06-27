@@ -14,6 +14,7 @@
     "@brainpal/shared": "workspace:*",
     "@daily-co/daily-js": "^0.91.0",
     "@pixiv/three-vrm": "^3.5.4",
+    "@runwayml/avatars-react": "^0.16.0",
     "@tanstack/react-query": "^5.62.7",
     "lucide-react": "^1.21.0",
     "react": "^19.0.0",

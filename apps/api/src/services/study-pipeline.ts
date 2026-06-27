@@ -13,7 +13,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
  * Process a document: extract text → chunk → embed → generate cards.
  * Runs async (fire-and-forget from the route handler).
  */
-export async function processDocument(documentId: string, rawContent?: string) {
+export async function processDocument(documentId: string, rawContent?: string, forcedChapter?: string) {
   try {
     await db.update(studyDocuments)
       .set({ processingStatus: 'processing' })
@@ -67,7 +67,7 @@ export async function processDocument(documentId: string, rawContent?: string) {
     }
 
     // Step 4: Generate flashcards (the main output the kid sees)
-    const cards = await generateCards(text, doc.topicId, doc.accountId, documentId)
+    const cards = await generateCards(text, doc.topicId, doc.accountId, documentId, forcedChapter)
 
     // Step 5: Update document + topic stats
     await db.update(studyDocuments).set({
@@ -261,6 +261,7 @@ async function generateCards(
   topicId: string,
   accountId: string,
   documentId: string,
+  forcedChapter?: string,
 ): Promise<GenCard[]> {
   const batches = batchText(text)
   const all: GenCard[] = []
@@ -294,7 +295,9 @@ async function generateCards(
     topicId,
     accountId,
     documentId,
-    chapter: card.chapter,
+    // A named lesson forces every card to that chapter; otherwise use the
+    // LLM-inferred chapter from the material's headings.
+    chapter: forcedChapter?.trim() || card.chapter,
     front: card.front,
     back: card.back,
     status: 'new' as const,

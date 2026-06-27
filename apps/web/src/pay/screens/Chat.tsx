@@ -10,13 +10,15 @@ import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
 import { ChorePickerSheet } from '../chores/verify'
+import { registerAiHandler } from '../pals/aiBus'
+import { useSessionStore } from '../lib/sessions'
+import { useHistoryView } from '../lib/historyStore'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../lib/agents'
 
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
-const ConversationHistory = lazy(() => import('../../components/ConversationHistory').then((m) => ({ default: m.ConversationHistory })))
 
 type Pal = { palId: string; line: string }
-type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' } & Record<string, unknown>
+type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' } & Record<string, unknown>
 type SendResponse = { reply: string; pals?: Pal[]; intent?: Intent; requiresConfirmation?: boolean }
 type ExecuteResponse = { ok: boolean; confirmationMessage?: string }
 type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string }
@@ -33,12 +35,22 @@ function describeIntent(intent: Intent): string {
       return `Add ${aud((intent.brainsDelta as number) ?? 0)} to ${kidName}'s wallet`
     case 'set_goal':
       return `Set goal "${intent.goalName as string}" for ${kidName} — ${aud((intent.targetBrains as number) ?? 500)}`
+    case 'contribute_goal':
+      return `Add ${aud((intent.brainsDelta as number) ?? 0)} toward ${kidName}'s ${(intent.goalName as string) || 'goal'}`
+    case 'send_note':
+      return `Send ${kidName}: “${intent.message as string}”`
+    case 'create_rule':
+      return `Add family rule: “${intent.ruleText as string}”`
+    case 'remember':
+      return intent.kidName
+        ? `Remember about ${kidName}: “${intent.fact as string}”`
+        : `Remember: “${intent.fact as string}”`
     default:
       return 'Confirm this action?'
   }
 }
 
-const SUGGESTIONS = ['Add a dishes chore for $50', 'How much has my kid saved?', 'Add $20 to their wallet', 'Set a savings goal for a bike']
+const SUGGESTIONS = ['Add a dishes chore for $50', 'Put $5 toward Mia\u2019s bike goal', 'Tell Sam I\u2019m proud of him', 'Set a rule: no spending over $20']
 
 export function Chat({ onClose }: { onClose?: () => void }) {
   const [messages, setMessages] = useState<Msg[]>([])
@@ -47,15 +59,46 @@ export function Chat({ onClose }: { onClose?: () => void }) {
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [live, setLive] = useState<{ camera: boolean } | null>(null)
-  const [showHistory, setShowHistory] = useState(false)
   const [pickChore, setPickChore] = useState(false)
   const isKid = useAuthStore((s) => s.account?.accountType === 'kid')
   const scrollRef = useRef<HTMLDivElement>(null)
+  // The History session this typed conversation is being recorded into. Reset
+  // by "New chat" so each fresh conversation becomes its own session.
+  const textSessionRef = useRef<string | null>(null)
+  // When we resume a session from History, skip the initial /chat/history load
+  // so its (single-stream) result can't clobber the restored transcript.
+  const skipInitialHistory = useRef(false)
+  const openHistory = useHistoryView((s) => s.openHistory)
+
+  function ensureTextSession(firstMessage: string): string {
+    if (!textSessionRef.current) {
+      const title = firstMessage.trim().slice(0, 48) || 'New chat'
+      textSessionRef.current = useSessionStore.getState().start('text', title)
+    }
+    return textSessionRef.current
+  }
+
+  // Reopen a recorded text session in the chat view and keep appending to it.
+  function resumeSession(sessionId: string) {
+    const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId)
+    if (!session) return
+    skipInitialHistory.current = true
+    setPendingIntent(null)
+    setInput('')
+    setLoadingHistory(false)
+    textSessionRef.current = session.id
+    setMessages(session.turns.map((t) => {
+      const mine = t.role === 'you' || t.role === 'user'
+      return { id: uid(), kind: mine ? 'user' : 'agent', agentId: mine ? undefined : 'pal', content: t.text }
+    }))
+  }
 
   async function newChat() {
     setMessages([])
     setPendingIntent(null)
     setInput('')
+    textSessionRef.current = null
+    skipInitialHistory.current = false
     try { await api('/chat/history', { method: 'DELETE' }) } catch { /* ignore */ }
   }
 
@@ -63,7 +106,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
     let active = true
     api<{ messages: { id: string; role: string; content: string }[] }>('/chat/history')
       .then((res) => {
-        if (!active) return
+        if (!active || skipInitialHistory.current) return
         setMessages((res.messages ?? []).map((m) => ({ id: m.id, kind: m.role === 'user' ? 'user' : 'agent', agentId: m.role === 'user' ? undefined : 'pal', content: m.content })))
       })
       .catch(() => undefined)
@@ -73,6 +116,14 @@ export function Chat({ onClose }: { onClose?: () => void }) {
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, sending, pendingIntent])
 
+  // Let the app-shell drawer / history drive the chat. Commands sent while this
+  // screen is unmounted are queued by the bus and flushed on mount.
+  useEffect(() => registerAiHandler((cmd) => {
+    if (cmd.type === 'new-chat') void newChat()
+    else if (cmd.type === 'resume') resumeSession(cmd.sessionId)
+    else if (cmd.type === 'live') setLive({ camera: cmd.camera })
+  }), [])
+
   async function sendText(text: string) {
     const trimmed = text.trim()
     if (!trimmed || sending) return
@@ -80,11 +131,14 @@ export function Chat({ onClose }: { onClose?: () => void }) {
     setPendingIntent(null)
     setMessages((m) => [...m, { id: uid(), kind: 'user', content: trimmed }])
     setSending(true)
+    const sid = ensureTextSession(trimmed)
+    useSessionStore.getState().append(sid, [{ role: 'you', text: trimmed }])
     try {
       const res = await api<SendResponse>('/chat', { method: 'POST', body: JSON.stringify({ message: trimmed }) })
       const additions: Msg[] = [{ id: uid(), kind: 'agent', agentId: 'pal', content: res.reply }]
       for (const p of res.pals ?? []) additions.push({ id: uid(), kind: 'agent', agentId: agentFor(p.palId).id, content: p.line })
       setMessages((m) => [...m, ...additions])
+      useSessionStore.getState().append(sid, additions.map((a) => ({ role: 'pal', text: a.content })))
       if (res.requiresConfirmation && res.intent) setPendingIntent(res.intent)
     } catch {
       setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'pal', content: "I'm having trouble thinking right now. Try again?" }])
@@ -100,7 +154,9 @@ export function Chat({ onClose }: { onClose?: () => void }) {
     setSending(true)
     try {
       const res = await api<ExecuteResponse>('/chat/execute', { method: 'POST', body: JSON.stringify({ intent }) })
-      setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'pal', content: res.confirmationMessage ?? 'Done.' }])
+      const msg = res.confirmationMessage ?? 'Done.'
+      setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'pal', content: msg }])
+      if (textSessionRef.current) useSessionStore.getState().append(textSessionRef.current, [{ role: 'pal', text: msg }])
     } catch (e) {
       setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'pal', content: e instanceof Error ? `Couldn't do that: ${e.message}` : "Couldn't do that." }])
     } finally {
@@ -115,11 +171,6 @@ export function Chat({ onClose }: { onClose?: () => void }) {
       {live && (
         <Suspense fallback={<div className="fixed inset-0 z-50 bg-black" />}>
           <LiveSession withCamera={live.camera} onClose={() => setLive(null)} />
-        </Suspense>
-      )}
-      {showHistory && (
-        <Suspense fallback={null}>
-          <ConversationHistory onClose={() => setShowHistory(false)} />
         </Suspense>
       )}
       {pickChore && <ChorePickerSheet onClose={() => setPickChore(false)} />}
@@ -143,7 +194,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
               ))}
             </div>
           </div>
-          <button onClick={() => setShowHistory(true)} aria-label="Voice history" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+          <button onClick={() => openHistory()} aria-label="History" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
             <HistoryIcon size={18} style={{ color: 'var(--pv-ink-2)' }} />
           </button>
           <button onClick={newChat} aria-label="New chat" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>

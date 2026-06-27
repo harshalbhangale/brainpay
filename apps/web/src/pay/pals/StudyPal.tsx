@@ -12,43 +12,48 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   BookOpen, Brain, ChevronLeft, ChevronRight, GraduationCap, Mic, MicOff, Sparkles, Upload,
   Check, Plus, Flame, Trophy, Bookmark, MessageCircle, RefreshCw, Send as SendIcon, X,
+  History, Clock, Eye, ExternalLink, SlidersHorizontal,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { uploadFile } from '../../lib/uploads'
-import { connectLiveRt, type LiveRtSocket, type InterviewScore } from '../../lib/liveRt'
-import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../../lib/liveAudio'
-import { avatarSrc, useAvatar } from '../../lib/avatar'
 import { useAuthStore } from '../../stores/auth'
-import { VrmCompanion, type CompanionMood } from '../../components/VrmCompanion'
 import { Button, Card, IconButton, ProgressBar } from '../components/primitives'
 import { TopBar } from '../components/shell'
 import { InterviewView } from './StudyInterview'
+import { GRADES, BOARDS, subjectsForGrade, subjectEmoji } from './subjects'
+import { ParentStudyView } from './ParentStudy'
+import { BrainCoin, Brains, BrainsPill, RewardsHelp } from '../components/Brains'
 
 type Topic = { id: string; title: string; emoji: string; cardsDue: number; totalCards: number }
 type Stats = { streak: number; cardsDue: number; cardsMastered: number; topicsActive: number }
 type ConceptCard = { id: string; front: string; back: string; status: string; bookmarked?: boolean }
+type Cheatsheet = { emoji: string; title: string; definition: string; keyPoints: string[]; example: string; analogy: string; formula: string; mistake: string }
 type Doc = { id: string; title: string; fileType: string; processingStatus: string; chunkCount: number }
-type View = 'setup' | 'home' | 'subject' | 'concepts' | 'quiz' | 'interview' | 'chat' | 'saved'
-
-const GRADES = ['Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12']
-const SUBJECTS: Record<string, string[]> = {
-  'Grade 5': ['Maths', 'Science', 'English', 'Social Studies', 'Hindi'],
-  'Grade 6': ['Maths', 'Science', 'English', 'Social Studies', 'Hindi'],
-  'Grade 7': ['Maths', 'Science', 'English', 'Social Studies', 'Hindi', 'Computer Science'],
-  'Grade 8': ['Maths', 'Science', 'English', 'Social Studies', 'Hindi', 'Computer Science'],
-  'Grade 9': ['Maths', 'Physics', 'Chemistry', 'Biology', 'English', 'Social Studies', 'Hindi', 'Computer Science'],
-  'Grade 10': ['Maths', 'Physics', 'Chemistry', 'Biology', 'English', 'Social Studies', 'Hindi', 'Computer Science'],
-  'Grade 11': ['Maths', 'Physics', 'Chemistry', 'Biology', 'English', 'Accountancy', 'Economics', 'Computer Science'],
-  'Grade 12': ['Maths', 'Physics', 'Chemistry', 'Biology', 'English', 'Accountancy', 'Economics', 'Computer Science'],
+type Focus = { lookingPct?: number; flags?: string[]; notes?: string }
+type ChapterRowT = { chapter: string; total: number; due: number; mastered: number }
+type InterviewRow = {
+  id: string; chapter: string | null; mode: string; score: number | null; summary: string | null
+  durationSecs: number | null; brainsEarned: number | null; keepPractising?: string[]; focus?: Focus | null
+  completedAt: string | null; createdAt: string; topicTitle?: string | null; topicEmoji?: string | null
 }
+type View = 'setup' | 'home' | 'subject' | 'concepts' | 'quiz' | 'interview' | 'chat' | 'saved' | 'history' | 'interviewDetail' | 'lesson' | 'cheatsheet'
 
 export function StudyPal() {
+  // Parents get an oversight view of their kids' studying; kids get the full
+  // study surface. (The study tools — cards, quizzes, interviews — are the kid's.)
+  const accountType = useAuthStore((s) => s.account?.accountType)
+  if (accountType === 'parent') return <ParentStudyView />
+
   const { data: stats } = useQuery({ queryKey: ['study-stats'], queryFn: () => api<Stats>('/study/stats') })
   const { data: topicsData, isLoading } = useQuery({ queryKey: ['study-topics'], queryFn: () => api<{ topics: Topic[] }>('/study/topics') })
 
   const hasTopics = (topicsData?.topics?.length ?? 0) > 0
   const [view, setView] = useState<View>('home')
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null)
+  const [selectedInterview, setSelectedInterview] = useState<string | null>(null)
+  const [selectedLesson, setSelectedLesson] = useState<string | null>(null) // chapter name, null = whole subject
+  const [selectedCard, setSelectedCard] = useState<ConceptCard | null>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => {
     if (!isLoading && topicsData && topicsData.topics.length === 0) setView('setup')
@@ -61,20 +66,29 @@ export function StudyPal() {
       ) : view === 'setup' ? (
         <GradeSetup onDone={() => setView('home')} canCancel={hasTopics} onCancel={() => setView('home')} />
       ) : view === 'subject' && selectedTopic ? (
-        <SubjectHub topicId={selectedTopic} onBack={() => setView('home')} onConcepts={() => setView('concepts')} onQuiz={() => setView('quiz')} onInterview={() => setView('interview')} onChat={() => setView('chat')} onSaved={() => setView('saved')} />
+        <SubjectHub topicId={selectedTopic} onBack={() => setView('home')} onConcepts={() => { setSelectedLesson(null); setView('concepts') }} onQuiz={() => setView('quiz')} onInterview={() => { setSelectedLesson(null); setView('interview') }} onChat={() => setView('chat')} onSaved={() => setView('saved')} onHistory={() => { setSelectedLesson(null); setView('history') }} onLesson={(ch) => { setSelectedLesson(ch); setView('lesson') }} />
+      ) : view === 'lesson' && selectedTopic && selectedLesson ? (
+        <LessonHub topicId={selectedTopic} chapter={selectedLesson} onBack={() => setView('subject')} onStudy={() => setView('concepts')} onInterview={() => setView('interview')} onHistory={() => setView('history')} />
       ) : view === 'concepts' && selectedTopic ? (
-        <ConceptsView topicId={selectedTopic} onBack={() => setView('subject')} onQuiz={() => setView('quiz')} />
+        <ConceptsView topicId={selectedTopic} chapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onQuiz={() => setView('quiz')} onCheatsheet={(card) => { setSelectedCard(card); setView('cheatsheet') }} />
+      ) : view === 'cheatsheet' && selectedCard ? (
+        <ConceptCheatSheet card={selectedCard} onBack={() => setView('concepts')} onQuiz={() => setView('quiz')} onChat={() => setView('chat')} />
       ) : view === 'quiz' && selectedTopic ? (
         <QuizView topicId={selectedTopic} onBack={() => setView('subject')} />
       ) : view === 'interview' && selectedTopic ? (
-        <InterviewView topicId={selectedTopic} onBack={() => setView('subject')} onChat={() => setView('chat')} />
+        <InterviewView topicId={selectedTopic} initialChapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onChat={() => setView('chat')} />
       ) : view === 'chat' && selectedTopic ? (
         <ChatView topicId={selectedTopic} onBack={() => setView('subject')} />
       ) : view === 'saved' && selectedTopic ? (
         <SavedView topicId={selectedTopic} onBack={() => setView('subject')} />
+      ) : view === 'history' && selectedTopic ? (
+        <HistoryView topicId={selectedTopic} chapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onOpen={(id) => { setSelectedInterview(id); setView('interviewDetail') }} />
+      ) : view === 'interviewDetail' && selectedInterview ? (
+        <InterviewDetailView interviewId={selectedInterview} onBack={() => setView('history')} />
       ) : (
-        <HomeView stats={stats} topics={topicsData?.topics ?? []} onSelect={(id) => { setSelectedTopic(id); setView('subject') }} onSetup={() => setView('setup')} />
+        <HomeView stats={stats} topics={topicsData?.topics ?? []} onSelect={(id) => { setSelectedTopic(id); setView('subject') }} onSetup={() => setView('setup')} onRewards={() => setHelpOpen(true)} />
       )}
+      {helpOpen && <RewardsHelp onClose={() => setHelpOpen(false)} />}
     </div>
   )
 }
@@ -116,13 +130,39 @@ function Header({ title, onBack, right }: { title: string; onBack?: () => void; 
 
 function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCancel: boolean; onCancel: () => void }) {
   const qc = useQueryClient()
-  const [step, setStep] = useState<'grade' | 'subjects' | 'extra'>('grade')
-  const [grade, setGrade] = useState('')
+  const account = useAuthStore((s) => s.account)
+  const updateAccount = useAuthStore((s) => s.updateAccount)
+  // Grade + board come from the child's profile. We only ask once (first run),
+  // then persist to the persona so StudyPal never asks again.
+  const profileGrade = (account?.persona?.grade as string) || ''
+  const profileBoard = (account?.persona?.board as string) || ''
+
+  const [step, setStep] = useState<'grade' | 'subjects' | 'extra'>(profileGrade ? 'subjects' : 'grade')
+  const [grade, setGrade] = useState(profileGrade)
+  const [board, setBoard] = useState(profileBoard)
+  const [savingGrade, setSavingGrade] = useState(false)
   const [subjects, setSubjects] = useState<string[]>([])
   const [extraInfo, setExtraInfo] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Persist grade + board to the profile (once), then move on to subjects.
+  const saveGradeAndContinue = async () => {
+    if (!grade) return
+    setSavingGrade(true)
+    setError(null)
+    try {
+      const persona = { ...(account?.persona ?? {}), grade, ...(board ? { board } : {}) }
+      const res = await api<{ account: NonNullable<typeof account> }>('/me', { method: 'PATCH', body: JSON.stringify({ persona }) })
+      updateAccount(res.account)
+    } catch {
+      /* even if saving fails, let them continue with the picked grade */
+    } finally {
+      setSavingGrade(false)
+      setStep('subjects')
+    }
+  }
 
   const toggleSubject = (s: string) => setSubjects((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]))
 
@@ -141,9 +181,9 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
       const fileBodies = await Promise.all(files.map(fileToDocBody))
       for (const subject of subjects) {
         const { topic } = await api<{ topic: { id: string } }>('/study/topics', {
-          method: 'POST', body: JSON.stringify({ title: `${subject} — ${grade}`, emoji: subjectEmoji(subject) }),
+          method: 'POST', body: JSON.stringify({ title: subject, emoji: subjectEmoji(subject) }),
         })
-        const content = `Generate key concepts, important definitions, formulas, and study material for:\nSubject: ${subject}\nGrade: ${grade}\n${extraInfo ? `Additional context from student: ${extraInfo}` : ''}\n\nCreate comprehensive study material covering the most important topics for this grade level.`
+        const content = `Generate key concepts, important definitions, formulas, and study material for:\nSubject: ${subject}\nGrade: ${grade}${board ? `\nBoard / exam: ${board}` : ''}\n${extraInfo ? `Additional context from student: ${extraInfo}` : ''}\n\nCreate comprehensive study material covering the most important topics for this grade level.`
         await api(`/study/topics/${topic.id}/documents`, { method: 'POST', body: JSON.stringify({ title: `${subject} concepts`, fileUrl: 'text://inline', fileType: 'text', content }) })
         // Attach the student's uploaded PDFs / images / notes as extra material.
         for (const body of fileBodies) {
@@ -180,7 +220,15 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
     <>
       <Header
         title={step === 'grade' ? 'Your Grade' : step === 'subjects' ? 'Subjects' : 'Final touch'}
-        onBack={step === 'grade' ? (canCancel ? onCancel : undefined) : () => setStep(step === 'extra' ? 'subjects' : 'grade')}
+        onBack={
+          step === 'grade'
+            ? (canCancel ? onCancel : undefined)
+            : step === 'extra'
+              ? () => setStep('subjects')
+              : profileGrade
+                ? (canCancel ? onCancel : undefined)
+                : () => setStep('grade')
+        }
       />
 
       <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-4">
@@ -200,20 +248,42 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
         </div>
 
         {step === 'grade' && (
-          <div className="grid grid-cols-2 gap-3">
-            {GRADES.map((g, i) => (
-              <button key={g} onClick={() => { setGrade(g); setStep('subjects') }}
-                className="pv-press pv-pop pv-title rounded-2xl py-4 text-center"
-                style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', animationDelay: `${i * 28}ms` }}>
-                {g}
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {GRADES.map((g, i) => {
+                const on = grade === g
+                return (
+                  <button key={g} onClick={() => setGrade(g)}
+                    className="pv-press pv-pop pv-title rounded-2xl py-4 text-center"
+                    style={on
+                      ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)', animationDelay: `${i * 28}ms` }
+                      : { background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', animationDelay: `${i * 28}ms` }}>
+                    {g}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="pv-label mb-2.5 mt-7">Board / exam <span style={{ color: 'var(--pv-ink-3)', fontWeight: 600 }}>· optional</span></p>
+            <div className="flex flex-wrap gap-2">
+              {BOARDS.map((b) => {
+                const on = board === b
+                return (
+                  <button key={b} onClick={() => setBoard(on ? '' : b)}
+                    className="pv-press rounded-full px-3.5 py-2 text-sm font-bold"
+                    style={on
+                      ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }
+                      : { background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                    {b}
+                  </button>
+                )
+              })}
+            </div>
+          </>
         )}
 
         {step === 'subjects' && (
           <div className="flex flex-col gap-2.5">
-            {(SUBJECTS[grade] ?? []).map((s, i) => {
+            {subjectsForGrade(grade).map((s, i) => {
               const on = subjects.includes(s)
               return (
                 <button key={s} onClick={() => toggleSubject(s)}
@@ -264,6 +334,13 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
         )}
       </div>
 
+      {step === 'grade' && (
+        <div className="flex-none px-6 pb-6 pt-2">
+          <Button variant="accent" size="lg" full onClick={saveGradeAndContinue} disabled={!grade || savingGrade}>
+            {savingGrade ? 'Saving…' : 'Continue'}
+          </Button>
+        </div>
+      )}
       {(step === 'subjects' || step === 'extra') && (
         <div className="flex-none px-6 pb-6 pt-2">
           {step === 'subjects' ? (
@@ -283,7 +360,7 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
 // HOME
 // ═══════════════════════════════════════════════════════════════════════
 
-function HomeView({ stats, topics, onSelect, onSetup }: { stats?: Stats | null; topics: Topic[]; onSelect: (id: string) => void; onSetup: () => void }) {
+function HomeView({ stats, topics, onSelect, onSetup, onRewards }: { stats?: Stats | null; topics: Topic[]; onSelect: (id: string) => void; onSetup: () => void; onRewards: () => void }) {
   const healthPct = stats && stats.cardsMastered + stats.cardsDue > 0
     ? Math.min(100, Math.round((stats.cardsMastered / (stats.cardsMastered + stats.cardsDue)) * 100))
     : 0
@@ -292,7 +369,12 @@ function HomeView({ stats, topics, onSelect, onSetup }: { stats?: Stats | null; 
     <>
       <TopBar
         leading={<div><div className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Keep your brain sharp</div><div className="pv-title leading-tight">StudyPal</div></div>}
-        trailing={<IconButton Icon={Plus} ariaLabel="Add subjects" tone="dark" onClick={onSetup} />}
+        trailing={
+          <div className="flex items-center gap-2">
+            <button onClick={onRewards} aria-label="How Brains work" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}><BrainCoin size={22} /></button>
+            <IconButton Icon={Plus} ariaLabel="Add subjects" tone="dark" onClick={onSetup} />
+          </div>
+        }
       />
 
       <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-10">
@@ -311,7 +393,11 @@ function HomeView({ stats, topics, onSelect, onSetup }: { stats?: Stats | null; 
             <div className="pv-progress" style={{ background: 'rgba(255,255,255,0.16)' }}>
               <span style={{ width: `${healthPct}%` }} />
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <button onClick={onRewards} className="pv-press mt-4 flex w-full items-center justify-between rounded-2xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.10)' }}>
+              <span className="flex items-center gap-2 text-sm font-bold" style={{ color: 'var(--pv-on-dark)' }}><BrainCoin size={20} /> Earn Brains as you learn</span>
+              <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>How it works →</span>
+            </button>
+            <div className="mt-3 grid grid-cols-3 gap-2">
               <MiniStat icon={<Flame size={15} style={{ color: '#ffb24a' }} />} value={stats.streak} label="day streak" />
               <MiniStat icon={<BookOpen size={15} style={{ color: 'var(--pv-accent)' }} />} value={stats.cardsDue} label="to review" />
               <MiniStat icon={<Check size={15} style={{ color: 'var(--pv-accent)' }} />} value={stats.cardsMastered} label="mastered" />
@@ -367,8 +453,8 @@ function MiniStat({ icon, value, label }: { icon: React.ReactNode; value: number
 // SUBJECT HUB
 // ═══════════════════════════════════════════════════════════════════════
 
-function SubjectHub({ topicId, onBack, onConcepts, onQuiz, onInterview, onChat, onSaved }: {
-  topicId: string; onBack: () => void; onConcepts: () => void; onQuiz: () => void; onInterview: () => void; onChat: () => void; onSaved: () => void
+function SubjectHub({ topicId, onBack, onConcepts, onQuiz, onInterview, onChat, onSaved, onHistory, onLesson }: {
+  topicId: string; onBack: () => void; onConcepts: () => void; onQuiz: () => void; onInterview: () => void; onChat: () => void; onSaved: () => void; onHistory: () => void; onLesson: (chapter: string) => void
 }) {
   const qc = useQueryClient()
   const { data } = useQuery({
@@ -383,26 +469,24 @@ function SubjectHub({ topicId, onBack, onConcepts, onQuiz, onInterview, onChat, 
   const topic = data?.topic
   const total = topic?.totalCards ?? 0
   const due = data?.cardsDue ?? 0
+  const { data: ivData } = useQuery({
+    queryKey: ['study-interviews', topicId],
+    queryFn: () => api<{ interviews: InterviewRow[] }>(`/study/interviews?topicId=${topicId}`),
+  })
+  const interviews = ivData?.interviews ?? []
   const mastered = Math.max(0, total - due)
   const pct = total > 0 ? Math.round((mastered / total) * 100) : 0
   const documents = data?.documents ?? []
   const generating = total === 0 && documents.some((d) => d.processingStatus !== 'failed')
 
-  const [showMaterials, setShowMaterials] = useState(false)
-  const [confirmRegen, setConfirmRegen] = useState(false)
-  const [regenerating, setRegenerating] = useState(false)
+  const [newLesson, setNewLesson] = useState(false)
 
-  const regenerate = async () => {
-    setRegenerating(true)
-    try {
-      await api(`/study/topics/${topicId}/regenerate`, { method: 'POST' })
-      qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
-      qc.invalidateQueries({ queryKey: ['study-cards', topicId] })
-      qc.invalidateQueries({ queryKey: ['study-topics'] })
-    } catch { /* ignore */ }
-    setRegenerating(false)
-    setConfirmRegen(false)
-  }
+  const { data: chaptersData } = useQuery({
+    queryKey: ['study-chapters', topicId],
+    queryFn: () => api<{ chapters: ChapterRowT[] }>(`/study/topics/${topicId}/chapters`),
+    refetchInterval: generating ? 3000 : false,
+  })
+  const lessons = (chaptersData?.chapters ?? []).filter((ch) => ch.total > 0)
 
   return (
     <>
@@ -418,55 +502,64 @@ function SubjectHub({ topicId, onBack, onConcepts, onQuiz, onInterview, onChat, 
           </div>
         </Card>
 
-        <p className="pv-label mb-3">What would you like to do?</p>
-        <div className="flex flex-col gap-3">
-          <HubOption icon={<BookOpen size={22} />} title="Study Concepts" subtitle={generating ? 'Preparing your cards…' : `${total} flashcards · swipe to learn`} onClick={onConcepts} disabled={generating} delay={0} />
-          <HubOption icon={<MessageCircle size={22} />} title="Chat with this lesson" subtitle="Ask anything — the tutor knows this topic" onClick={onChat} delay={60} />
-          <HubOption icon={<Sparkles size={22} />} title="Take a Quiz" subtitle="Test yourself with auto-generated questions" onClick={onQuiz} disabled={generating} delay={120} />
-          <HubOption icon={<Mic size={22} />} title="AI Interview" subtitle="Explain concepts out loud to a tutor" onClick={onInterview} disabled={generating} delay={180} />
-          <HubOption icon={<Bookmark size={22} />} title="Saved cards" subtitle="Your bookmarked concepts" onClick={onSaved} delay={240} />
-        </div>
-
-        <div className="mt-7 flex items-center justify-between">
-          <p className="pv-label">Materials</p>
-          <button onClick={() => setShowMaterials((v) => !v)} className="pv-press text-sm font-bold pv-text-accent">{showMaterials ? 'Hide' : 'Add material'}</button>
-        </div>
-
-        {documents.length > 0 && (
-          <div className="mt-3 flex flex-col gap-1.5">
-            {documents.map((doc) => (
-              <Card key={doc.id} flat className="flex items-center gap-2.5 px-3 py-2.5">
-                <span className="text-base">{docIcon(doc.fileType)}</span>
-                <p className="flex-1 truncate text-sm font-medium">{doc.title}</p>
-                <DocStatus status={doc.processingStatus} />
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {showMaterials && <MaterialsUploader topicId={topicId} onUploaded={() => qc.invalidateQueries({ queryKey: ['study-topic', topicId] })} />}
-
-        <div className="mt-7">
-          <button onClick={() => setConfirmRegen(true)} className="pv-press flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
-            <RefreshCw size={16} style={{ color: 'var(--pv-accent)' }} /> Regenerate concepts
+        {/* Lessons — create + open per-lesson study/interview/history */}
+        <div className="mb-3 flex items-center justify-between">
+          <p className="pv-label">Lessons</p>
+          <button onClick={() => setNewLesson((v) => !v)} className="pv-press flex items-center gap-1 text-sm font-bold pv-text-accent">
+            {newLesson ? <X size={15} /> : <Plus size={15} />} {newLesson ? 'Close' : 'New lesson'}
           </button>
         </div>
-      </div>
-
-      {confirmRegen && (
-        <div className="absolute inset-0 z-40 flex items-end justify-center sm:items-center" onClick={() => !regenerating && setConfirmRegen(false)}>
-          <div className="absolute inset-0" style={{ background: 'rgba(11,12,15,0.45)', backdropFilter: 'blur(4px)' }} />
-          <div onClick={(e) => e.stopPropagation()} className="pv-rise relative m-4 w-full max-w-sm rounded-[28px] p-6" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}>
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}><RefreshCw size={22} /></div>
-            <h3 className="pv-h2">Regenerate concepts?</h3>
-            <p className="pv-body mt-1.5" style={{ color: 'var(--pv-ink-2)' }}>We'll rebuild this topic's flashcards from your current materials. Your <span style={{ fontWeight: 700, color: 'var(--pv-ink)' }}>saved (bookmarked) cards are kept</span> — the rest are replaced, which resets their review progress.</p>
-            <div className="mt-4 flex gap-2">
-              <Button variant="soft" full onClick={() => setConfirmRegen(false)} disabled={regenerating}>Cancel</Button>
-              <Button variant="accent" full onClick={regenerate} disabled={regenerating}>{regenerating ? 'Rebuilding…' : 'Regenerate'}</Button>
-            </div>
+        {newLesson && (
+          <LessonCreator topicId={topicId} onDone={() => {
+            setNewLesson(false)
+            qc.invalidateQueries({ queryKey: ['study-chapters', topicId] })
+            qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
+          }} />
+        )}
+        {lessons.length > 0 ? (
+          <div className="mb-6 mt-1 flex flex-col gap-2.5">
+            {lessons.map((ch, i) => {
+              const lpct = ch.total > 0 ? Math.round((ch.mastered / ch.total) * 100) : 0
+              return (
+                <Card key={ch.chapter} onClick={() => onLesson(ch.chapter)} className="pv-rise flex items-center gap-3 p-3.5" style={{ ['--i' as string]: Math.min(i, 8) }}>
+                  <span className="flex h-10 w-10 flex-none items-center justify-center rounded-2xl text-base" style={{ background: 'var(--pv-surface-2)' }}>📘</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="pv-title truncate text-sm">{ch.chapter}</p>
+                    <p className="mt-0.5 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>{ch.total} concepts · {ch.due} to review</p>
+                  </div>
+                  <span className="pv-amount text-sm pv-text-accent">{lpct}%</span>
+                  <ChevronRight size={16} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />
+                </Card>
+              )
+            })}
           </div>
+        ) : !newLesson ? (
+          <Card flat className="mb-6 mt-1 flex flex-col items-center gap-1.5 p-5 text-center">
+            <p className="text-sm font-medium" style={{ color: 'var(--pv-ink-2)' }}>
+              {generating ? 'Generating your first lessons…' : 'Add a lesson — name it and upload its notes, PDF or photos.'}
+            </p>
+          </Card>
+        ) : null}
+
+        <p className="pv-label mb-3">Whole subject</p>
+        <div className="flex flex-col gap-3">
+          <HubOption tile={TILE.lilac} icon={<BookOpen size={22} />} title="Study concepts" subtitle={generating ? 'Preparing your cards…' : `${total} flashcards · tap for cheat sheets`} onClick={onConcepts} disabled={generating} delay={0} />
+          <HubOption tile={TILE.sky} icon={<Sparkles size={22} />} title="Take a quiz" subtitle="Auto-generated questions" onClick={onQuiz} disabled={generating} delay={60} />
+          <HubOption tile={TILE.amber} icon={<Mic size={22} />} title="AI Interview" subtitle="A spoken viva with the tutor" onClick={onInterview} disabled={generating} delay={120} />
+          <HubOption tile={TILE.mint} icon={<MessageCircle size={22} />} title="Ask the tutor" subtitle="Chat about anything in this subject" onClick={onChat} delay={180} />
+          <HubOption
+            tile={TILE.pink}
+            icon={<History size={22} />}
+            title="Past interviews"
+            subtitle={interviews.length > 0
+              ? `${interviews.length} done${typeof interviews[0].score === 'number' ? ` · last ${interviews[0].score}/10` : ''}`
+              : 'Your scores & feedback'}
+            onClick={onHistory}
+            delay={240}
+          />
+          <HubOption tile={TILE.violet} icon={<Bookmark size={22} />} title="Saved cards" subtitle="Your bookmarked concepts" onClick={onSaved} delay={300} />
         </div>
-      )}
+      </div>
     </>
   )
 }
@@ -506,10 +599,108 @@ function MaterialsUploader({ topicId, onUploaded }: { topicId: string; onUploade
   )
 }
 
-function HubOption({ icon, title, subtitle, onClick, disabled, delay }: { icon: React.ReactNode; title: string; subtitle: string; onClick: () => void; disabled?: boolean; delay: number }) {
+// Materials + regenerate, as a bottom sheet inside the concepts screen (this is
+// where they belong — they shape the cards). Materials are openable.
+function ConceptTools({ topicId, onClose }: { topicId: string; onClose: () => void }) {
+  const qc = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['study-docs', topicId],
+    queryFn: () => api<{ documents: Doc[] }>(`/study/topics/${topicId}/documents`),
+    refetchInterval: (q) => {
+      const docs = (q.state.data as { documents?: Doc[] } | undefined)?.documents ?? []
+      return docs.some((d) => d.processingStatus === 'pending' || d.processingStatus === 'processing') ? 2500 : false
+    },
+  })
+  const docs = data?.documents ?? []
+  const [confirmRegen, setConfirmRegen] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
+  const [opening, setOpening] = useState<string | null>(null)
+
+  const openable = (d: Doc) => d.fileType === 'pdf' || d.fileType === 'image'
+  const open = async (id: string) => {
+    setOpening(id)
+    try {
+      const { url } = await api<{ url?: string }>(`/study/documents/${id}/url`)
+      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+    } catch { /* ignore */ }
+    setOpening(null)
+  }
+  const regenerate = async () => {
+    setRegenerating(true)
+    try {
+      await api(`/study/topics/${topicId}/regenerate`, { method: 'POST' })
+      qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
+      qc.invalidateQueries({ queryKey: ['study-cards', topicId] })
+      qc.invalidateQueries({ queryKey: ['study-chapters', topicId] })
+      qc.invalidateQueries({ queryKey: ['study-topics'] })
+    } catch { /* ignore */ }
+    setRegenerating(false)
+    setConfirmRegen(false)
+    onClose()
+  }
+
+  return (
+    <div className="absolute inset-0 z-40 flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0" style={{ background: 'rgba(11,12,15,0.45)', backdropFilter: 'blur(4px)' }} />
+      <div onClick={(e) => e.stopPropagation()} className="pv-rise pv-no-scrollbar relative max-h-[82%] w-full overflow-y-auto rounded-t-[28px] p-5 pb-8" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}>
+        <div className="mx-auto mb-4 h-1.5 w-10 rounded-full" style={{ background: 'var(--pv-line-strong)' }} />
+        <h3 className="pv-h2 mb-1">Materials &amp; tools</h3>
+        <p className="pv-body mb-4" style={{ color: 'var(--pv-ink-2)' }}>The notes &amp; files your concepts are built from.</p>
+
+        <p className="pv-label mb-2">Materials</p>
+        {docs.length === 0 ? (
+          <p className="mb-3 text-sm" style={{ color: 'var(--pv-ink-3)' }}>No materials yet — add notes or upload a file below.</p>
+        ) : (
+          <div className="mb-3 flex flex-col gap-1.5">
+            {docs.map((doc) => (
+              <div key={doc.id} className="flex items-center gap-2.5 rounded-2xl px-3 py-2.5" style={{ background: 'var(--pv-surface-2)' }}>
+                <span className="text-base">{docIcon(doc.fileType)}</span>
+                <p className="flex-1 truncate text-sm font-medium">{doc.title}</p>
+                {openable(doc) ? (
+                  <button onClick={() => open(doc.id)} disabled={opening === doc.id} className="pv-press flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold" style={{ background: 'var(--pv-surface)', color: 'var(--pv-accent)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                    <ExternalLink size={12} /> {opening === doc.id ? 'Opening…' : 'Open'}
+                  </button>
+                ) : (
+                  <DocStatus status={doc.processingStatus} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <MaterialsUploader topicId={topicId} onUploaded={() => { qc.invalidateQueries({ queryKey: ['study-docs', topicId] }); qc.invalidateQueries({ queryKey: ['study-topic', topicId] }) }} />
+
+        {!confirmRegen ? (
+          <button onClick={() => setConfirmRegen(true)} className="pv-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold" style={{ background: 'var(--pv-surface-2)' }}>
+            <RefreshCw size={16} style={{ color: 'var(--pv-accent)' }} /> Regenerate concepts
+          </button>
+        ) : (
+          <div className="pv-rise mt-4 rounded-2xl p-4" style={{ background: 'var(--pv-surface-2)' }}>
+            <p className="pv-body" style={{ color: 'var(--pv-ink-2)' }}>Rebuild flashcards from your materials? <span style={{ fontWeight: 700, color: 'var(--pv-ink)' }}>Saved cards are kept</span>; the rest are replaced.</p>
+            <div className="mt-3 flex gap-2">
+              <Button variant="soft" full onClick={() => setConfirmRegen(false)} disabled={regenerating}>Cancel</Button>
+              <Button variant="accent" full onClick={regenerate} disabled={regenerating}>{regenerating ? 'Rebuilding…' : 'Regenerate'}</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const TILE = {
+  lilac: { bg: 'rgba(139,124,255,0.16)', fg: '#7c6cff' },
+  sky: { bg: 'rgba(56,189,248,0.16)', fg: '#0ea5e9' },
+  mint: { bg: 'rgba(52,211,153,0.16)', fg: '#10b981' },
+  amber: { bg: 'rgba(255,178,74,0.18)', fg: '#e8902a' },
+  pink: { bg: 'rgba(255,126,182,0.16)', fg: '#ec4899' },
+  violet: { bg: 'rgba(168,85,247,0.16)', fg: '#a855f7' },
+} as const
+
+function HubOption({ icon, title, subtitle, onClick, disabled, delay, tile }: { icon: React.ReactNode; title: string; subtitle: string; onClick: () => void; disabled?: boolean; delay: number; tile?: { bg: string; fg: string } }) {
   return (
     <Card onClick={disabled ? undefined : onClick} className="pv-rise flex items-center gap-4 p-4" style={{ animationDelay: `${delay}ms`, opacity: disabled ? 0.5 : 1 }}>
-      <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}>{icon}</span>
+      <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl" style={tile ? { background: tile.bg, color: tile.fg } : { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}>{icon}</span>
       <div className="min-w-0 flex-1">
         <p className="pv-title">{title}</p>
         <p className="mt-0.5 text-xs" style={{ color: 'var(--pv-ink-3)' }}>{subtitle}</p>
@@ -537,7 +728,7 @@ function ProgressRing({ pct }: { pct: number }) {
 // CONCEPTS
 // ═══════════════════════════════════════════════════════════════════════
 
-function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: () => void; onQuiz: () => void }) {
+function ConceptsView({ topicId, chapter, onBack, onQuiz, onCheatsheet }: { topicId: string; chapter?: string; onBack: () => void; onQuiz: () => void; onCheatsheet: (card: ConceptCard) => void }) {
   const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ['study-topic', topicId],
@@ -548,8 +739,8 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
     },
   })
   const { data: cardsData, refetch } = useQuery({
-    queryKey: ['study-cards', topicId],
-    queryFn: () => api<{ cards: ConceptCard[] }>(`/study/topics/${topicId}/cards`),
+    queryKey: ['study-cards', topicId, chapter ?? 'all'],
+    queryFn: () => api<{ cards: ConceptCard[] }>(`/study/topics/${topicId}/cards${chapter ? `?chapter=${encodeURIComponent(chapter)}` : ''}`),
     refetchInterval: (q) => ((q.state.data as { cards?: ConceptCard[] } | undefined)?.cards?.length ?? 0) === 0 ? 2500 : false,
   })
 
@@ -559,6 +750,7 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
   const cards = cardsData?.cards ?? []
   const [current, setCurrent] = useState(0)
   const [done, setDone] = useState(false)
+  const [tools, setTools] = useState(false)
 
   const [drag, setDrag] = useState(0)
   const [leaving, setLeaving] = useState<'left' | 'right' | null>(null)
@@ -613,15 +805,12 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
             You reviewed all {cards.length} concepts in<br />{data?.topic?.emoji} {data?.topic?.title}
           </p>
           <div className="pv-rise mt-6 flex items-center gap-2 rounded-full px-5 py-2.5" style={{ animationDelay: '0.2s', background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
-            <span className="text-lg">🧠</span><span className="font-bold">Review 10 cards a day to earn Brains</span>
+            <BrainCoin size={18} /><span className="font-bold">Review 10 cards a day to earn Brains</span>
           </div>
         </div>
         <div className="pv-rise flex-none px-6 py-5" style={{ animationDelay: '0.35s' }}>
-          <div className="flex gap-3">
-            <Button variant="accent" full leadingIcon={Sparkles} onClick={onQuiz}>Quiz</Button>
-            <Button variant="primary" full leadingIcon={Mic}>Interview</Button>
-          </div>
-          <button onClick={onBack} className="pv-press mt-3 w-full py-2 text-sm font-medium" style={{ color: 'var(--pv-ink-3)' }}>Back to subjects</button>
+          <Button variant="accent" size="lg" full leadingIcon={Sparkles} onClick={onQuiz}>Take a quiz</Button>
+          <button onClick={onBack} className="pv-press mt-3 w-full py-2 text-sm font-medium" style={{ color: 'var(--pv-ink-3)' }}>Back to subject</button>
         </div>
       </div>
     )
@@ -629,7 +818,12 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
 
   return (
     <>
-      <Header title={`${data?.topic?.emoji ?? ''} ${data?.topic?.title ?? ''}`} onBack={onBack} />
+      <Header
+        title={`${data?.topic?.emoji ?? ''} ${data?.topic?.title ?? ''}`}
+        onBack={onBack}
+        right={<button onClick={() => setTools(true)} aria-label="Materials & tools" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}><SlidersHorizontal size={18} /></button>}
+      />
+      {tools && <ConceptTools topicId={topicId} onClose={() => setTools(false)} />}
 
       {card ? (
         <>
@@ -653,7 +847,14 @@ function ConceptsView({ topicId, onBack, onQuiz }: { topicId: string; onBack: ()
               >
                 {drag !== 0 && <div className="pointer-events-none absolute inset-0 rounded-[28px]" style={{ background: drag > 0 ? 'radial-gradient(circle at 100% 50%, var(--pv-accent-soft), transparent 60%)' : 'radial-gradient(circle at 0% 50%, var(--pv-neg-soft), transparent 60%)' }} />}
                 <div className="mb-2.5 flex items-center justify-between">
-                  <span className="pv-label pv-text-accent">Concept</span>
+                  <button
+                    onClick={() => onCheatsheet(card)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="pv-press flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-extrabold"
+                    style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}
+                  >
+                    <Sparkles size={13} /> Cheat sheet
+                  </button>
                   <button onClick={() => toggleBookmark(card)} onPointerDown={(e) => e.stopPropagation()} className="pv-press flex h-8 w-8 items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }} aria-label={cardSaved ? 'Remove bookmark' : 'Save card'}>
                     <Bookmark size={18} fill={cardSaved ? 'currentColor' : 'none'} />
                   </button>
@@ -705,6 +906,108 @@ function Confetti() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// CONCEPT CHEAT SHEET
+// ═══════════════════════════════════════════════════════════════════════
+
+function ConceptCheatSheet({ card, onBack, onQuiz, onChat }: { card: ConceptCard; onBack: () => void; onQuiz: () => void; onChat: () => void }) {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['study-cheatsheet', card.id],
+    queryFn: () => api<{ cheatsheet: Cheatsheet }>(`/study/cards/${card.id}/cheatsheet`, { method: 'POST' }),
+    staleTime: 1000 * 60 * 30,
+  })
+  const cs = data?.cheatsheet
+  const [saved, setSaved] = useState(card.bookmarked ?? false)
+  const toggleSave = () => {
+    const next = !saved
+    setSaved(next)
+    api(`/study/cards/${card.id}/bookmark`, { method: 'POST', body: JSON.stringify({ bookmarked: next }) })
+      .then(() => qc.invalidateQueries({ queryKey: ['study-cards'] }))
+      .catch(() => setSaved(!next))
+  }
+
+  if (isLoading || !cs) {
+    return (
+      <>
+        <Header title="Cheat sheet" onBack={onBack} />
+        <Centered>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <Spinner />
+            <div>
+              <p className="pv-title">Building your cheat sheet…</p>
+              <p className="pv-body mt-1" style={{ color: 'var(--pv-ink-2)' }}>Pulling the must-knows for “{card.front}”.</p>
+            </div>
+          </div>
+        </Centered>
+      </>
+    )
+  }
+
+  const sections: { key: string; emoji: string; title: string; bg: string; body: React.ReactNode }[] = []
+  if (cs.keyPoints.length) sections.push({
+    key: 'kp', emoji: '📌', title: 'Key points', bg: 'rgba(139,124,255,0.14)',
+    body: (
+      <div className="flex flex-col gap-2">
+        {cs.keyPoints.map((p, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full" style={{ background: 'var(--pv-accent)', color: 'var(--pv-on-accent)' }}><Check size={11} strokeWidth={3} /></span>
+            <span className="text-sm leading-relaxed" style={{ color: 'var(--pv-ink)' }}>{p}</span>
+          </div>
+        ))}
+      </div>
+    ),
+  })
+  if (cs.formula) sections.push({
+    key: 'f', emoji: '🧮', title: 'Formula / rule', bg: 'rgba(52,211,153,0.14)',
+    body: <p className="rounded-xl px-3 py-2.5 text-center text-base font-bold" style={{ background: 'var(--pv-surface-2)', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>{cs.formula}</p>,
+  })
+  if (cs.example) sections.push({
+    key: 'e', emoji: '🧩', title: 'Example', bg: 'rgba(56,189,248,0.14)',
+    body: <p className="text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{cs.example}</p>,
+  })
+  if (cs.analogy) sections.push({
+    key: 'a', emoji: '💭', title: 'Think of it like…', bg: 'rgba(255,178,74,0.16)',
+    body: <p className="text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{cs.analogy}</p>,
+  })
+  if (cs.mistake) sections.push({
+    key: 'm', emoji: '⚠️', title: 'Watch out', bg: 'rgba(229,72,77,0.12)',
+    body: <p className="text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{cs.mistake}</p>,
+  })
+
+  return (
+    <>
+      <Header
+        title="Cheat sheet"
+        onBack={onBack}
+        right={<button onClick={toggleSave} aria-label={saved ? 'Remove bookmark' : 'Save'} className="pv-press flex h-9 w-9 items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button>}
+      />
+      <div className="pv-no-scrollbar relative min-h-0 flex-1 overflow-y-auto px-5 pb-28 pt-1">
+        <div className="pv-pop mb-5 flex flex-col items-center text-center">
+          <div className="animate-float mb-3 flex h-20 w-20 items-center justify-center rounded-[26px] text-4xl" style={{ backgroundImage: 'var(--pv-grad-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>{cs.emoji}</div>
+          <h1 className="pv-h1">{cs.title}</h1>
+          <p className="pv-body mt-2 max-w-sm" style={{ color: 'var(--pv-ink-2)' }}>{cs.definition}</p>
+        </div>
+        <div className="flex flex-col gap-3">
+          {sections.map((s, i) => (
+            <Card key={s.key} className="pv-rise p-4" style={{ ['--i' as string]: i }}>
+              <div className="mb-2 flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-2xl text-lg" style={{ background: s.bg }}>{s.emoji}</span>
+                <p className="pv-title text-sm">{s.title}</p>
+              </div>
+              {s.body}
+            </Card>
+          ))}
+        </div>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 flex gap-2.5 px-5 pb-5 pt-3" style={{ background: 'var(--pv-surface)', boxShadow: '0 -10px 28px -16px rgba(11,12,15,0.25)' }}>
+        <Button variant="soft" full leadingIcon={MessageCircle} onClick={onChat}>Ask tutor</Button>
+        <Button variant="accent" full leadingIcon={Sparkles} onClick={onQuiz}>Quiz me</Button>
+      </div>
+    </>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // QUIZ
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -752,7 +1055,7 @@ function QuizView({ topicId, onBack }: { topicId: string; onBack: () => void }) 
               <span className="pv-amount text-2xl">{result.scorePct}%</span>
             </div>
             <h2 className="pv-h1 pv-rise">{result.scorePct >= 80 ? 'Excellent! 🎉' : result.scorePct >= 50 ? 'Good effort! 💪' : 'Keep studying! 📚'}</h2>
-            {result.brainsEarned > 0 && <p className="pv-rise rounded-full px-5 py-2.5 font-bold pv-text-accent" style={{ animationDelay: '0.1s', background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>+{result.brainsEarned} 🧠 earned</p>}
+            {result.brainsEarned > 0 && <BrainsPill amount={result.brainsEarned} pop className="pv-rise" />}
             {result.questions && result.questions.length > 0 && (
               <button onClick={() => setShowReview((v) => !v)} className="pv-press text-sm font-bold pv-text-accent">{showReview ? 'Hide answers' : 'Review answers'}</button>
             )}
@@ -819,254 +1122,8 @@ function QuizView({ topicId, onBack }: { topicId: string; onBack: () => void }) 
 // INTERVIEW
 // ═══════════════════════════════════════════════════════════════════════
 
-function LegacyInterviewView({ topicId, onBack }: { topicId: string; onBack: () => void }) {
-  const { data: topicData } = useQuery({ queryKey: ['study-topic', topicId], queryFn: () => api<{ topic: Topic }>(`/study/topics/${topicId}`) })
-  const account = useAuthStore((s) => s.account)
-  const kidName = (account?.persona?.name as string) || undefined
-  const avatar = useAvatar((s) => s.avatar)
-  const qc = useQueryClient()
-
-  type Phase = 'intro' | 'connecting' | 'live' | 'scoring' | 'done' | 'error'
-  const [phase, setPhase] = useState<Phase>('intro')
-  const [elapsed, setElapsed] = useState(0)
-  const [palLine, setPalLine] = useState('')
-  const [userLine, setUserLine] = useState('')
-  const [micOn, setMicOn] = useState(true)
-  const [speaking, setSpeaking] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [transcript, setTranscript] = useState<{ role: 'tutor' | 'kid'; text: string }[]>([])
-  const [result, setResult] = useState<{ brainsEarned: number; score?: number; summary?: string; keepPractising?: string[] } | null>(null)
-
-  const sockRef = useRef<LiveRtSocket | null>(null)
-  const micRef = useRef<MicCaptureHandle | null>(null)
-  const playerRef = useRef<PcmPlayer | null>(null)
-  const micOnRef = useRef(true)
-  const replyBufRef = useRef('')
-  const pendingUserRef = useRef('')
-  const interviewIdRef = useRef<string | null>(null)
-  const scoreRef = useRef<InterviewScore | null>(null)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const elapsedRef = useRef(0)
-  const transcriptRef = useRef<{ role: 'tutor' | 'kid'; text: string }[]>([])
-  const endedRef = useRef(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => { transcriptRef.current = transcript }, [transcript])
-  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [transcript, palLine, userLine])
-
-  const cleanup = () => {
-    if (timerRef.current) clearInterval(timerRef.current)
-    try { sockRef.current?.end() } catch { /* ignore */ }
-    try { sockRef.current?.close() } catch { /* ignore */ }
-    micRef.current?.stop()
-    playerRef.current?.close()
-    sockRef.current = null
-    micRef.current = null
-    playerRef.current = null
-  }
-  useEffect(() => () => cleanup(), [])
-
-  async function begin() {
-    setPhase('connecting')
-    setError(null)
-    try {
-      const created = await api<{ interviewId: string }>(`/study/topics/${topicId}/interview`, { method: 'POST' })
-      interviewIdRef.current = created.interviewId
-      const { cards } = await api<{ cards: ConceptCard[] }>(`/study/topics/${topicId}/cards`)
-      const concepts = cards.slice(0, 20).map((c) => ({ front: c.front, back: c.back }))
-
-      const player = new PcmPlayer()
-      playerRef.current = player
-      await player.resume()
-      try {
-        micRef.current = await startMicCapture((pcm) => {
-          if (micOnRef.current && sockRef.current?.isOpen()) sockRef.current.sendMicPcm(pcm)
-        })
-      } catch {
-        setError('I need your microphone for the interview. Allow it and try again.')
-        setPhase('error')
-        return
-      }
-
-      const token = useAuthStore.getState().token
-      const sock = connectLiveRt(
-        {
-          onOpen: () => {
-            sock.start('kid', 'interview', undefined, { topicTitle: topicData?.topic?.title ?? 'this topic', concepts, kidName })
-            setPhase('live')
-            timerRef.current = setInterval(() => { elapsedRef.current += 1; setElapsed(elapsedRef.current) }, 1000)
-          },
-          onUserTranscript: (t) => { setUserLine(t); pendingUserRef.current = t },
-          onReplyDelta: (t) => { replyBufRef.current += t; setPalLine(replyBufRef.current); setSpeaking(true) },
-          onTurnComplete: () => {
-            const u = pendingUserRef.current.trim()
-            const r = replyBufRef.current.trim()
-            setTranscript((prev) => {
-              const add: { role: 'tutor' | 'kid'; text: string }[] = []
-              if (u) add.push({ role: 'kid', text: u })
-              if (r) add.push({ role: 'tutor', text: r })
-              return [...prev, ...add]
-            })
-            pendingUserRef.current = ''
-            replyBufRef.current = ''
-            setUserLine('')
-            setSpeaking(false)
-          },
-          onInterrupted: () => { playerRef.current?.clear(); setSpeaking(false) },
-          onPalAudioMp3: (mp3) => void playerRef.current?.enqueueEncoded(mp3),
-          onInterviewScored: (s) => { scoreRef.current = s; void finish(s) },
-          onError: () => { /* keep session; transient */ },
-        },
-        token,
-      )
-      sockRef.current = sock
-    } catch {
-      setError('Could not start the interview. Try again.')
-      setPhase('error')
-    }
-  }
-
-  async function finish(score?: InterviewScore) {
-    if (endedRef.current) return
-    endedRef.current = true
-    if (timerRef.current) clearInterval(timerRef.current)
-    setPhase('scoring')
-    try { sockRef.current?.end() } catch { /* ignore */ }
-    micRef.current?.stop()
-    const id = interviewIdRef.current
-    const s = score ?? scoreRef.current
-    try {
-      const res = await api<{ brainsEarned: number; score?: number }>(`/study/interviews/${id}/complete`, {
-        method: 'POST',
-        body: JSON.stringify({ transcript: transcriptRef.current.map((t) => ({ role: t.role, text: t.text })), durationSecs: elapsedRef.current, score: s?.score }),
-      })
-      setResult({ brainsEarned: res.brainsEarned, score: res.score, summary: s?.summary, keepPractising: s?.keepPractising })
-      qc.invalidateQueries({ queryKey: ['study-stats'] })
-    } catch {
-      setResult({ brainsEarned: 0, summary: s?.summary, keepPractising: s?.keepPractising })
-    }
-    setTimeout(() => setPhase('done'), 600)
-  }
-
-  function toggleMic() {
-    setMicOn((on) => {
-      const next = !on
-      micOnRef.current = next
-      sockRef.current?.setMic(next)
-      return next
-    })
-  }
-
-  const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-  const mood: CompanionMood = speaking ? 'happy' : 'neutral'
-
-  if (phase === 'intro') {
-    return (
-      <>
-        <Header title="AI Interview" onBack={onBack} />
-        <Centered>
-          <div className="flex flex-col items-center gap-6 text-center">
-            <div className="animate-float relative flex h-32 w-32 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
-              <span className="text-6xl">🎓</span>
-            </div>
-            <div>
-              <p className="pv-h2">Tutor Interview</p>
-              <p className="pv-body mt-1.5 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>
-                Your tutor will ask you to explain key concepts from {topicData?.topic?.emoji} {topicData?.topic?.title} out loud, and give you feedback.
-              </p>
-            </div>
-            <div className="w-full max-w-xs rounded-2xl px-4 py-3 text-sm font-medium" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-ink)' }}>
-              🎤 Speak naturally — answer out loud, just like a real tutor.
-            </div>
-            <Button variant="accent" size="lg" leadingIcon={Mic} onClick={begin}>Start Interview</Button>
-          </div>
-        </Centered>
-      </>
-    )
-  }
-
-  if (phase === 'error') {
-    return (
-      <>
-        <Header title="AI Interview" onBack={onBack} />
-        <Centered>
-          <div className="flex flex-col items-center gap-4 text-center">
-            <p className="pv-body" style={{ color: 'var(--pv-ink-2)' }}>{error ?? 'Something went wrong.'}</p>
-            <Button variant="accent" size="lg" onClick={begin}>Try again</Button>
-          </div>
-        </Centered>
-      </>
-    )
-  }
-
-  if (phase === 'done') {
-    return (
-      <div className="relative flex h-full flex-col overflow-hidden">
-        {(result?.brainsEarned ?? 0) > 0 && <Confetti />}
-        <div className="relative flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-          <div className="animate-trophy flex h-28 w-28 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
-            <Trophy size={44} />
-          </div>
-          <h2 className="pv-h1 pv-rise">Interview complete!</h2>
-          {result?.summary && <p className="pv-body pv-rise max-w-xs" style={{ animationDelay: '0.08s', color: 'var(--pv-ink-2)' }}>{result.summary}</p>}
-          {typeof result?.score === 'number' && <p className="pv-rise text-sm font-semibold pv-text-accent" style={{ animationDelay: '0.12s' }}>Score: {result.score}/10</p>}
-          {(result?.brainsEarned ?? 0) > 0 && (
-            <p className="pv-rise rounded-full px-5 py-2.5 font-bold pv-text-accent" style={{ animationDelay: '0.18s', background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>+{result!.brainsEarned} 🧠 earned</p>
-          )}
-          {result?.keepPractising && result.keepPractising.length > 0 && (
-            <div className="pv-rise mt-1 w-full max-w-xs text-left" style={{ animationDelay: '0.24s' }}>
-              <p className="pv-label mb-1">Keep practising</p>
-              {result.keepPractising.map((k, i) => (<p key={i} className="text-sm">• {k}</p>))}
-            </div>
-          )}
-        </div>
-        <div className="relative flex-none px-6 pb-6">
-          <Button variant="accent" size="lg" full onClick={onBack}>Back to subject</Button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <>
-      <Header title="AI Interview" onBack={() => { void finish() }} right={<span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{fmtTime(elapsed)}</span>} />
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className="relative h-52 flex-none">
-          <VrmCompanion src={avatarSrc(avatar)} getLevel={() => playerRef.current?.getLevel() ?? 0} mood={mood} className="absolute inset-0 animate-float" />
-          <span className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
-            {phase === 'connecting' ? 'Connecting…' : phase === 'scoring' ? 'Scoring…' : '🟢 Live'}
-          </span>
-        </div>
-
-        <div ref={scrollRef} className="pv-no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-3" aria-live="polite" aria-atomic="false">
-          {transcript.map((t, i) => (
-            <div key={i} className={`animate-line-in ${t.role === 'kid' ? 'text-right' : ''}`}>
-              <span className="inline-block max-w-[85%] rounded-2xl px-3.5 py-2 text-sm"
-                style={t.role === 'kid' ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }}>
-                {t.text}
-              </span>
-            </div>
-          ))}
-          {userLine && <div className="text-right"><span className="inline-block max-w-[85%] rounded-2xl px-3.5 py-2 text-sm opacity-70" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}>{userLine}</span></div>}
-          {palLine && <div><span className="inline-block max-w-[85%] rounded-2xl px-3.5 py-2 text-sm italic" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>{palLine}</span></div>}
-          {phase === 'connecting' && <p className="pt-6 text-center text-sm" style={{ color: 'var(--pv-ink-2)' }}>Waking up your tutor…</p>}
-        </div>
-
-        <div className="flex-none px-6 py-4">
-          <div className="flex items-center justify-center gap-4">
-            <div className={`relative ${micOn && phase === 'live' ? 'animate-listen' : ''} rounded-full`}>
-              <button onClick={toggleMic} className="pv-press-lg relative flex h-14 w-14 items-center justify-center rounded-full" style={micOn ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
-                {micOn ? <Mic size={22} /> : <MicOff size={22} />}
-              </button>
-            </div>
-            <Button variant="primary" size="lg" onClick={() => void finish()}>End interview</Button>
-          </div>
-          <p className="mt-2 text-center text-xs" style={{ color: 'var(--pv-ink-3)' }}>{micOn ? 'Listening — answer out loud' : 'Muted'}</p>
-        </div>
-      </div>
-    </>
-  )
-}
+// The legacy Gemini-Live voice interview was removed — the live interview now
+// lives in StudyInterview.tsx (Runway avatar) with RunwayStage.tsx.
 
 // ═══════════════════════════════════════════════════════════════════════
 // LESSON CHAT
@@ -1191,6 +1248,278 @@ function SavedView({ topicId, onBack }: { topicId: string; onBack: () => void })
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// LESSONS
+// ═══════════════════════════════════════════════════════════════════════
+
+function LessonCreator({ topicId, onDone }: { topicId: string; onDone: () => void }) {
+  const [name, setName] = useState('')
+  const [notes, setNotes] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? [])
+    if (picked.length) setFiles((p) => [...p, ...picked])
+    e.target.value = ''
+  }
+
+  const create = async () => {
+    const lesson = name.trim()
+    if (!lesson || busy) return
+    setBusy(true)
+    try {
+      if (notes.trim()) {
+        await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: `${lesson} — notes`, fileUrl: 'text://inline', fileType: 'text', content: notes.trim(), chapter: lesson }) })
+      }
+      for (const f of files) {
+        const body = await fileToDocBody(f)
+        await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ ...body, chapter: lesson }) })
+      }
+      // No material provided → seed the lesson from its name so it still builds.
+      if (!notes.trim() && files.length === 0) {
+        await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: lesson, fileUrl: 'text://inline', fileType: 'text', content: `Generate the key concepts, definitions, formulas and facts for the lesson "${lesson}". Cover the most important ideas a student should master.`, chapter: lesson }) })
+      }
+      onDone()
+    } catch { /* ignore */ }
+    setBusy(false)
+  }
+
+  return (
+    <Card className="pv-rise mb-4 p-4">
+      <input
+        value={name} onChange={(e) => setName(e.target.value)} autoFocus
+        placeholder="Lesson name — e.g. Photosynthesis"
+        className="pv-body mb-2.5 h-11 w-full rounded-2xl px-3.5 outline-none"
+        style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}
+      />
+      <label className="pv-sheen mb-2.5 flex cursor-pointer items-center justify-center gap-2 rounded-full py-2.5 text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+        <Upload size={15} /> Upload notes, PDF or photos
+        <input type="file" multiple accept=".pdf,image/*,.txt,.md,.doc,.docx,.ppt,.pptx" className="hidden" onChange={onFile} />
+      </label>
+      {files.length > 0 && <p className="mb-2 text-center text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>{files.length} file{files.length > 1 ? 's' : ''} attached</p>}
+      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Or paste notes / textbook text… (optional)" className="pv-body mb-2.5 w-full resize-none rounded-2xl px-3.5 py-2.5 outline-none" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }} />
+      <Button variant="accent" full onClick={create} disabled={!name.trim() || busy}>{busy ? 'Creating lesson…' : 'Create lesson'}</Button>
+    </Card>
+  )
+}
+
+function LessonHub({ topicId, chapter, onBack, onStudy, onInterview, onHistory }: {
+  topicId: string; chapter: string; onBack: () => void; onStudy: () => void; onInterview: () => void; onHistory: () => void
+}) {
+  const { data } = useQuery({ queryKey: ['study-chapters', topicId], queryFn: () => api<{ chapters: ChapterRowT[] }>(`/study/topics/${topicId}/chapters`) })
+  const ch = (data?.chapters ?? []).find((x) => x.chapter === chapter)
+  const total = ch?.total ?? 0
+  const mastered = ch?.mastered ?? 0
+  const pct = total > 0 ? Math.round((mastered / total) * 100) : 0
+  const { data: ivData } = useQuery({
+    queryKey: ['study-interviews', topicId, chapter],
+    queryFn: () => api<{ interviews: InterviewRow[] }>(`/study/interviews?topicId=${topicId}&chapter=${encodeURIComponent(chapter)}`),
+  })
+  const interviews = ivData?.interviews ?? []
+
+  return (
+    <>
+      <Header title={chapter} onBack={onBack} />
+      <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <Card className="pv-pop mb-6 flex items-center gap-5 p-5">
+          <ProgressRing pct={pct} />
+          <div className="flex-1">
+            <p className="text-sm font-medium" style={{ color: 'var(--pv-ink-2)' }}>This lesson</p>
+            <p className="pv-amount text-2xl">{mastered}<span className="text-base font-semibold" style={{ color: 'var(--pv-ink-3)' }}>/{total} concepts</span></p>
+          </div>
+        </Card>
+        <p className="pv-label mb-3">What would you like to do?</p>
+        <div className="flex flex-col gap-3">
+          <HubOption tile={TILE.lilac} icon={<BookOpen size={22} />} title="Study concepts" subtitle={`${total} flashcards · tap for cheat sheets`} onClick={onStudy} delay={0} />
+          <HubOption tile={TILE.amber} icon={<Mic size={22} />} title="AI Interview" subtitle="A spoken viva on this lesson" onClick={onInterview} delay={60} />
+          <HubOption
+            tile={TILE.pink}
+            icon={<History size={22} />}
+            title="Past interviews"
+            subtitle={interviews.length > 0
+              ? `${interviews.length} done${typeof interviews[0].score === 'number' ? ` · last ${interviews[0].score}/10` : ''}`
+              : 'Your scores will appear here'}
+            onClick={onHistory}
+            delay={120}
+          />
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INTERVIEW HISTORY
+// ═══════════════════════════════════════════════════════════════════════
+
+function scoreTone(score: number | null | undefined): { bg: string; fg: string } {
+  if (typeof score !== 'number') return { bg: 'var(--pv-surface-2)', fg: 'var(--pv-ink-3)' }
+  if (score >= 8) return { bg: 'var(--pv-pos-soft)', fg: 'var(--pv-pos)' }
+  if (score >= 5) return { bg: 'var(--pv-accent-soft)', fg: 'var(--pv-accent)' }
+  return { bg: 'var(--pv-neg-soft)', fg: 'var(--pv-neg)' }
+}
+
+function fmtAgo(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const diff = Date.now() - d.getTime()
+  const day = 86400000
+  if (diff < day) return 'Today'
+  if (diff < 2 * day) return 'Yesterday'
+  if (diff < 7 * day) return `${Math.floor(diff / day)} days ago`
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+
+function fmtDuration(secs: number | null | undefined): string {
+  const s = secs ?? 0
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
+}
+
+function HistoryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col items-center">
+      <span className="pv-amount text-lg pv-text-accent">{value}</span>
+      <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--pv-ink-3)' }}>{label}</span>
+    </div>
+  )
+}
+
+function HistoryView({ topicId, chapter, onBack, onOpen }: { topicId: string; chapter?: string; onBack: () => void; onOpen: (id: string) => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['study-interviews', topicId, chapter ?? 'all'],
+    queryFn: () => api<{ interviews: InterviewRow[] }>(`/study/interviews?topicId=${topicId}${chapter ? `&chapter=${encodeURIComponent(chapter)}` : ''}`),
+  })
+  const interviews = data?.interviews ?? []
+  const scored = interviews.filter((i) => typeof i.score === 'number')
+  const avg = scored.length ? Math.round((scored.reduce((a, b) => a + (b.score ?? 0), 0) / scored.length) * 10) / 10 : null
+  const best = scored.length ? Math.max(...scored.map((i) => i.score ?? 0)) : null
+
+  return (
+    <>
+      <Header title="Past interviews" onBack={onBack} />
+      <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {isLoading ? (
+          <Centered><Spinner /></Centered>
+        ) : interviews.length === 0 ? (
+          <div className="flex flex-col items-center px-4 pt-16 text-center">
+            <div className="animate-float mb-3 flex h-16 w-16 items-center justify-center rounded-2xl" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}><History size={26} /></div>
+            <p className="pv-title">No interviews yet</p>
+            <p className="pv-body mt-1 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>Take an AI interview and your scores, feedback and transcripts will be saved here.</p>
+          </div>
+        ) : (
+          <>
+            <Card className="pv-pop mb-5 flex items-center justify-around p-4">
+              <HistoryStat label="Done" value={String(interviews.length)} />
+              <div className="h-8 w-px" style={{ background: 'var(--pv-line)' }} />
+              <HistoryStat label="Avg" value={avg != null ? `${avg}` : '—'} />
+              <div className="h-8 w-px" style={{ background: 'var(--pv-line)' }} />
+              <HistoryStat label="Best" value={best != null ? `${best}` : '—'} />
+            </Card>
+            <div className="flex flex-col gap-3">
+              {interviews.map((iv, i) => {
+                const tone = scoreTone(iv.score)
+                return (
+                  <Card key={iv.id} onClick={() => onOpen(iv.id)} className="pv-rise flex items-center gap-4 p-4" style={{ ['--i' as string]: Math.min(i, 10) }}>
+                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl text-lg font-extrabold" style={{ background: tone.bg, color: tone.fg }}>
+                      {typeof iv.score === 'number' ? iv.score : '—'}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="pv-title truncate">{iv.chapter || (iv.mode === 'viva' ? 'Weak spots' : 'Full subject')}</p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>
+                        <span>{fmtAgo(iv.completedAt ?? iv.createdAt)}</span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1"><Clock size={11} /> {fmtDuration(iv.durationSecs)}</span>
+                        {(iv.brainsEarned ?? 0) > 0 && <><span>·</span><span className="inline-flex items-center gap-1">+{iv.brainsEarned} <BrainCoin size={12} /></span></>}
+                      </p>
+                    </div>
+                    <ChevronRight size={18} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />
+                  </Card>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  )
+}
+
+function InterviewDetailView({ interviewId, onBack }: { interviewId: string; onBack: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['study-interview', interviewId],
+    queryFn: () => api<{ interview: InterviewRow & { transcript?: { role: string; text: string }[]; focusAreas?: string[] } }>(`/study/interviews/${interviewId}`),
+  })
+  const iv = data?.interview
+  const transcript = iv?.transcript ?? []
+  const flags = iv?.focus?.flags ?? []
+
+  if (isLoading || !iv) {
+    return (<><Header title="Interview" onBack={onBack} /><Centered><Spinner /></Centered></>)
+  }
+  const tone = scoreTone(iv.score)
+
+  return (
+    <>
+      <Header title={iv.chapter || 'Interview'} onBack={onBack} />
+      <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className="pv-pop mb-5 flex flex-col items-center text-center">
+          <div className="animate-trophy flex h-24 w-24 items-center justify-center rounded-full text-3xl font-extrabold" style={{ background: tone.bg, color: tone.fg }}>
+            {typeof iv.score === 'number' ? `${iv.score}` : '—'}
+          </div>
+          <p className="mt-1 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>out of 10</p>
+          {iv.summary && <p className="pv-body mt-3 max-w-sm" style={{ color: 'var(--pv-ink-2)' }}>{iv.summary}</p>}
+          <p className="mt-2 flex flex-wrap items-center justify-center gap-x-1.5 text-xs" style={{ color: 'var(--pv-ink-3)' }}>
+            <span>{fmtAgo(iv.completedAt ?? iv.createdAt)}</span>
+            <span>·</span>
+            <span className="inline-flex items-center gap-1"><Clock size={11} /> {fmtDuration(iv.durationSecs)}</span>
+            {(iv.brainsEarned ?? 0) > 0 && <><span>·</span><span className="inline-flex items-center gap-1">+{iv.brainsEarned} <BrainCoin size={12} /> earned</span></>}
+          </p>
+        </div>
+
+        {iv.keepPractising && iv.keepPractising.length > 0 && (
+          <Card className="pv-rise mb-4 p-4" style={{ ['--i' as string]: 0 }}>
+            <p className="pv-label mb-2">Keep practising</p>
+            {iv.keepPractising.map((k, i) => (
+              <p key={i} className="flex items-start gap-2 text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}><span className="pv-text-accent">•</span> {k}</p>
+            ))}
+          </Card>
+        )}
+
+        {flags.length > 0 && (
+          <Card className="pv-rise mb-4 flex items-start gap-2.5 p-4" style={{ ['--i' as string]: 1 }}>
+            <Eye size={16} className="mt-0.5 flex-none" style={{ color: 'var(--pv-warn)' }} />
+            <div>
+              <p className="pv-label mb-1">Focus notes</p>
+              {flags.map((f, i) => <p key={i} className="text-sm" style={{ color: 'var(--pv-ink-2)' }}>{f}</p>)}
+            </div>
+          </Card>
+        )}
+
+        {transcript.length > 0 && (
+          <>
+            <p className="pv-label mb-2 mt-2">Transcript</p>
+            <div className="flex flex-col gap-2 pb-4">
+              {transcript.map((t, i) => {
+                const isKid = t.role === 'kid' || t.role === 'user' || t.role === 'you'
+                return (
+                  <div key={i} className={`pv-rise flex ${isKid ? 'justify-end' : ''}`} style={{ ['--i' as string]: Math.min(i, 12) }}>
+                    <span className="inline-block max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed"
+                      style={isKid ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                      {t.text}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1222,15 +1551,6 @@ async function fileToDocBody(file: File): Promise<Record<string, unknown>> {
     fileType: t.trim().length > 20 ? 'text' : 'file',
     content: t.trim().length > 20 ? t.slice(0, 15000) : `[File: ${file.name}. Generate study concepts relevant to this subject.]`,
   }
-}
-
-function subjectEmoji(subject: string): string {
-  const map: Record<string, string> = {
-    Maths: '📐', Physics: '⚡', Chemistry: '🧪', Biology: '🧬', Science: '🔬',
-    English: '📖', Hindi: '🇮🇳', 'Social Studies': '🌍', 'Computer Science': '💻',
-    Accountancy: '📊', Economics: '💹',
-  }
-  return map[subject] ?? '📚'
 }
 
 function docIcon(fileType: string): string {

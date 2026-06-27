@@ -26,12 +26,13 @@ const ACTIVE = ['pending', 'submitted', 'ai_uncertain', 'ai_rejected']
 
 export type ChoreKid = { id: string; name: string }
 
-export function ChoresSection({ kids, enabled }: { kids: ChoreKid[]; enabled: boolean }) {
+export function ChoresSection({ kids, enabled, onlyKidId }: { kids: ChoreKid[]; enabled: boolean; onlyKidId?: string }) {
   const qc = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
 
   const q = useQuery({ queryKey: ['chores'], queryFn: () => api<ChoresResponse>('/chores'), enabled })
-  const chores = q.data?.chores ?? []
+  const allChores = q.data?.chores ?? []
+  const chores = onlyKidId ? allChores.filter((ch) => ch.assignedTo === onlyKidId) : allChores
 
   const review = useMutation({
     mutationFn: ({ id, status }: { id: string; status: 'parent_approved' | 'parent_rejected' }) => api(`/chores/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
@@ -72,6 +73,15 @@ export function ChoresSection({ kids, enabled }: { kids: ChoreKid[]; enabled: bo
           <span className="flex h-11 w-11 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}><ListChecks size={20} /></span>
           <span className="pv-body" style={{ color: 'var(--pv-ink-2)' }}>{kids.length === 0 ? 'Add a kid first, then assign chores.' : 'No chores yet.'}</span>
         </Card>
+      ) : onlyKidId ? (
+        <div className="flex flex-col gap-2.5">
+          {chores.map((ch, i) => (
+            <ChoreRow key={ch.id} chore={ch} who={kids[0]?.name ?? ''} busy={review.isPending} reporting={report.isPending} index={i}
+              onApprove={() => review.mutate({ id: ch.id, status: 'parent_approved' })}
+              onReject={() => review.mutate({ id: ch.id, status: 'parent_rejected' })}
+              onReport={() => report.mutate(ch.id)} />
+          ))}
+        </div>
       ) : (
         <div className="flex flex-col gap-6">
           {kids.map((kid) => {
@@ -149,7 +159,7 @@ function ChoreRow({ chore, who, busy, reporting, index, onApprove, onReject, onR
   )
 }
 
-function AddChoreSheet({ kids, onClose, onCreated }: { kids: ChoreKid[]; onClose: () => void; onCreated: () => void }) {
+export function AddChoreSheet({ kids, onClose, onCreated }: { kids: ChoreKid[]; onClose: () => void; onCreated: () => void }) {
   const [assignedTo, setAssignedTo] = useState(kids[0]?.id ?? '')
   const [title, setTitle] = useState('')
   const [reward, setReward] = useState('50')

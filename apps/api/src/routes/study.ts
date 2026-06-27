@@ -15,9 +15,12 @@ import {
 import { authedAccountId, requireAuth, type AuthVars } from '../middleware/auth'
 import { logger } from '../logger'
 import { processDocument } from '../services/study-pipeline'
+import { resolveReadUrl } from '../services/storage'
 import { generateTutorSpeech } from '../services/study-tutor-voice'
 import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from '../services/study-rewards'
 import { createInterviewConversation, tavusConfigured } from '../services/tavus'
+import { createAvatarSession, runwayConfigured, attachAvatarKnowledge } from '../services/runway-avatar'
+import { generateBlueprint } from '../services/interview-blueprint'
 import { completeInterview } from '../services/tavus-interview'
 import { loadEnv } from '../env'
 
@@ -143,6 +146,7 @@ study.post('/study/topics/:id/documents', async (c) => {
     fileType: z.enum(['pdf', 'image', 'text', 'file']),
     fileSize: z.number().int().min(0).default(0),
     content: z.string().optional(), // For 'text'/'file' type: raw content directly
+    chapter: z.string().min(1).max(200).trim().optional(), // Lesson name — forces all generated cards into this chapter.
   }).safeParse(body)
   if (!parsed.success) return c.json({ error: 'invalid_body', details: parsed.error.flatten() }, 400)
 
@@ -156,8 +160,9 @@ study.post('/study/topics/:id/documents', async (c) => {
     processingStatus: 'pending',
   }).returning()
 
-  // Kick off async processing (non-blocking)
-  processDocument(doc.id, parsed.data.content).catch(() => undefined)
+  // Kick off async processing (non-blocking). A lesson name (chapter) forces
+  // every generated card into that lesson.
+  processDocument(doc.id, parsed.data.content, parsed.data.chapter).catch(() => undefined)
 
   return c.json({ document: doc }, 201)
 })
@@ -173,6 +178,33 @@ study.get('/study/topics/:id/documents', async (c) => {
     .orderBy(desc(studyDocuments.createdAt))
 
   return c.json({ documents: docs })
+})
+
+// GET /study/documents/:id/url — resolve a material to a short-lived openable
+// URL (signed) so the student can actually view their PDF/image. Ownership-
+// checked. Inline text docs have no file to open.
+study.get('/study/documents/:id/url', async (c) => {
+  const accountId = authedAccountId(c)
+  const docId = c.req.param('id')
+
+  const [doc] = await db
+    .select({ id: studyDocuments.id, fileUrl: studyDocuments.fileUrl, fileType: studyDocuments.fileType })
+    .from(studyDocuments)
+    .where(and(eq(studyDocuments.id, docId), eq(studyDocuments.accountId, accountId)))
+    .limit(1)
+  if (!doc) return c.json({ error: 'not_found' }, 404)
+  if (!doc.fileUrl || doc.fileUrl.startsWith('text://') || doc.fileUrl.startsWith('local://')) {
+    return c.json({ error: 'not_a_file' }, 400)
+  }
+
+  try {
+    const url = await resolveReadUrl(doc.fileUrl)
+    if (!url) return c.json({ error: 'not_openable' }, 400)
+    return c.json({ url, fileType: doc.fileType })
+  } catch (err) {
+    logger.warn({ err: String(err).slice(0, 120), docId }, 'study.doc_url_failed')
+    return c.json({ error: 'resolve_failed' }, 502)
+  }
 })
 
 // POST /study/topics/:id/regenerate — rebuild concepts from current materials.
@@ -299,10 +331,12 @@ study.get('/study/topics/:id/cards', async (c) => {
   const topicId = c.req.param('id')
   const dueOnly = c.req.query('due') === 'true'
   const bookmarkedOnly = c.req.query('bookmarked') === 'true'
+  const chapter = c.req.query('chapter') || undefined
 
   const conditions = [eq(studyCards.topicId, topicId), eq(studyCards.accountId, accountId)]
   if (dueOnly) conditions.push(lte(studyCards.nextReviewAt, new Date()))
   if (bookmarkedOnly) conditions.push(eq(studyCards.bookmarked, true))
+  if (chapter) conditions.push(eq(studyCards.chapter, chapter))
 
   const cards = await db
     .select()
@@ -332,6 +366,83 @@ study.post('/study/cards/:id/bookmark', async (c) => {
 
   await db.update(studyCards).set({ bookmarked: next }).where(eq(studyCards.id, cardId))
   return c.json({ ok: true, bookmarked: next })
+})
+
+// POST /study/cards/:id/cheatsheet — expand a single concept into a rich,
+// kid-friendly "cheat sheet" (definition, key points, example, analogy,
+// optional formula, common mistake). Generated on demand from the card +
+// topic + the student's grade. Ownership-checked.
+study.post('/study/cards/:id/cheatsheet', async (c) => {
+  const accountId = authedAccountId(c)
+  const cardId = c.req.param('id')
+
+  const [card] = await db
+    .select({ id: studyCards.id, front: studyCards.front, back: studyCards.back, topicId: studyCards.topicId, chapter: studyCards.chapter })
+    .from(studyCards)
+    .where(and(eq(studyCards.id, cardId), eq(studyCards.accountId, accountId)))
+    .limit(1)
+  if (!card) return c.json({ error: 'not_found' }, 404)
+
+  const [topic] = await db
+    .select({ title: studyTopics.title })
+    .from(studyTopics)
+    .where(eq(studyTopics.id, card.topicId))
+    .limit(1)
+  const persona = await db
+    .select({ persona: accounts.persona })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1)
+    .then((r) => (r[0]?.persona ?? {}) as Record<string, unknown>)
+  const grade = typeof persona.grade === 'string' ? persona.grade : null
+
+  try {
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a brilliant, friendly tutor making a one-page "cheat sheet" for ONE concept, for a school student${grade ? ` in ${grade}` : ''}. Be accurate, vivid and age-appropriate.
+Return ONLY JSON:
+{
+  "emoji": "<one emoji that represents the concept>",
+  "title": "<short concept title>",
+  "definition": "<one crisp sentence a student can remember>",
+  "keyPoints": ["<3-5 must-know points, each short>"],
+  "example": "<one concrete worked or real-world example>",
+  "analogy": "<\\"Think of it like…\\" — a simple everyday analogy>",
+  "formula": "<a formula/rule if relevant, else empty string>",
+  "mistake": "<the most common mistake students make, and how to avoid it>"
+}`,
+        },
+        {
+          role: 'user',
+          content: `Subject/topic: ${topic?.title ?? 'this subject'}${card.chapter ? ` — lesson: ${card.chapter}` : ''}\nConcept: ${card.front}\nReference explanation: ${card.back}`,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 700,
+    })
+    const p = JSON.parse(res.choices[0]?.message?.content ?? '{}')
+    return c.json({
+      cheatsheet: {
+        emoji: typeof p.emoji === 'string' ? p.emoji : '💡',
+        title: typeof p.title === 'string' && p.title.trim() ? p.title : card.front,
+        definition: typeof p.definition === 'string' ? p.definition : card.back,
+        keyPoints: Array.isArray(p.keyPoints) ? p.keyPoints.slice(0, 6).map(String) : [],
+        example: typeof p.example === 'string' ? p.example : '',
+        analogy: typeof p.analogy === 'string' ? p.analogy : '',
+        formula: typeof p.formula === 'string' ? p.formula : '',
+        mistake: typeof p.mistake === 'string' ? p.mistake : '',
+      },
+    })
+  } catch (err) {
+    // Graceful fallback to the raw card so the screen never dead-ends.
+    logger.warn({ err: String(err).slice(0, 120), cardId }, 'study.cheatsheet_failed')
+    return c.json({
+      cheatsheet: { emoji: '💡', title: card.front, definition: card.back, keyPoints: [], example: '', analogy: '', formula: '', mistake: '' },
+    })
+  }
 })
 
 // GET /study/cards/due — all due cards across topics
@@ -585,12 +696,8 @@ study.post('/study/topics/:id/interview', async (c) => {
     mode,
   }).returning()
 
-  // No Tavus configured → tell the client to use the legacy voice tutor.
-  if (!tavusConfigured()) {
-    return c.json({ interviewId: interview.id, provider: 'legacy', mode, chapter: chapter ?? null }, 201)
-  }
-
-  // Pull the kid's name/grade for a personal greeting + context.
+  // Pull the kid's name/grade for a personal greeting + context (shared by both
+  // the Runway and Tavus interviewers).
   const [acct] = await db
     .select({ persona: accounts.persona })
     .from(accounts)
@@ -599,6 +706,45 @@ study.post('/study/topics/:id/interview', async (c) => {
   const persona = (acct?.persona ?? {}) as Record<string, unknown>
   const kidName = typeof persona.name === 'string' ? persona.name : null
   const grade = typeof persona.grade === 'string' ? persona.grade : null
+
+  // Prefer the Runway avatar interview when configured (real-time GWM-1 avatar —
+  // the custom "Simon" viva interviewer). We generate a PDF-grounded viva
+  // blueprint, attach it to the avatar as its knowledge, then mint a session.
+  if (runwayConfigured()) {
+    try {
+      // Ground the interviewer in this topic's material (best-effort — a
+      // knowledge failure must not block the interview).
+      try {
+        const { knowledgeMarkdown } = await generateBlueprint({
+          topicTitle: topic.title,
+          chapter: chapter ?? null,
+          concepts: cards,
+          kidName,
+          grade,
+        })
+        await attachAvatarKnowledge(
+          knowledgeMarkdown,
+          `Viva — ${topic.title}${chapter ? ` · ${chapter}` : ''}`,
+        )
+      } catch (err) {
+        logger.warn({ err: String(err).slice(0, 160), interviewId: interview.id }, 'study.blueprint_failed')
+      }
+
+      const session = await createAvatarSession()
+      return c.json(
+        { interviewId: interview.id, provider: 'runway', runway: session, mode, chapter: chapter ?? null },
+        201,
+      )
+    } catch (err) {
+      // Never dead-end the kid — fall through to Tavus, then the legacy tutor.
+      logger.warn({ err: String(err).slice(0, 200), interviewId: interview.id }, 'study.runway_create_failed')
+    }
+  }
+
+  // No Tavus configured → tell the client to use the legacy voice tutor.
+  if (!tavusConfigured()) {
+    return c.json({ interviewId: interview.id, provider: 'legacy', mode, chapter: chapter ?? null }, 201)
+  }
 
   const env = loadEnv()
   const callbackUrl = env.PUBLIC_BASE_URL
@@ -641,6 +787,253 @@ study.post('/study/topics/:id/interview', async (c) => {
   }
 })
 
+// ═══════════════════════════════════════════════════════════════════════
+// PARENT OVERSIGHT — a parent monitors their kids' studying (read-only)
+// ═══════════════════════════════════════════════════════════════════════
+
+// The parent's family id, but only for non-kid members (kids can't oversee).
+async function parentFamilyId(accountId: string): Promise<string | null> {
+  const [m] = await db
+    .select({ familyId: memberships.familyId, role: memberships.role })
+    .from(memberships)
+    .where(eq(memberships.accountId, accountId))
+    .limit(1)
+  if (!m || m.role === 'kid') return null
+  return m.familyId
+}
+
+// True if `kidId` is a kid in `familyId`.
+async function kidInFamily(familyId: string, kidId: string): Promise<boolean> {
+  const [m] = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(eq(memberships.familyId, familyId), eq(memberships.accountId, kidId), eq(memberships.role, 'kid')))
+    .limit(1)
+  return !!m
+}
+
+// GET /study/children — the parent's kids, each with a study summary.
+study.get('/study/children', async (c) => {
+  const accountId = authedAccountId(c)
+  const familyId = await parentFamilyId(accountId)
+  if (!familyId) return c.json({ error: 'not_a_parent' }, 403)
+
+  const kids = await db
+    .select({ accountId: memberships.accountId, persona: accounts.persona })
+    .from(memberships)
+    .innerJoin(accounts, eq(accounts.id, memberships.accountId))
+    .where(and(eq(memberships.familyId, familyId), eq(memberships.role, 'kid')))
+
+  const children = await Promise.all(kids.map(async (kid) => {
+    const persona = (kid.persona ?? {}) as Record<string, unknown>
+    const [{ count: subjectCount } = { count: 0 }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(studyTopics)
+      .where(eq(studyTopics.accountId, kid.accountId))
+    const [{ count: interviewCount } = { count: 0 }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(studyInterviews)
+      .where(and(eq(studyInterviews.accountId, kid.accountId), eq(studyInterviews.status, 'completed')))
+    const [lastInterview] = await db
+      .select({ score: studyInterviews.score, completedAt: studyInterviews.completedAt })
+      .from(studyInterviews)
+      .where(and(eq(studyInterviews.accountId, kid.accountId), eq(studyInterviews.status, 'completed')))
+      .orderBy(desc(studyInterviews.completedAt))
+      .limit(1)
+    const [streak] = await db
+      .select({ currentStreak: studyStreaks.currentStreak })
+      .from(studyStreaks)
+      .where(eq(studyStreaks.accountId, kid.accountId))
+      .limit(1)
+    return {
+      accountId: kid.accountId,
+      name: typeof persona.name === 'string' ? persona.name : 'Your child',
+      grade: typeof persona.grade === 'string' ? persona.grade : null,
+      avatar: typeof persona.avatar === 'string' ? persona.avatar : null,
+      subjectCount,
+      interviewCount,
+      lastScore: lastInterview?.score ?? null,
+      lastInterviewAt: lastInterview?.completedAt ?? null,
+      streak: streak?.currentStreak ?? 0,
+    }
+  }))
+
+  return c.json({ children })
+})
+
+// GET /study/children/:kidId/overview — one kid's subjects, stats + recent interviews.
+study.get('/study/children/:kidId/overview', async (c) => {
+  const accountId = authedAccountId(c)
+  const kidId = c.req.param('kidId')
+  const familyId = await parentFamilyId(accountId)
+  if (!familyId) return c.json({ error: 'not_a_parent' }, 403)
+  if (!(await kidInFamily(familyId, kidId))) return c.json({ error: 'forbidden' }, 403)
+
+  const subjects = await db
+    .select({ id: studyTopics.id, title: studyTopics.title, emoji: studyTopics.emoji, totalCards: studyTopics.totalCards, cardsDue: studyTopics.cardsDue })
+    .from(studyTopics)
+    .where(eq(studyTopics.accountId, kidId))
+    .orderBy(desc(studyTopics.createdAt))
+
+  const interviews = await db
+    .select({
+      id: studyInterviews.id,
+      topicId: studyInterviews.topicId,
+      topicTitle: studyTopics.title,
+      topicEmoji: studyTopics.emoji,
+      chapter: studyInterviews.chapter,
+      mode: studyInterviews.mode,
+      score: studyInterviews.score,
+      summary: studyInterviews.summary,
+      durationSecs: studyInterviews.durationSecs,
+      brainsEarned: studyInterviews.brainsEarned,
+      focus: studyInterviews.focus,
+      completedAt: studyInterviews.completedAt,
+      createdAt: studyInterviews.createdAt,
+    })
+    .from(studyInterviews)
+    .leftJoin(studyTopics, eq(studyInterviews.topicId, studyTopics.id))
+    .where(and(eq(studyInterviews.accountId, kidId), eq(studyInterviews.status, 'completed')))
+    .orderBy(desc(studyInterviews.completedAt))
+    .limit(20)
+
+  const [streak] = await db
+    .select({ currentStreak: studyStreaks.currentStreak, longestStreak: studyStreaks.longestStreak })
+    .from(studyStreaks)
+    .where(eq(studyStreaks.accountId, kidId))
+    .limit(1)
+
+  return c.json({ subjects, interviews, streak: streak ?? { currentStreak: 0, longestStreak: 0 } })
+})
+
+// GET /study/children/:kidId/interviews/:id — full detail of a kid's interview
+// (transcript + focus/integrity signals) for the parent.
+study.get('/study/children/:kidId/interviews/:id', async (c) => {
+  const accountId = authedAccountId(c)
+  const kidId = c.req.param('kidId')
+  const interviewId = c.req.param('id')
+  const familyId = await parentFamilyId(accountId)
+  if (!familyId) return c.json({ error: 'not_a_parent' }, 403)
+  if (!(await kidInFamily(familyId, kidId))) return c.json({ error: 'forbidden' }, 403)
+
+  const [iv] = await db
+    .select()
+    .from(studyInterviews)
+    .where(and(eq(studyInterviews.id, interviewId), eq(studyInterviews.accountId, kidId)))
+    .limit(1)
+  if (!iv) return c.json({ error: 'not_found' }, 404)
+
+  const [topic] = await db
+    .select({ title: studyTopics.title, emoji: studyTopics.emoji })
+    .from(studyTopics)
+    .where(eq(studyTopics.id, iv.topicId))
+    .limit(1)
+
+  return c.json({
+    interview: {
+      id: iv.id,
+      topicId: iv.topicId,
+      topicTitle: topic?.title ?? null,
+      topicEmoji: topic?.emoji ?? null,
+      chapter: iv.chapter,
+      mode: iv.mode,
+      score: iv.score,
+      summary: iv.summary,
+      keepPractising: iv.keepPractising,
+      focusAreas: iv.focusAreas,
+      transcript: iv.transcript,
+      focus: iv.focus,
+      durationSecs: iv.durationSecs,
+      brainsEarned: iv.brainsEarned,
+      status: iv.status,
+      completedAt: iv.completedAt,
+      createdAt: iv.createdAt,
+    },
+  })
+})
+
+// GET /study/interviews — past interviews (history + scores). Optional
+// ?topicId= and ?chapter= filters; newest first. Returns completed interviews
+// with their score, summary and headline stats (no transcript — see detail).
+study.get('/study/interviews', async (c) => {
+  const accountId = authedAccountId(c)
+  const topicId = c.req.query('topicId')
+  const chapter = c.req.query('chapter')
+  const limit = Math.min(Number(c.req.query('limit')) || 50, 100)
+
+  const conds = [eq(studyInterviews.accountId, accountId), eq(studyInterviews.status, 'completed')]
+  if (topicId) conds.push(eq(studyInterviews.topicId, topicId))
+  if (chapter) conds.push(eq(studyInterviews.chapter, chapter))
+
+  const rows = await db
+    .select({
+      id: studyInterviews.id,
+      topicId: studyInterviews.topicId,
+      topicTitle: studyTopics.title,
+      topicEmoji: studyTopics.emoji,
+      chapter: studyInterviews.chapter,
+      mode: studyInterviews.mode,
+      score: studyInterviews.score,
+      summary: studyInterviews.summary,
+      durationSecs: studyInterviews.durationSecs,
+      brainsEarned: studyInterviews.brainsEarned,
+      keepPractising: studyInterviews.keepPractising,
+      focus: studyInterviews.focus,
+      completedAt: studyInterviews.completedAt,
+      createdAt: studyInterviews.createdAt,
+    })
+    .from(studyInterviews)
+    .leftJoin(studyTopics, eq(studyInterviews.topicId, studyTopics.id))
+    .where(and(...conds))
+    .orderBy(desc(studyInterviews.completedAt))
+    .limit(limit)
+
+  return c.json({ interviews: rows })
+})
+
+// GET /study/interviews/:id — full detail of one past interview, including the
+// transcript and focus/integrity signals. Ownership-checked.
+study.get('/study/interviews/:id', async (c) => {
+  const accountId = authedAccountId(c)
+  const interviewId = c.req.param('id')
+
+  const [iv] = await db
+    .select()
+    .from(studyInterviews)
+    .where(eq(studyInterviews.id, interviewId))
+    .limit(1)
+  if (!iv) return c.json({ error: 'not_found' }, 404)
+  if (iv.accountId !== accountId) return c.json({ error: 'forbidden' }, 403)
+
+  const [topic] = await db
+    .select({ title: studyTopics.title, emoji: studyTopics.emoji })
+    .from(studyTopics)
+    .where(eq(studyTopics.id, iv.topicId))
+    .limit(1)
+
+  return c.json({
+    interview: {
+      id: iv.id,
+      topicId: iv.topicId,
+      topicTitle: topic?.title ?? null,
+      topicEmoji: topic?.emoji ?? null,
+      chapter: iv.chapter,
+      mode: iv.mode,
+      score: iv.score,
+      summary: iv.summary,
+      keepPractising: iv.keepPractising,
+      focusAreas: iv.focusAreas,
+      transcript: iv.transcript,
+      focus: iv.focus,
+      durationSecs: iv.durationSecs,
+      brainsEarned: iv.brainsEarned,
+      status: iv.status,
+      completedAt: iv.completedAt,
+      createdAt: iv.createdAt,
+    },
+  })
+})
+
 study.post('/study/interviews/:id/complete', async (c) => {
   const accountId = authedAccountId(c)
   const interviewId = c.req.param('id')
@@ -667,6 +1060,75 @@ study.post('/study/interviews/:id/complete', async (c) => {
     return c.json({ error: result.error }, result.error === 'not_found' ? 404 : 403)
   }
   return c.json(result)
+})
+
+// POST /study/interviews/:id/runway-session — mint a fresh Runway avatar
+// session for an existing interview. Used to (re)connect: the first session is
+// returned at interview start, but Runway sessions are one-time use and capped
+// at ~5 minutes, so the client calls this to resume after a timeout or a
+// dropped connection. Ownership-checked.
+study.post('/study/interviews/:id/runway-session', async (c) => {
+  const accountId = authedAccountId(c)
+  const interviewId = c.req.param('id')
+
+  const [iv] = await db
+    .select({ id: studyInterviews.id, accountId: studyInterviews.accountId, status: studyInterviews.status })
+    .from(studyInterviews)
+    .where(eq(studyInterviews.id, interviewId))
+    .limit(1)
+  if (!iv) return c.json({ error: 'not_found' }, 404)
+  if (iv.accountId !== accountId) return c.json({ error: 'forbidden' }, 403)
+  if (iv.status === 'completed') return c.json({ error: 'already_completed' }, 409)
+  if (!runwayConfigured()) return c.json({ error: 'runway_unavailable' }, 503)
+
+  try {
+    const session = await createAvatarSession()
+    return c.json({ provider: 'runway', runway: session })
+  } catch (err) {
+    logger.warn({ err: String(err).slice(0, 200), interviewId }, 'study.runway_session_failed')
+    return c.json({ error: 'runway_session_failed' }, 502)
+  }
+})
+
+// GET /study/topics/:id/blueprint — preview/return the generated oral-viva
+// blueprint for a topic (optionally ?chapter=). Used to preview what will be
+// asked, and as the question plan for the Phase 2 LiveKit agent (Option B).
+study.get('/study/topics/:id/blueprint', async (c) => {
+  const accountId = authedAccountId(c)
+  const topicId = c.req.param('id')
+  const chapter = c.req.query('chapter') || null
+
+  const [topic] = await db
+    .select({ id: studyTopics.id, title: studyTopics.title })
+    .from(studyTopics)
+    .where(and(eq(studyTopics.id, topicId), eq(studyTopics.accountId, accountId)))
+    .limit(1)
+  if (!topic) return c.json({ error: 'topic_not_found' }, 404)
+
+  const conds = [eq(studyCards.topicId, topicId), eq(studyCards.accountId, accountId)]
+  if (chapter) conds.push(eq(studyCards.chapter, chapter))
+  const cards = await db
+    .select({ front: studyCards.front, back: studyCards.back })
+    .from(studyCards)
+    .where(and(...conds))
+    .limit(24)
+  if (cards.length === 0) return c.json({ error: 'no_concepts' }, 400)
+
+  const persona = await db
+    .select({ persona: accounts.persona })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1)
+    .then((r) => (r[0]?.persona ?? {}) as Record<string, unknown>)
+
+  const { blueprint, focusAreas } = await generateBlueprint({
+    topicTitle: topic.title,
+    chapter,
+    concepts: cards,
+    kidName: typeof persona.name === 'string' ? persona.name : null,
+    grade: typeof persona.grade === 'string' ? persona.grade : null,
+  })
+  return c.json({ blueprint, focusAreas })
 })
 
 // ═══════════════════════════════════════════════════════════════════════

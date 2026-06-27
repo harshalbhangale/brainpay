@@ -62,7 +62,7 @@ export async function scoreInterview(focusAreas: string[], transcript: Transcrip
       messages: [
         {
           role: 'system',
-          content: `You are grading a kid's spoken study interview. Judge how well they EXPLAINED the ideas in their own words (understanding, not just recall). Be honest but encouraging.
+          content: `You are examining a student's spoken oral viva. Judge how well they EXPLAINED and REASONED about the ideas in their own words — understanding, application and the ability to think/explore, not just recall. Weigh: understanding, application, reasoning, and communication. Be honest but encouraging.
 Return ONLY JSON: {"score": <integer 1-10>, "summary": "<warm one-sentence summary>", "keepPractising": ["<1-3 specific, actionable things to practise; name the concept>"]}`,
         },
         {

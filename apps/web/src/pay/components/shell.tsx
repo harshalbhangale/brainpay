@@ -10,7 +10,7 @@ import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { PressButton } from './primitives'
 
-export type TabKey = 'home' | 'family' | 'chores' | 'activity' | 'cards'
+export type TabKey = 'home' | 'family' | 'chores' | 'activity' | 'cards' | 'map'
 
 /* ─────────────────────────────────────────────────────────────── PhoneCanvas */
 export function PhoneCanvas({ children, pal }: { children: ReactNode; pal?: string }) {

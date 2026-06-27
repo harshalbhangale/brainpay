@@ -18,6 +18,7 @@ import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../../lib/liv
 import { avatarSrc, useAvatar } from '../../lib/avatar'
 import { getVoiceKey } from '../../lib/voicePrefs'
 import { appendVoiceLines } from '../../lib/voiceHistory'
+import { useSessionStore } from '../lib/sessions'
 import { VrmCompanion, type CompanionMood } from '../../components/VrmCompanion'
 
 const FRAME_INTERVAL_MS = 1000
@@ -64,6 +65,8 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   const cancelledRef = useRef(false)
   const inFlightRef = useRef(false)
   const zoomRef = useRef(1)
+  // Records this live session into the History log (lazily, on the first turn).
+  const sessionIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -114,6 +117,14 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
               ]
               setTranscript((prev) => [...prev, ...lines].slice(-60))
               appendVoiceLines(lines.map((l) => ({ role: l.role, text: l.text })))
+              // Mirror into the History sessions log (text/voice/camera/avatar).
+              if (!sessionIdRef.current) {
+                sessionIdRef.current = useSessionStore.getState().start(
+                  withCamera ? 'camera' : 'voice',
+                  withCamera ? 'Point & Ask' : 'Talk to Mika',
+                )
+              }
+              useSessionStore.getState().append(sessionIdRef.current, lines.map((l) => ({ role: l.role, text: l.text })))
             }
             pendingUserRef.current = ''
             replyBufRef.current = ''

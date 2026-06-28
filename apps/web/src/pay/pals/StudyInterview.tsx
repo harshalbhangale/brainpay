@@ -30,7 +30,7 @@ type Phase = 'intro' | 'starting' | 'live' | 'fallback' | 'scoring' | 'done' | '
 type TranscriptLine = { role: string; text: string }
 type Focus = { lookingPct?: number; flags?: string[]; notes?: string }
 type Result = { brainsEarned?: number; score?: number | null; summary?: string | null; keepPractising?: string[]; focus?: Focus | null; analysis?: InterviewAnalysis | null }
-type RunwayCreds = { sessionId: string; serverUrl: string; token: string; roomName: string; avatarId?: string }
+type RunwayCreds = { sessionId: string; serverUrl: string; token: string; roomName: string; avatarId?: string; tutorName?: string }
 type StartResp = {
   interviewId: string
   provider: 'tavus' | 'legacy' | 'runway'
@@ -331,7 +331,7 @@ export function InterviewView({ topicId, initialChapter, onBack, onChat }: { top
   // and cause the page to scroll on mobile.
   return session?.provider === 'runway' && session.runway ? (
     <Suspense fallback={<LiveLoading />}>
-      <RunwayStage interviewId={session.interviewId} credentials={session.runway} onEnd={finish} onAbort={abort} />
+      <RunwayStage interviewId={session.interviewId} credentials={session.runway} tutorName={session.runway.tutorName} onEnd={finish} onAbort={abort} />
     </Suspense>
   ) : session ? (
     <TavusStage url={session.url} token={session.token} onEnd={finish} onAbort={abort} />

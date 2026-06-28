@@ -111,8 +111,10 @@ const EnvSchema = z.object({
 
   // Runway Characters (GWM-1) — real-time conversational avatar for StudyPal
   // interviews. Server-side only. When RUNWAYML_API_SECRET + RUNWAY_AVATAR_ID
-  // are set, the interview uses the Runway avatar; otherwise it falls back to
+  // are set, the interview uses a Runway avatar; otherwise it falls back to
   // Tavus, then the legacy Gemini-Live voice tutor, so nothing dead-ends.
+  // RUNWAY_AVATAR_ID may be a single id OR a comma-separated pool of ids, in
+  // which case one character is chosen per interview (uniformly at random).
   RUNWAYML_API_SECRET: z.string().min(1).optional(),
   RUNWAY_AVATAR_ID: z.string().min(1).optional(),
   RUNWAY_API_BASE: z.string().url().default('https://api.dev.runwayml.com'),

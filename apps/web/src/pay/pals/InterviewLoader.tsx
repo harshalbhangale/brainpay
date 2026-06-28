@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react'
 import { GraduationCap, Sparkles } from 'lucide-react'
 
 const DEFAULT_MESSAGES = [
-  'Connecting you to Principal Simon…',
+  'Connecting you to your tutor…',
   'Warming up the camera & mic…',
   'Skimming your lesson notes…',
   'Lining up your questions…',

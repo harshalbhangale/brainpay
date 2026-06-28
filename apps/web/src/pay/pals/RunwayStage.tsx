@@ -53,11 +53,12 @@ const CONNECT_TIMEOUT_MS = 30000
 export type RunwayStageProps = {
   interviewId: string
   credentials: SessionCredentials
+  tutorName?: string
   onEnd: (p: { transcript: TranscriptLine[]; durationSecs: number; focus?: Focus }) => void
   onAbort: (message?: string, detail?: string) => void
 }
 
-export function RunwayStage({ interviewId, credentials, onEnd, onAbort }: RunwayStageProps) {
+export function RunwayStage({ interviewId, credentials, tutorName, onEnd, onAbort }: RunwayStageProps) {
   // Credentials are one-time use; if the first connect fails before we ever go
   // live we fetch a fresh session once and remount via the `key`.
   const [creds, setCreds] = useState<SessionCredentials>(credentials)
@@ -86,7 +87,7 @@ export function RunwayStage({ interviewId, credentials, onEnd, onAbort }: Runway
       video
       onError={handleError}
     >
-      <Inner onReached={() => { reachedRef.current = true }} onEnd={onEnd} onAbort={onAbort} />
+      <Inner tutorName={tutorName} onReached={() => { reachedRef.current = true }} onEnd={onEnd} onAbort={onAbort} />
       {/* Plays the avatar tutor's voice — without this the call is silent. */}
       <AudioRenderer />
     </AvatarSession>
@@ -94,10 +95,12 @@ export function RunwayStage({ interviewId, credentials, onEnd, onAbort }: Runway
 }
 
 function Inner({
+  tutorName,
   onReached,
   onEnd,
   onAbort,
 }: {
+  tutorName?: string
   onReached: () => void
   onEnd: RunwayStageProps['onEnd']
   onAbort: RunwayStageProps['onAbort']
@@ -202,6 +205,7 @@ function Inner({
   const mm = String(Math.floor(remaining / 60)).padStart(1, '0')
   const ss = String(remaining % 60).padStart(2, '0')
   const lowTime = remaining <= 30
+  const tutor = tutorName?.trim() || 'Your tutor'
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden" style={{ background: '#0b0c0f', height: '100dvh' }}>
@@ -220,7 +224,7 @@ function Inner({
           {/* Name pill */}
           <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: 'rgba(11,12,15,0.5)', backdropFilter: 'blur(8px)' }}>
             {isLive && <span className="pv-live-pulse h-2 w-2 rounded-full" style={{ background: 'var(--pv-pos)' }} />}
-            <span className="text-sm font-bold text-white">Principal Simon</span>
+            <span className="text-sm font-bold text-white">{tutor}</span>
           </div>
 
           {/* Timer + proctored */}
@@ -290,8 +294,8 @@ function Inner({
               status === 'ending'
                 ? ['Wrapping up your interview…', 'Scoring your answers…', 'Tallying your Brains…']
                 : status === 'waiting'
-                  ? ['Principal Simon is joining…', 'Almost there…', 'Get ready to explain out loud!']
-                  : undefined
+                  ? [`${tutor} is joining…`, 'Almost there…', 'Get ready to explain out loud!']
+                  : [`Connecting you to ${tutor}…`, 'Warming up the camera & mic…', 'Skimming your lesson notes…', 'Lining up your questions…']
             }
           />
         </div>

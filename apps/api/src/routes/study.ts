@@ -19,7 +19,7 @@ import { resolveReadUrl } from '../services/storage'
 import { generateTutorSpeech } from '../services/study-tutor-voice'
 import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from '../services/study-rewards'
 import { createInterviewConversation, tavusConfigured } from '../services/tavus'
-import { createAvatarSession, runwayConfigured, attachAvatarKnowledge } from '../services/runway-avatar'
+import { createAvatarSession, runwayConfigured, attachAvatarKnowledge, pickAvatarId } from '../services/runway-avatar'
 import { generateBlueprint } from '../services/interview-blueprint'
 import { completeInterview } from '../services/tavus-interview'
 import { loadEnv } from '../env'
@@ -712,8 +712,10 @@ study.post('/study/topics/:id/interview', async (c) => {
   // blueprint, attach it to the avatar as its knowledge, then mint a session.
   if (runwayConfigured()) {
     try {
-      // Ground the interviewer in this topic's material (best-effort — a
-      // knowledge failure must not block the interview).
+      // Pick the character once (deterministic by interview id so any reconnect
+      // lands on the same face), ground THAT avatar in this topic's material,
+      // then mint a session bound to it.
+      const avatarId = pickAvatarId(interview.id)
       try {
         const { knowledgeMarkdown } = await generateBlueprint({
           topicTitle: topic.title,
@@ -725,12 +727,13 @@ study.post('/study/topics/:id/interview', async (c) => {
         await attachAvatarKnowledge(
           knowledgeMarkdown,
           `Viva — ${topic.title}${chapter ? ` · ${chapter}` : ''}`,
+          avatarId,
         )
       } catch (err) {
         logger.warn({ err: String(err).slice(0, 160), interviewId: interview.id }, 'study.blueprint_failed')
       }
 
-      const session = await createAvatarSession()
+      const session = await createAvatarSession({ avatarId })
       return c.json(
         { interviewId: interview.id, provider: 'runway', runway: session, mode, chapter: chapter ?? null },
         201,
@@ -1086,7 +1089,7 @@ study.post('/study/interviews/:id/runway-session', async (c) => {
   if (!runwayConfigured()) return c.json({ error: 'runway_unavailable' }, 503)
 
   try {
-    const session = await createAvatarSession()
+    const session = await createAvatarSession({ seed: interviewId })
     return c.json({ provider: 'runway', runway: session })
   } catch (err) {
     logger.warn({ err: String(err).slice(0, 200), interviewId }, 'study.runway_session_failed')

@@ -78,11 +78,11 @@ export async function generateBlueprint(input: {
       messages: [
         {
           role: 'system',
-          content: `You design a SHORT, formal oral viva (spoken examination) for a student, grounded ONLY in the provided concepts (which came from their study material). The viva must test genuine understanding and the ability to think and explore — not rote recall.
+          content: `You design a SHORT (about 3 minutes), BRISK oral viva (spoken examination) for a student, grounded ONLY in the provided concepts (which came from their study material). It must test genuine understanding and the ability to think and explore — NOT rote recall. The examiner moves fast and asks as many questions as fit in 3 minutes, so give a rich, well-ordered plan of CHALLENGING questions.
 
 Return ONLY JSON matching:
 {
-  "opening": "<one warm but formal sentence to open the viva and ask the first question>",
+  "opening": "<a brief warm greeting (e.g. 'Good morning!') that goes STRAIGHT into the first real question — no 'how can I help', no preamble>",
   "segments": [
     {
       "concept": "<concept label>",
@@ -97,8 +97,9 @@ Return ONLY JSON matching:
 }
 
 Rules:
-- Cover 4-7 of the most important concepts; 2-3 layered questions each, climbing difficulty.
-- Vary question types across the viva; do NOT use the same type twice in a row.
+- Cover 5-8 of the most important concepts; 2 layered questions each, ordered HARDEST / most-revealing first so the best questions get asked even if time runs short.
+- Favour challenging question types — explain, apply, what_if, spot_mistake, connect. Use recall sparingly, only as a quick warm-up. NEVER ask trivial yes/no or one-word questions.
+- Vary question types; do NOT use the same type twice in a row.
 - Questions must be answerable from the concepts; never invent facts beyond them.
 - Keep each question to ONE spoken sentence. ${who}`,
         },
@@ -115,7 +116,7 @@ Rules:
       blueprint = {
         topicTitle: input.topicTitle,
         chapter: input.chapter ?? null,
-        opening: typeof parsed.opening === 'string' ? parsed.opening : `Let's begin your viva on ${input.topicTitle}.`,
+        opening: typeof parsed.opening === 'string' ? parsed.opening : `Good to see you — let's get straight into ${input.topicTitle}. First question:`,
         segments: parsed.segments.map((s) => ({
           concept: String(s?.concept ?? 'Concept'),
           questions: Array.isArray(s?.questions)
@@ -145,7 +146,7 @@ Rules:
     blueprint = {
       topicTitle: input.topicTitle,
       chapter: input.chapter ?? null,
-      opening: `Let's begin a short viva on ${input.topicTitle}. Take your time.`,
+      opening: `Good to see you — let's get straight into ${input.topicTitle}. First question coming up.`,
       segments: concepts.slice(0, 6).map((c) => ({
         concept: c.front,
         questions: [
@@ -174,7 +175,7 @@ export function renderKnowledgeMarkdown(bp: InterviewBlueprint): string {
   const lines: string[] = []
   lines.push(`# Oral Viva Plan — ${bp.topicTitle}${bp.chapter ? ` (${bp.chapter})` : ''}`)
   lines.push('')
-  lines.push('You are conducting a formal but warm oral viva using the plan below. Ask ONE question at a time, listen, then respond to what the student actually says. Climb in difficulty. Cover the concepts in order but follow the conversation naturally. Never read this plan aloud, and never reveal the rubric or answers.')
+  lines.push('You are running a brisk ~3-minute oral exam using the plan below. Open with a quick greeting and your FIRST question immediately — never say "how can I help" or wait to be prompted; the student is here to be examined. Ask ONE challenging question at a time, listen, react in a few words, then go straight to the next. Keep a fast pace and get through as many questions as you can in the time. Prefer "why / what-if / how would you use this / explain the difference / what is wrong with this" questions over simple recall. Climb in difficulty: if they nail it, push harder; if they are stuck, give ONE quick hint and move on. Never read this plan aloud, and never reveal the rubric or answers.')
   lines.push('')
   lines.push(`## Opening\n${bp.opening}`)
   lines.push('')

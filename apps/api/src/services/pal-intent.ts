@@ -114,6 +114,24 @@ Rules:
 - Never invent kids that aren't in the family context.
 - Return ONLY valid JSON. No explanation.`
 
+/**
+ * An action intent is only worth surfacing as a confirm card if it actually has
+ * what it needs to execute. Otherwise we treat the message as a plain query so
+ * PAL asks for the missing details conversationally (no dead-end card).
+ */
+function intentIsActionable(i: ParsedIntent): boolean {
+  switch (i.kind) {
+    case 'add_chore': return !!(i.kidAccountId && i.title)
+    case 'topup': return !!(i.kidAccountId && i.brainsDelta)
+    case 'set_goal': return !!(i.kidAccountId && i.goalName)
+    case 'contribute_goal': return !!(i.kidAccountId && i.brainsDelta)
+    case 'send_note': return !!(i.kidAccountId && i.message)
+    case 'create_rule': return !!i.ruleText
+    case 'remember': return !!i.fact
+    default: return true // query
+  }
+}
+
 export async function parseIntent(
   message: string,
   ctx: PalContext,
@@ -150,12 +168,21 @@ export async function parseIntent(
 
     // Resolve kidAccountId from name (for any intent that names a kid).
     if ('kidName' in raw && raw.kidName) {
-      const match = ctx.kids.find(
-        (k) => k.name.toLowerCase() === raw.kidName!.toLowerCase(),
-      )
+      const want = String(raw.kidName).toLowerCase().trim()
+      const match = ctx.kids.find((k) => {
+        const name = k.name.toLowerCase().trim()
+        return name === want || name.startsWith(want) || want.startsWith(name) || name.split(' ')[0] === want
+      })
       if (match) {
         (raw as AddChoreIntent | TopupIntent | SetGoalIntent | ContributeGoalIntent | SendNoteIntent | RememberIntent).kidAccountId = match.accountId
       }
+    }
+
+    // Don't surface a confirmation card we can't actually fulfil — fall back to
+    // a conversational reply that asks for the missing piece.
+    if (!intentIsActionable(raw)) {
+      logger.info({ kind: raw.kind, message: message.slice(0, 50) }, 'pal.intent_incomplete')
+      return { kind: 'query' }
     }
 
     logger.info({ kind: raw.kind, message: message.slice(0, 50) }, 'pal.intent_parsed')

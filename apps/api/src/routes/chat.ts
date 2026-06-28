@@ -153,17 +153,20 @@ chat.post('/chat/execute', async (c) => {
     .object({
       intent: z.object({
         kind: z.enum(['add_chore', 'topup', 'set_goal', 'contribute_goal', 'send_note', 'create_rule', 'remember']),
-        kidName: z.string().optional(),
-        kidAccountId: z.string().uuid().optional(),
-        title: z.string().optional(),
-        rewardBrains: z.number().int().positive().optional(),
-        brainsDelta: z.number().int().positive().optional(),
-        note: z.string().optional(),
-        goalName: z.string().optional(),
-        targetBrains: z.number().int().positive().optional(),
-        message: z.string().max(500).optional(),
-        ruleText: z.string().max(300).optional(),
-        fact: z.string().max(300).optional(),
+        // The intent parser (and the LLM behind it) may emit `null` for fields it
+        // can't fill, so accept null/undefined and coerce numbers. Domain guards
+        // below turn any genuinely-missing field into a friendly error.
+        kidName: z.string().nullish(),
+        kidAccountId: z.string().uuid().nullish(),
+        title: z.string().nullish(),
+        rewardBrains: z.coerce.number().int().positive().nullish(),
+        brainsDelta: z.coerce.number().int().positive().nullish(),
+        note: z.string().nullish(),
+        goalName: z.string().nullish(),
+        targetBrains: z.coerce.number().int().positive().nullish(),
+        message: z.string().max(500).nullish(),
+        ruleText: z.string().max(300).nullish(),
+        fact: z.string().max(300).nullish(),
       }),
     })
     .safeParse(body)

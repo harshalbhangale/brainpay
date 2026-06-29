@@ -15,7 +15,7 @@ import { ArrowUp, Sparkles } from 'lucide-react'
 import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
 import { planFor, type Choice, type Question } from './personaPlan'
-import { PersonaOrb, type Facet } from './PersonaOrb'
+import { PersonaNebula, type Facet } from './PersonaNebula'
 
 type Turn = { id: number; who: 'pal' | 'you'; text: string }
 let tid = 1
@@ -125,11 +125,33 @@ export function PersonaChat({ role, onDone }: { role: 'parent' | 'kid'; onDone: 
 
       {/* Orb header — pinned, the centerpiece */}
       <div className="relative z-10 flex flex-none flex-col items-center pt-5">
-        <PersonaOrb facets={facets} total={plan.length} identityHue={identityHue} thinking={thinking} done={phase === 'done'} />
-        <div className="mt-1 flex items-center gap-2">
+        <PersonaNebula facets={facets} total={plan.length} identityHue={identityHue} thinking={thinking} done={phase === 'done'} />
+        <div className="mt-2 flex items-center gap-2">
           <span className="pv-eyebrow">{phase === 'done' ? 'Persona ready' : phase === 'saving' ? 'Saving' : 'Building your BrainPal'}</span>
           <span className="pv-amount text-xs" style={{ color: 'var(--pv-ink-3)' }}>{pct}%</span>
         </div>
+
+        {/* Captured traits — pop in as they're learned. */}
+        <div className="mt-2 flex max-w-[340px] flex-wrap justify-center gap-1.5 px-4">
+          <AnimatePresence>
+            {facets.map((f) => (
+              <motion.span
+                key={f.id}
+                layout
+                initial={{ opacity: 0, scale: 0.6, y: 6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.6 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+                className="pv-glass flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold"
+                style={{ color: 'var(--pv-ink)' }}
+              >
+                <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: `hsl(${f.hue} 80% 52%)` }} />
+                {f.label}
+              </motion.span>
+            ))}
+          </AnimatePresence>
+        </div>
+
         {phase === 'done' && personaName && (
           <motion.div
             className="pv-glass pv-hairline mt-3 flex items-center gap-2 rounded-full px-4 py-2"

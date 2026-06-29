@@ -27,9 +27,12 @@ export function PhoneCanvas({ children, pal }: { children: ReactNode; pal?: stri
       {/* Linear-style ambient gradient field, behind everything. */}
       <div className="pv-mesh" aria-hidden />
 
-      {/* App-width column. Reads as a phone on desktop, full-bleed on mobile. */}
+      {/* App-width column. Reads as a phone on desktop, full-bleed on mobile.
+          Bounded to the viewport height (not min-height) so the inner screens
+          own their scrolling — the chat composer and MoneyPal's bottom nav stay
+          pinned while only the message/list area scrolls. */}
       <div
-        className="relative z-10 flex min-h-[100dvh] w-full max-w-[460px] flex-col"
+        className="relative z-10 flex h-[100dvh] max-h-[100dvh] w-full min-h-0 max-w-[460px] flex-col"
         style={{ paddingTop: 'max(0px, env(safe-area-inset-top))' }}
       >
         {children}

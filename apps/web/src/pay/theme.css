@@ -203,6 +203,32 @@
   color: var(--pv-on-dark);
 }
 
+/* Composer — the chat input box. Suppress the harsh black focus outline on the
+   inner textarea and instead glow the whole glass box with a soft accent ring. */
+.pv .pv-composer textarea:focus,
+.pv .pv-composer textarea:focus-visible { outline: none; }
+.pv .pv-composer:focus-within {
+  border-color: color-mix(in srgb, var(--pv-accent) 55%, rgba(255, 255, 255, 0.7));
+  box-shadow: var(--pv-shadow-md), 0 0 0 3px color-mix(in srgb, var(--pv-accent) 26%, transparent);
+}
+
+/* Floating glass menu (e.g. the Pal picker dropdown) — frosted + springs open
+   from its trigger's corner. More pronounced blur than a panel so it clearly
+   reads as glass when it floats over content. */
+@keyframes pv-menu-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.94); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pv .pv-menu {
+  background: rgba(255, 255, 255, 0.46);
+  -webkit-backdrop-filter: blur(28px) saturate(185%);
+  backdrop-filter: blur(28px) saturate(185%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: var(--pv-shadow-lg);
+  transform-origin: bottom left;
+  animation: pv-menu-in 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
 /* Luminous hairline edge via gradient mask — the Linear card rim that catches
    light at the top-left and warms toward the accent at the bottom. Attach to a
    positioned element with a matching border-radius. */

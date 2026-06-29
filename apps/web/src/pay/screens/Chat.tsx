@@ -440,7 +440,7 @@ function Composer({ value, disabled, placeholder, onChange, onSend, onScan, onVo
       {/* Tap-away layer for the Pals popover */}
       {palOpen && <button aria-hidden tabIndex={-1} className="fixed inset-0 z-10 cursor-default" onClick={() => setPalOpen(false)} />}
 
-      <div className="pv-glass pv-hairline relative z-20 rounded-[28px] p-2">
+      <div className="pv-composer pv-glass pv-hairline relative z-20 rounded-[28px] p-2">
         {/* Attachment tray — grows the box; sits ABOVE the input */}
         {(attachOpen || images.length > 0) && (
           <div className="pv-rise px-1 pb-2 pt-1">
@@ -495,7 +495,7 @@ function Composer({ value, disabled, placeholder, onChange, onSend, onScan, onVo
             </button>
 
             {palOpen && (
-              <div className="pv-pop pv-glass pv-hairline absolute bottom-12 left-0 z-30 w-56 rounded-2xl p-2">
+              <div className="pv-menu pv-hairline absolute bottom-12 left-0 z-30 w-56 rounded-2xl p-2">
                 <div className="pv-label px-2 pb-1">Who answers</div>
                 <PalRow label="Auto" hint="Best Pals chime in" active={selectedAgents.length === 0} onClick={onAuto} />
                 {SPECIALISTS.map((a) => (

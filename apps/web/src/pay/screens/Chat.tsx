@@ -193,24 +193,26 @@ export function Chat({ onClose }: { onClose?: () => void }) {
       )}
       {pickChore && <ChorePickerSheet onClose={() => setPickChore(false)} />}
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="pv-mesh" aria-hidden />
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         {/* Header */}
         <div className="flex flex-none items-center gap-2 px-4 pb-2 pt-2">
           {onClose && (
-            <button onClick={onClose} aria-label="Back" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+            <button onClick={onClose} aria-label="Back" className="pv-press pv-glass flex h-10 w-10 items-center justify-center rounded-full">
               <ChevronLeft size={20} />
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <div className="pv-title leading-tight">Your Pals</div>
+            <div className="pv-title pv-tight leading-tight">Your Pals</div>
             <div className="truncate pt-0.5 text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
               {selectedAgents.length === 0 ? 'Auto · your Pals chime in' : `Talking to ${palLabel}`}
             </div>
           </div>
-          <button onClick={() => openHistory()} aria-label="History" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+          <button onClick={() => openHistory()} aria-label="History" className="pv-press pv-glass flex h-10 w-10 items-center justify-center rounded-full">
             <HistoryIcon size={18} style={{ color: 'var(--pv-ink-2)' }} />
           </button>
-          <button onClick={newChat} aria-label="New chat" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+          <button onClick={newChat} aria-label="New chat" className="pv-press pv-glass flex h-10 w-10 items-center justify-center rounded-full">
             <SquarePen size={18} style={{ color: 'var(--pv-ink-2)' }} />
           </button>
         </div>
@@ -228,8 +230,8 @@ export function Chat({ onClose }: { onClose?: () => void }) {
           <div className="flex flex-none px-3 pt-1">
             <button
               onClick={() => setPickChore(true)}
-              className="pv-press pv-pop flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold"
-              style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-accent)' }}
+              className="pv-press pv-pop pv-glass flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold"
+              style={{ color: 'var(--pv-accent)' }}
             >
               <ListChecks size={16} /> Verify a chore
             </button>
@@ -248,6 +250,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
 
         {/* Composer */}
         <Composer value={input} disabled={sending} placeholder={selectedAgents.length === 0 ? 'Message your Pals…' : `Ask ${palLabel}…`} onChange={setInput} onSend={() => sendText(input)} onCamera={() => setLive({ camera: true })} onVoice={() => setLive({ camera: false })} />
+        </div>
       </div>
     </>
   )
@@ -257,13 +260,13 @@ function EmptyState({ onPick }: { onPick: (t: string) => void }) {
   return (
     <div className="flex flex-col items-center px-4 pt-8 text-center">
       <div className="pv-scale-in mb-4"><AgentOrb agent={AGENTS.pal} size={72} aura /></div>
-      <div className="pv-h2 pv-rise">Ask your Pals</div>
+      <div className="pv-h2 pv-tight pv-rise">Ask your Pals</div>
       <p className="pv-body pv-rise mt-1.5 max-w-xs" style={{ animationDelay: '0.08s', color: 'var(--pv-ink-2)' }}>
         Ask anything and your Pals answer. Leave it on <b>Auto</b> and the right ones jump in — or pick MoneyPal, StudyPal or HealthPal below.
       </p>
       <div className="mt-5 flex w-full flex-col gap-2.5">
         {SUGGESTIONS.map((s, i) => (
-          <button key={s} onClick={() => onPick(s)} className="pv-press pv-pop rounded-2xl px-4 py-3.5 text-left text-sm font-semibold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', animationDelay: `${i * 50}ms` }}>
+          <button key={s} onClick={() => onPick(s)} className="pv-press pv-pop pv-glass pv-hairline rounded-2xl px-4 py-3.5 text-left text-sm font-semibold" style={{ animationDelay: `${i * 50}ms` }}>
             {s}
           </button>
         ))}
@@ -294,8 +297,8 @@ function AgentBubble({ agent, content, index }: { agent: Agent; content: string;
           </div>
         )}
         <div
-          className="whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed"
-          style={isPal ? { background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', borderBottomLeftRadius: 6 } : { background: `${agent.color}1a`, boxShadow: `inset 0 0 0 1px ${agent.color}33`, borderBottomLeftRadius: 6 }}
+          className={`whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${isPal ? 'pv-glass' : ''}`}
+          style={isPal ? { borderBottomLeftRadius: 6 } : { background: `${agent.color}1a`, boxShadow: `inset 0 0 0 1px ${agent.color}33`, borderBottomLeftRadius: 6 }}
           // index reserved for future stagger
           data-i={index}
         >
@@ -314,7 +317,7 @@ function Conferring() {
           <AgentOrb key={a.id} agent={a} size={28} ring />
         ))}
       </div>
-      <div className="flex items-center gap-1.5 rounded-2xl px-3.5 py-2.5" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+      <div className="pv-glass flex items-center gap-1.5 rounded-2xl px-3.5 py-2.5">
         <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '0ms' }} />
         <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '160ms' }} />
         <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '320ms' }} />
@@ -326,11 +329,11 @@ function Conferring() {
 
 function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="pv-pop rounded-2xl p-4" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-md)' }}>
+    <div className="pv-pop pv-glass pv-hairline rounded-2xl p-4">
       <div className="pv-label pv-text-accent">PAL wants to</div>
       <div className="mt-1 font-bold">{describeIntent(intent)}</div>
       <div className="mt-3 flex gap-2">
-        <button onClick={onCancel} className="pv-press flex-1 rounded-full py-2.5 text-sm font-bold" style={{ background: 'var(--pv-surface-2)' }}>Cancel</button>
+        <button onClick={onCancel} className="pv-press pv-glass-soft flex-1 rounded-full py-2.5 text-sm font-bold">Cancel</button>
         <button onClick={onConfirm} className="pv-press-lg pv-sheen flex-1 rounded-full py-2.5 text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>Confirm</button>
       </div>
     </div>
@@ -342,10 +345,10 @@ function PalChip({ label, Icon, color, active, onClick }: { label: string; Icon?
     <button
       onClick={onClick}
       aria-pressed={active}
-      className="pv-press flex flex-none items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold"
+      className={`pv-press flex flex-none items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold ${active ? '' : 'pv-glass'}`}
       style={active
         ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }
-        : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}
+        : { color: 'var(--pv-ink-2)' }}
     >
       {Icon && <Icon size={14} style={{ color: active ? 'var(--pv-on-accent)' : color }} />}
       {label}
@@ -359,13 +362,13 @@ function Composer({ value, disabled, placeholder, onChange, onSend, onCamera, on
   const canSend = !disabled && !!value.trim()
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSend() }} className="flex items-center gap-2 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
-      <button type="button" onClick={onCamera} aria-label="Point the camera and ask" className="pv-press flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-accent)' }}>
+      <button type="button" onClick={onCamera} aria-label="Point the camera and ask" className="pv-press pv-glass flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }}>
         <Camera size={20} />
       </button>
-      <button type="button" onClick={onVoice} aria-label="Talk to PAL" className="pv-press flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-accent)' }}>
+      <button type="button" onClick={onVoice} aria-label="Talk to PAL" className="pv-press pv-glass flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }}>
         <AudioLines size={20} />
       </button>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-12 flex-1 rounded-full px-4 outline-none" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink)' }} />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="pv-glass h-12 flex-1 rounded-full px-4 outline-none" style={{ color: 'var(--pv-ink)' }} />
       <button type="submit" disabled={!canSend} aria-label="Send" className="pv-press-lg pv-sheen flex h-12 w-12 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: canSend ? 'var(--pv-shadow-pop)' : undefined }}>
         <ArrowUp size={20} strokeWidth={2.8} />
       </button>

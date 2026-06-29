@@ -122,10 +122,10 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between px-5 pb-2 pt-4">
-        <span className="rounded-full px-3 py-1.5 text-xs font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+        <span className="pv-glass rounded-full px-3 py-1.5 text-xs font-bold">
           {phase === 'live' ? 'Meeting Mika' : phase === 'saving' ? 'Saving…' : phase === 'done' ? 'All set!' : 'Connecting…'}
         </span>
-        <button onClick={onTypeInstead} className="pv-press flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+        <button onClick={onTypeInstead} className="pv-press pv-glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold">
           <Keyboard size={14} /> Use a form
         </button>
       </div>
@@ -142,9 +142,9 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
       </div>
 
       <div className="space-y-2 px-5 pb-2">
-        {userLine && <div className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm" style={{ background: 'var(--pv-surface-2)' }}>{userLine}</div>}
+        {userLine && <div className="pv-glass-soft ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm">{userLine}</div>}
         {palLine ? (
-          <div className="max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] italic leading-relaxed" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>{palLine}</div>
+          <div className="pv-glass max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] italic leading-relaxed">{palLine}</div>
         ) : (
           phase === 'live' && <div className="text-center text-sm" style={{ color: 'var(--pv-ink-3)' }}>Say hi to Mika — she'll ask you a few quick things 💬</div>
         )}
@@ -155,7 +155,7 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
         {typing ? (
           <form onSubmit={(e) => { e.preventDefault(); sendDraft() }} className="flex items-center gap-2">
             {!micBlocked && (
-              <button type="button" onClick={() => setTyping(false)} aria-label="Back to voice" className="pv-press flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink-2)' }}>
+              <button type="button" onClick={() => setTyping(false)} aria-label="Back to voice" className="pv-press pv-glass flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ color: 'var(--pv-ink-2)' }}>
                 <Mic size={20} />
               </button>
             )}
@@ -164,8 +164,8 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Type your answer…"
-              className="h-12 flex-1 rounded-full px-4 outline-none"
-              style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink)' }}
+              className="pv-glass h-12 flex-1 rounded-full px-4 outline-none"
+              style={{ color: 'var(--pv-ink)' }}
             />
             <button type="submit" disabled={!draft.trim()} aria-label="Send" className="pv-press-lg pv-sheen flex h-12 w-12 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: draft.trim() ? 'var(--pv-shadow-pop)' : undefined }}>
               <ArrowUp size={20} strokeWidth={2.8} />
@@ -180,7 +180,7 @@ export function VoiceOnboarding({ role, onDone, onTypeInstead }: { role: 'parent
               <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-2)' }}>{micOn ? 'Listening' : 'Muted'}</span>
             </button>
             <button onClick={openTyping} className="pv-press-lg flex flex-col items-center gap-1.5">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
+              <span className="pv-glass flex h-14 w-14 items-center justify-center rounded-full" style={{ color: 'var(--pv-ink-2)' }}>
                 <Keyboard size={22} />
               </span>
               <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-2)' }}>Type</span>

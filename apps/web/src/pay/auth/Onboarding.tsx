@@ -151,7 +151,7 @@ export function Onboarding({ role, onDone }: { role: 'parent' | 'kid'; onDone: (
       <div className="min-h-0 flex-1 overflow-y-auto pt-8">
         {step === 0 && (
           <div className="pv-rise">
-            <h2 className="pv-h1">{role === 'parent' ? 'What do your kids call you?' : "Hey! What's your name?"}</h2>
+            <h2 className="pv-h1 pv-tight">{role === 'parent' ? 'What do your kids call you?' : "Hey! What's your name?"}</h2>
             <p className="pv-body mt-2" style={{ color: 'var(--pv-ink-2)' }}>{role === 'parent' ? 'Mum, Dad, Sarah — whatever works.' : 'So your companion knows what to call you.'}</p>
             <input
               autoFocus
@@ -160,8 +160,8 @@ export function Onboarding({ role, onDone }: { role: 'parent' | 'kid'; onDone: (
               placeholder={role === 'parent' ? 'e.g. Mum' : 'Your name'}
               maxLength={20}
               onKeyDown={(e) => { if (e.key === 'Enter' && canContinue) next() }}
-              className="mt-6 h-14 w-full rounded-2xl px-4 text-lg font-semibold outline-none"
-              style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink)' }}
+              className="pv-glass mt-6 h-14 w-full rounded-2xl px-4 text-lg font-semibold outline-none"
+              style={{ color: 'var(--pv-ink)' }}
             />
           </div>
         )}
@@ -177,12 +177,12 @@ export function Onboarding({ role, onDone }: { role: 'parent' | 'kid'; onDone: (
           <>
             {step === 1 && (
               <div className="pv-rise">
-                <h2 className="pv-h1">How old are you?</h2>
+                <h2 className="pv-h1 pv-tight">How old are you?</h2>
                 <p className="pv-body mt-2" style={{ color: 'var(--pv-ink-2)' }}>We'll keep things just right for your age.</p>
                 <div className="mt-6 grid grid-cols-2 gap-3">
                   {KID_AGES.map((ag, i) => (
-                    <button key={ag} onClick={() => setA1(ag)} className="pv-press pv-pop rounded-2xl py-5 text-lg font-bold"
-                      style={a1 === ag ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)', animationDelay: `${i * 40}ms` } : { background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', animationDelay: `${i * 40}ms` }}>
+                    <button key={ag} onClick={() => setA1(ag)} className={`pv-press pv-pop pv-hairline rounded-2xl py-5 text-lg font-bold ${a1 === ag ? '' : 'pv-glass'}`}
+                      style={a1 === ag ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)', animationDelay: `${i * 40}ms` } : { animationDelay: `${i * 40}ms` }}>
                       {ag}
                     </button>
                   ))}
@@ -213,14 +213,14 @@ export function Onboarding({ role, onDone }: { role: 'parent' | 'kid'; onDone: (
 function Single({ title, subtitle, options, value, onChange }: { title: string; subtitle: string; options: Opt[]; value: string | null; onChange: (id: string) => void }) {
   return (
     <div className="pv-rise">
-      <h2 className="pv-h1">{title}</h2>
+      <h2 className="pv-h1 pv-tight">{title}</h2>
       <p className="pv-body mt-2" style={{ color: 'var(--pv-ink-2)' }}>{subtitle}</p>
       <div className="mt-6 flex flex-col gap-3">
         {options.map((opt, i) => {
           const picked = value === opt.id
           return (
-            <button key={opt.id} onClick={() => onChange(opt.id)} className="pv-press pv-pop flex items-center gap-3 rounded-2xl p-4 text-left"
-              style={picked ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)', animationDelay: `${i * 40}ms` } : { background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', animationDelay: `${i * 40}ms` }}>
+            <button key={opt.id} onClick={() => onChange(opt.id)} className={`pv-press pv-pop pv-hairline flex items-center gap-3 rounded-2xl p-4 text-left ${picked ? '' : 'pv-glass'}`}
+              style={picked ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)', animationDelay: `${i * 40}ms` } : { animationDelay: `${i * 40}ms` }}>
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={picked ? { background: 'rgba(255,255,255,0.25)' } : { background: 'var(--pv-surface-2)' }}>
                 <opt.Icon size={20} style={{ color: picked ? 'inherit' : 'var(--pv-ink-2)' }} />
               </span>
@@ -239,14 +239,14 @@ function Single({ title, subtitle, options, value, onChange }: { title: string; 
 function Multi({ title, subtitle, options, selected, onToggle }: { title: string; subtitle: string; options: Opt[]; selected: string[]; onToggle: (id: string) => void }) {
   return (
     <div className="pv-rise">
-      <h2 className="pv-h1">{title}</h2>
+      <h2 className="pv-h1 pv-tight">{title}</h2>
       <p className="pv-body mt-2" style={{ color: 'var(--pv-ink-2)' }}>{subtitle}</p>
       <div className="mt-6 grid grid-cols-2 gap-3">
         {options.map((opt, i) => {
           const picked = selected.includes(opt.id)
           return (
-            <button key={opt.id} onClick={() => onToggle(opt.id)} className="pv-press pv-pop flex flex-col items-center gap-2 rounded-2xl p-4"
-              style={picked ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)', animationDelay: `${i * 35}ms` } : { background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', animationDelay: `${i * 35}ms` }}>
+            <button key={opt.id} onClick={() => onToggle(opt.id)} className={`pv-press pv-pop pv-hairline flex flex-col items-center gap-2 rounded-2xl p-4 ${picked ? '' : 'pv-glass'}`}
+              style={picked ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)', animationDelay: `${i * 35}ms` } : { animationDelay: `${i * 35}ms` }}>
               <opt.Icon size={24} style={{ color: picked ? 'inherit' : 'var(--pv-ink-2)' }} />
               <span className="text-sm font-bold">{opt.label}</span>
             </button>

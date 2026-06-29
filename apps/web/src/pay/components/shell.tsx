@@ -17,16 +17,19 @@ export function PhoneCanvas({ children, pal }: { children: ReactNode; pal?: stri
   return (
     <div
       data-pal={pal}
-      className="pv pv-aurora relative flex min-h-[100dvh] w-full justify-center"
+      className="pv pv-aurora relative flex min-h-[100dvh] w-full justify-center overflow-hidden"
       style={{
         background:
           'radial-gradient(900px 520px at 12% -8%, var(--pv-accent-soft), transparent 60%),' +
           'linear-gradient(180deg, var(--pv-bg) 0%, var(--pv-bg-2) 100%)',
       }}
     >
+      {/* Linear-style ambient gradient field, behind everything. */}
+      <div className="pv-mesh" aria-hidden />
+
       {/* App-width column. Reads as a phone on desktop, full-bleed on mobile. */}
       <div
-        className="relative flex min-h-[100dvh] w-full max-w-[460px] flex-col"
+        className="relative z-10 flex min-h-[100dvh] w-full max-w-[460px] flex-col"
         style={{ paddingTop: 'max(0px, env(safe-area-inset-top))' }}
       >
         {children}

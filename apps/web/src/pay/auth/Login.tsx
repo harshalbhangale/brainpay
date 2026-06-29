@@ -67,10 +67,10 @@ export function Login() {
   return (
     <div className="flex min-h-0 flex-1 flex-col justify-center px-6 pb-10">
       <div className="pv-rise mb-9 flex flex-col items-center text-center">
-        <span className="mb-5 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+        <span className="pv-hairline mb-5 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
           <Sparkles size={30} strokeWidth={2.2} />
         </span>
-        <h1 className="text-[2.6rem] font-extrabold leading-none tracking-tight">BrainPal</h1>
+        <h1 className="pv-tight text-[2.6rem] font-extrabold leading-none">BrainPal</h1>
         <p className="pv-body mt-3 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>
           {step === 'phone' ? "What's your number? We'll text you a code." : `Enter the code we sent to ${e164}`}
         </p>
@@ -83,15 +83,14 @@ export function Login() {
               <button
                 type="button"
                 onClick={() => setPickerOpen((v) => !v)}
-                className="pv-press flex h-14 items-center gap-1.5 rounded-2xl px-4 font-bold"
-                style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}
+                className="pv-press pv-glass pv-hairline flex h-14 items-center gap-1.5 rounded-2xl px-4 font-bold"
               >
                 <span className="text-xl">{country.flag}</span>
                 <span>{country.dial}</span>
                 <ChevronDown size={15} style={{ color: 'var(--pv-ink-3)' }} />
               </button>
               {pickerOpen && (
-                <div className="pv-pop absolute left-0 top-16 z-10 w-56 overflow-hidden rounded-2xl" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}>
+                <div className="pv-pop pv-glass absolute left-0 top-16 z-10 w-56 overflow-hidden rounded-2xl" style={{ boxShadow: 'var(--pv-shadow-lg)' }}>
                   {COUNTRIES.map((c) => (
                     <button key={c.code} type="button" onClick={() => { setCountry(c); setPickerOpen(false) }} className="pv-press flex w-full items-center gap-3 px-4 py-3 text-left">
                       <span className="text-xl">{c.flag}</span>
@@ -110,8 +109,8 @@ export function Login() {
               placeholder={PLACEHOLDERS[country.code]}
               value={local}
               onChange={(e) => setLocal(e.target.value)}
-              className="h-14 flex-1 rounded-2xl px-4 text-lg font-semibold outline-none"
-              style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink)' }}
+              className="pv-glass h-14 flex-1 rounded-2xl px-4 text-lg font-semibold outline-none"
+              style={{ color: 'var(--pv-ink)' }}
             />
           </div>
 
@@ -128,8 +127,8 @@ export function Login() {
             placeholder="123456"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            className="h-16 w-full rounded-2xl px-4 text-center text-2xl font-bold tracking-[0.5em] outline-none"
-            style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink)' }}
+            className="pv-glass h-16 w-full rounded-2xl px-4 text-center text-2xl font-bold tracking-[0.5em] outline-none"
+            style={{ color: 'var(--pv-ink)' }}
           />
           <div className="mt-5">
             <Button type="submit" variant="accent" size="lg" full disabled={loading || code.trim().length < 4}>{loading ? 'Verifying…' : 'Verify'}</Button>

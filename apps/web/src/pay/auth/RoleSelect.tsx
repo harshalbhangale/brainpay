@@ -29,7 +29,7 @@ export function RoleSelect({ onParent, onKid }: { onParent: () => void; onKid: (
   return (
     <div className="flex min-h-0 flex-1 flex-col px-6 pb-8">
       <header className="pv-rise pt-6">
-        <h1 className="pv-h1">Welcome to BrainPal</h1>
+        <h1 className="pv-h1 pv-tight">Welcome to BrainPal</h1>
         <p className="pv-body mt-1" style={{ color: 'var(--pv-ink-2)' }}>Pick your side.</p>
       </header>
 
@@ -52,14 +52,14 @@ function RoleCard({ Icon, title, subtitle, gradient, onAccent, delay, onClick, d
     <button
       onClick={onClick}
       disabled={disabled}
-      className="pv-press-lg pv-pop flex-1 overflow-hidden rounded-[28px] p-6 text-left disabled:opacity-50"
-      style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-md)', animationDelay: `${delay}ms` }}
+      className="pv-press-lg pv-pop pv-glass pv-hairline flex-1 overflow-hidden rounded-[28px] p-6 text-left disabled:opacity-50"
+      style={{ animationDelay: `${delay}ms` }}
     >
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl" style={{ backgroundImage: gradient, color: onAccent, boxShadow: 'var(--pv-shadow-pop)' }}>
+      <div className="pv-hairline mb-4 flex h-16 w-16 items-center justify-center rounded-2xl" style={{ backgroundImage: gradient, color: onAccent, boxShadow: 'var(--pv-shadow-pop)' }}>
         <Icon size={30} />
       </div>
       <div className="h-1 w-8 rounded-full" style={{ backgroundImage: gradient }} />
-      <div className="pv-h2 mt-3">{title}</div>
+      <div className="pv-h2 pv-tight mt-3">{title}</div>
       <div className="pv-body mt-1" style={{ color: 'var(--pv-ink-2)' }}>{subtitle}</div>
     </button>
   )

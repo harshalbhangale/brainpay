@@ -173,6 +173,90 @@
 .pv .pv-no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* ════════════════════════════════════════════════════════════════════════════
+   LINEAR-GLASS LAYER — frosted translucent surfaces, luminous hairline edges,
+   an ambient gradient field, and tighter display type. Used by onboarding and
+   the Pal chat to give a crisp, premium "Linear app" feel on top of the calm
+   light canvas. Everything stays scoped to `.pv`.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Frosted glass surface — the primary Linear panel. */
+.pv .pv-glass {
+  background: rgba(255, 255, 255, 0.58);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  backdrop-filter: blur(22px) saturate(165%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: var(--pv-shadow-md);
+}
+/* Lighter inset glass — fields, chips, secondary surfaces. */
+.pv .pv-glass-soft {
+  background: rgba(255, 255, 255, 0.42);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+}
+/* Dark glass — for chips / overlays that ride over imagery. */
+.pv .pv-glass-ink {
+  background: rgba(11, 12, 15, 0.55);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--pv-on-dark);
+}
+
+/* Luminous hairline edge via gradient mask — the Linear card rim that catches
+   light at the top-left and warms toward the accent at the bottom. Attach to a
+   positioned element with a matching border-radius. */
+.pv .pv-hairline { position: relative; isolation: isolate; }
+.pv .pv-hairline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.05) 42%, color-mix(in srgb, var(--pv-accent) 55%, transparent) 135%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Ambient gradient field — Linear's signature soft mesh behind the content.
+   One element, multiple radial blobs, gently drifting. Sits at z-0; place real
+   content in a higher stacking context. */
+.pv .pv-mesh {
+  position: absolute;
+  inset: -25%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(32% 26% at 16% 10%, rgba(197, 244, 65, 0.32), transparent 70%),
+    radial-gradient(34% 28% at 86% 6%, rgba(139, 124, 255, 0.26), transparent 72%),
+    radial-gradient(42% 36% at 80% 90%, rgba(56, 189, 248, 0.22), transparent 72%),
+    radial-gradient(30% 28% at 6% 84%, rgba(52, 211, 153, 0.20), transparent 70%);
+  filter: blur(34px) saturate(125%);
+  animation: pv-mesh-drift 20s ease-in-out infinite alternate;
+}
+@keyframes pv-mesh-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(0, -3%, 0) scale(1.07); }
+}
+
+/* A faint top-edge sheen line for glass headers (the Linear divider glow). */
+.pv .pv-edge-top {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), var(--pv-shadow-sm);
+}
+
+/* Tighter, more confident display tracking for the glass screens. */
+.pv .pv-tight { letter-spacing: -0.045em; }
+.pv .pv-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pv-ink-3);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
    TACTILE PRESS — every interactive surface springs under the finger.
    ════════════════════════════════════════════════════════════════════════════ */
 .pv .pv-press {

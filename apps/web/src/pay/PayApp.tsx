@@ -16,7 +16,7 @@ import { useAuthStore, type Account } from '../stores/auth'
 import { PhoneCanvas } from './components/shell'
 import { Login } from './auth/Login'
 import { RoleSelect } from './auth/RoleSelect'
-import { Onboarding } from './auth/Onboarding'
+import { Onboarding } from './onboard/Onboarding'
 import { JoinFamily, type PendingReq } from './auth/JoinFamily'
 import { PalShell } from './pals/PalShell'
 

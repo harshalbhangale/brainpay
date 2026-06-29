@@ -5,7 +5,7 @@
  * (Those two overlays are swapped to light versions in later phases.)
  */
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
-import { ChevronLeft, SquarePen, History as HistoryIcon, Camera, AudioLines, ArrowUp, ListChecks } from 'lucide-react'
+import { ChevronLeft, SquarePen, History as HistoryIcon, Camera, AudioLines, ArrowUp, ListChecks, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
@@ -60,6 +60,9 @@ export function Chat({ onClose }: { onClose?: () => void }) {
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [live, setLive] = useState<{ camera: boolean } | null>(null)
   const [pickChore, setPickChore] = useState(false)
+  // Which specialist Pals the user has chosen to talk to. Empty = Auto (PAL
+  // answers + relevant Pals chime in). 1+ = only those Pals answer, in-voice.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const isKid = useAuthStore((s) => s.account?.accountType === 'kid')
   const scrollRef = useRef<HTMLDivElement>(null)
   // The History session this typed conversation is being recorded into. Reset
@@ -134,8 +137,9 @@ export function Chat({ onClose }: { onClose?: () => void }) {
     const sid = ensureTextSession(trimmed)
     useSessionStore.getState().append(sid, [{ role: 'you', text: trimmed }])
     try {
-      const res = await api<SendResponse>('/chat', { method: 'POST', body: JSON.stringify({ message: trimmed }) })
-      const additions: Msg[] = [{ id: uid(), kind: 'agent', agentId: 'pal', content: res.reply }]
+      const res = await api<SendResponse>('/chat', { method: 'POST', body: JSON.stringify({ message: trimmed, pals: Array.from(selected) }) })
+      const additions: Msg[] = []
+      if (res.reply) additions.push({ id: uid(), kind: 'agent', agentId: 'pal', content: res.reply })
       for (const p of res.pals ?? []) additions.push({ id: uid(), kind: 'agent', agentId: agentFor(p.palId).id, content: p.line })
       setMessages((m) => [...m, ...additions])
       useSessionStore.getState().append(sid, additions.map((a) => ({ role: 'pal', text: a.content })))
@@ -166,6 +170,20 @@ export function Chat({ onClose }: { onClose?: () => void }) {
 
   const empty = !loadingHistory && messages.length === 0
 
+  // Pal selection: derived label + toggles.
+  const selectedAgents = SPECIALISTS.filter((a) => selected.has(a.id))
+  const palLabel = selectedAgents.length === 0
+    ? 'your Pals'
+    : selectedAgents.map((a) => a.name.replace('PAL', 'Pal')).join(' & ')
+  const togglePal = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const setAuto = () => setSelected(new Set())
+
   return (
     <>
       {live && (
@@ -184,14 +202,9 @@ export function Chat({ onClose }: { onClose?: () => void }) {
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <div className="pv-title leading-tight">The council</div>
-            <div className="flex items-center gap-1.5 pt-0.5">
-              {SPECIALISTS.map((a) => (
-                <span key={a.id} className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>
-                  <a.Icon size={11} style={{ color: a.color }} />
-                  {a.name.replace('PAL', '')}
-                </span>
-              ))}
+            <div className="pv-title leading-tight">Your Pals</div>
+            <div className="truncate pt-0.5 text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
+              {selectedAgents.length === 0 ? 'Auto · your Pals chime in' : `Talking to ${palLabel}`}
             </div>
           </div>
           <button onClick={() => openHistory()} aria-label="History" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
@@ -223,8 +236,18 @@ export function Chat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
+        {/* Pal selector — Auto + specialists, multi-select. This is where the
+            user chooses who answers (Auto = PAL + relevant Pals chime in). */}
+        <div className="pv-no-scrollbar flex flex-none items-center gap-2 overflow-x-auto px-3 pt-1.5">
+          <PalChip label="Auto" active={selectedAgents.length === 0} onClick={setAuto} />
+          <span className="h-5 w-px flex-none" style={{ background: 'var(--pv-line)' }} />
+          {SPECIALISTS.map((a) => (
+            <PalChip key={a.id} label={a.name.replace('PAL', 'Pal')} Icon={a.Icon} color={a.color} active={selected.has(a.id)} onClick={() => togglePal(a.id)} />
+          ))}
+        </div>
+
         {/* Composer */}
-        <Composer value={input} disabled={sending} onChange={setInput} onSend={() => sendText(input)} onCamera={() => setLive({ camera: true })} onVoice={() => setLive({ camera: false })} />
+        <Composer value={input} disabled={sending} placeholder={selectedAgents.length === 0 ? 'Message your Pals…' : `Ask ${palLabel}…`} onChange={setInput} onSend={() => sendText(input)} onCamera={() => setLive({ camera: true })} onVoice={() => setLive({ camera: false })} />
       </div>
     </>
   )
@@ -234,9 +257,9 @@ function EmptyState({ onPick }: { onPick: (t: string) => void }) {
   return (
     <div className="flex flex-col items-center px-4 pt-8 text-center">
       <div className="pv-scale-in mb-4"><AgentOrb agent={AGENTS.pal} size={72} aura /></div>
-      <div className="pv-h2 pv-rise">Meet your money council</div>
+      <div className="pv-h2 pv-rise">Ask your Pals</div>
       <p className="pv-body pv-rise mt-1.5 max-w-xs" style={{ animationDelay: '0.08s', color: 'var(--pv-ink-2)' }}>
-        Ask PAL anything. MoneyPAL, HealthPAL &amp; StudyPAL jump in when it's their thing.
+        Ask anything and your Pals answer. Leave it on <b>Auto</b> and the right ones jump in — or pick MoneyPal, StudyPal or HealthPal below.
       </p>
       <div className="mt-5 flex w-full flex-col gap-2.5">
         {SUGGESTIONS.map((s, i) => (
@@ -295,7 +318,7 @@ function Conferring() {
         <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '0ms' }} />
         <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '160ms' }} />
         <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '320ms' }} />
-        <span className="ml-1 text-xs" style={{ color: 'var(--pv-ink-3)' }}>the council is thinking…</span>
+        <span className="ml-1 text-xs" style={{ color: 'var(--pv-ink-3)' }}>your Pals are thinking…</span>
       </div>
     </div>
   )
@@ -314,8 +337,24 @@ function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm
   )
 }
 
-function Composer({ value, disabled, onChange, onSend, onCamera, onVoice }: {
-  value: string; disabled: boolean; onChange: (v: string) => void; onSend: () => void; onCamera: () => void; onVoice: () => void
+function PalChip({ label, Icon, color, active, onClick }: { label: string; Icon?: LucideIcon; color?: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className="pv-press flex flex-none items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold"
+      style={active
+        ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }
+        : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}
+    >
+      {Icon && <Icon size={14} style={{ color: active ? 'var(--pv-on-accent)' : color }} />}
+      {label}
+    </button>
+  )
+}
+
+function Composer({ value, disabled, placeholder, onChange, onSend, onCamera, onVoice }: {
+  value: string; disabled: boolean; placeholder: string; onChange: (v: string) => void; onSend: () => void; onCamera: () => void; onVoice: () => void
 }) {
   const canSend = !disabled && !!value.trim()
   return (
@@ -326,7 +365,7 @@ function Composer({ value, disabled, onChange, onSend, onCamera, onVoice }: {
       <button type="button" onClick={onVoice} aria-label="Talk to PAL" className="pv-press flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-accent)' }}>
         <AudioLines size={20} />
       </button>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Message the council…" className="h-12 flex-1 rounded-full px-4 outline-none" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink)' }} />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-12 flex-1 rounded-full px-4 outline-none" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink)' }} />
       <button type="submit" disabled={!canSend} aria-label="Send" className="pv-press-lg pv-sheen flex h-12 w-12 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: canSend ? 'var(--pv-shadow-pop)' : undefined }}>
         <ArrowUp size={20} strokeWidth={2.8} />
       </button>

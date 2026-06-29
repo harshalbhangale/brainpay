@@ -30,6 +30,56 @@ Given the user's message, decide which specialist Pals should add a short note:
 Return STRICT JSON: {"pals":[{"palId":"moneypal","line":"one short sentence in that Pal's voice"}]}.
 Include only Pals genuinely relevant (0-3). Each line <= 14 words. No other text.`
 
+// The selectable specialists and how each one should sound when addressed
+// directly (focused mode — the user picked exactly who answers).
+const SPECIALISTS = ['moneypal', 'healthpal', 'studypal'] as const
+type SpecialistId = (typeof SPECIALISTS)[number]
+const SPECIALIST_PERSONAS: Record<SpecialistId, string> = {
+  moneypal: 'MoneyPal — the family money mentor. Talks saving, spending, goals, allowance and what things cost. Practical, encouraging, concrete.',
+  healthpal: 'HealthPal — the wellbeing buddy. Talks food, snacks, nutrition, sleep, screen-time balance and healthy habits. Warm and supportive.',
+  studypal: 'StudyPal — the study coach. Talks homework, learning, explaining concepts and staying focused. Clear and encouraging.',
+}
+
+/**
+ * Focused mode: the user picked exactly which Pals should answer. Generate a
+ * proper reply from each, in their own voice, in one structured call so they
+ * stay aware of each other. Returns [] on failure (caller falls back).
+ */
+async function answerAsSpecialists(
+  ids: SpecialistId[],
+  message: string,
+  systemPrompt: string,
+  history: { role: 'user' | 'assistant'; content: string }[],
+): Promise<{ palId: string; line: string }[]> {
+  const personas = ids.map((id) => `- ${id}: ${SPECIALIST_PERSONAS[id]}`).join('\n')
+  try {
+    const res = await llm.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.6,
+      max_tokens: 450,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `${systemPrompt}\n\nThe user has chosen to talk to specific BrainPal specialists. Answer ONLY as the specialists listed below — each in their own distinct voice, genuinely helpful, 2-4 short sentences, speaking directly to the user. No preamble, no mentioning other Pals.\n\nSpecialists to answer as:\n${personas}\n\nReturn STRICT JSON: {"answers":[{"palId":"<id>","text":"<their reply>"}]}. Include EXACTLY these palIds, in this order: ${ids.join(', ')}.`,
+        },
+        ...history,
+        { role: 'user', content: message },
+      ],
+    })
+    const raw = res.choices[0]?.message?.content ?? '{}'
+    const obj = JSON.parse(raw) as { answers?: { palId?: string; text?: string }[] }
+    const byId = new Map((obj.answers ?? []).filter((a) => a.palId && a.text).map((a) => [a.palId as string, a.text as string]))
+    // Preserve the user's selected order; only include valid, requested ids.
+    return ids
+      .filter((id) => byId.has(id))
+      .map((id) => ({ palId: id, line: byId.get(id) as string }))
+  } catch (err) {
+    logger.warn({ err: String(err).slice(0, 120) }, 'chat.specialists_failed')
+    return []
+  }
+}
+
 // ─── POST /chat ───────────────────────────────────────────────────────
 // Send a message to PAL. Returns a text reply and optionally a
 // structured intent that requires user confirmation before executing.
@@ -41,7 +91,12 @@ chat.post('/chat', async (c) => {
 
   const body = await c.req.json().catch(() => ({}))
   const parsed = z
-    .object({ message: z.string().min(1).max(1000).trim() })
+    .object({
+      message: z.string().min(1).max(1000).trim(),
+      // Optional: which specialists the user chose to talk to. Empty/omitted =
+      // Auto (PAL answers + relevant specialists chime in).
+      pals: z.array(z.enum(SPECIALISTS)).max(3).optional(),
+    })
     .safeParse(body)
 
   if (!parsed.success) {
@@ -49,6 +104,9 @@ chat.post('/chat', async (c) => {
   }
 
   const { message } = parsed.data
+  // De-dupe the selection while preserving order.
+  const selected = [...new Set(parsed.data.pals ?? [])] as SpecialistId[]
+  const focused = selected.length > 0
 
   // Load family context for PAL.
   const ctx = await loadPalContext(accountId)
@@ -68,67 +126,82 @@ chat.post('/chat', async (c) => {
     content: m.content,
   }))
 
-  // Parse intent in parallel with generating the reply.
-  const [intentResult, completionResult, councilResult] = await Promise.allSettled([
+  // Intent parsing always runs (works regardless of who's answering). The
+  // "main" work depends on mode: Auto = PAL reply + council router; Focused =
+  // the chosen specialists each answer directly (no separate PAL reply).
+  const mainWork = focused
+    ? answerAsSpecialists(selected, message, systemPrompt, historyMessages).then((answers) => ({ reply: '', pals: answers }))
+    : Promise.all([
+        llm.chat.completions.create({
+          model: 'gpt-4o-mini',
+          temperature: 0.7,
+          max_tokens: 300,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...historyMessages,
+            { role: 'user', content: message },
+          ],
+        }),
+        llm.chat.completions.create({
+          model: 'gpt-4o-mini',
+          temperature: 0.5,
+          max_tokens: 160,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: COUNCIL_SYSTEM },
+            { role: 'user', content: message },
+          ],
+        }),
+      ]).then(([completion, council]) => {
+        const r = completion.choices[0]?.message?.content ?? "I'm having trouble thinking right now. Try again?"
+        const VALID_PALS = ['moneypal', 'healthpal', 'studypal']
+        let p: { palId: string; line: string }[] = []
+        try {
+          const raw = council.choices[0]?.message?.content ?? '{}'
+          const obj = JSON.parse(raw) as { pals?: { palId?: string; line?: string }[] }
+          p = (obj.pals ?? [])
+            .filter((x) => x.palId && x.line && VALID_PALS.includes(x.palId))
+            .slice(0, 3)
+            .map((x) => ({ palId: x.palId as string, line: x.line as string }))
+        } catch { p = [] }
+        return { reply: r, pals: p }
+      })
+
+  const [intentResult, mainResult] = await Promise.allSettled([
     parseIntent(message, ctx),
-    llm.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.7,
-      max_tokens: 300,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...historyMessages,
-        { role: 'user', content: message },
-      ],
-    }),
-    llm.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.5,
-      max_tokens: 160,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: COUNCIL_SYSTEM },
-        { role: 'user', content: message },
-      ],
-    }),
+    mainWork,
   ])
 
   const intent = intentResult.status === 'fulfilled' ? intentResult.value : { kind: 'query' as const }
-  const reply = completionResult.status === 'fulfilled'
-    ? (completionResult.value.choices[0]?.message?.content ?? "I'm having trouble thinking right now. Try again?")
-    : "I'm having trouble thinking right now. Try again?"
+  let reply = ''
+  let pals: { palId: string; line: string }[] = []
+  if (mainResult.status === 'fulfilled') {
+    reply = mainResult.value.reply
+    pals = mainResult.value.pals
+  } else if (!focused) {
+    reply = "I'm having trouble thinking right now. Try again?"
+  }
+  // Focused mode that produced nothing — give a gentle nudge from the first Pal.
+  if (focused && pals.length === 0) {
+    pals = [{ palId: selected[0], line: "I'm having trouble thinking right now — try asking again?" }]
+  }
 
   // Persist both messages to chat history. Stagger the timestamps by 1ms so
   // the user message always sorts before the assistant reply — inserting both
   // with defaultNow() gives them an identical created_at, which makes ordering
   // by created_at non-deterministic (reply could render above the prompt).
+  const transcriptReply = reply || pals.map((p) => p.line).join('\n\n')
   const userAt = new Date()
   const assistantAt = new Date(userAt.getTime() + 1)
   await db.insert(chatMessages).values([
     { accountId, role: 'user', content: message, createdAt: userAt },
-    { accountId, role: 'assistant', content: reply, createdAt: assistantAt },
+    { accountId, role: 'assistant', content: transcriptReply, createdAt: assistantAt },
   ])
 
   const requiresConfirmation = intent.kind !== 'query'
 
-  // Parse council Pals (graceful: [] on any failure).
-  const VALID_PALS = ['moneypal', 'healthpal', 'studypal']
-  let pals: { palId: string; line: string }[] = []
-  if (councilResult.status === 'fulfilled') {
-    try {
-      const raw = councilResult.value.choices[0]?.message?.content ?? '{}'
-      const obj = JSON.parse(raw) as { pals?: { palId?: string; line?: string }[] }
-      pals = (obj.pals ?? [])
-        .filter((p) => p.palId && p.line && VALID_PALS.includes(p.palId))
-        .slice(0, 3)
-        .map((p) => ({ palId: p.palId as string, line: p.line as string }))
-    } catch {
-      pals = []
-    }
-  }
-
   logger.info(
-    { accountId, intentKind: intent.kind, requiresConfirmation, pals: pals.length },
+    { accountId, mode: focused ? 'focused' : 'auto', selected, intentKind: intent.kind, requiresConfirmation, pals: pals.length },
     'chat.message',
   )
 

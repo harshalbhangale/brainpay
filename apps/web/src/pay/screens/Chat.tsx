@@ -4,8 +4,8 @@
  * Restyled to `.pv`. Camera/voice open the live session; history opens the viewer.
  * (Those two overlays are swapped to light versions in later phases.)
  */
-import { useEffect, useRef, useState, lazy, Suspense } from 'react'
-import { ChevronLeft, SquarePen, History as HistoryIcon, Camera, AudioLines, ArrowUp, ListChecks, type LucideIcon } from 'lucide-react'
+import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from 'react'
+import { ChevronLeft, SquarePen, History as HistoryIcon, AudioLines, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
@@ -21,7 +21,7 @@ type Pal = { palId: string; line: string }
 type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' } & Record<string, unknown>
 type SendResponse = { reply: string; pals?: Pal[]; intent?: Intent; requiresConfirmation?: boolean }
 type ExecuteResponse = { ok: boolean; confirmationMessage?: string }
-type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string }
+type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string; images?: string[] }
 
 let tmpId = 1
 const uid = () => `m${tmpId++}`
@@ -127,17 +127,18 @@ export function Chat({ onClose }: { onClose?: () => void }) {
     else if (cmd.type === 'live') setLive({ camera: cmd.camera })
   }), [])
 
-  async function sendText(text: string) {
+  async function sendText(text: string, images: string[] = []) {
     const trimmed = text.trim()
-    if (!trimmed || sending) return
+    const message = trimmed || (images.length ? 'Take a look at this.' : '')
+    if (!message || sending) return
     setInput('')
     setPendingIntent(null)
-    setMessages((m) => [...m, { id: uid(), kind: 'user', content: trimmed }])
+    setMessages((m) => [...m, { id: uid(), kind: 'user', content: trimmed, images: images.length ? images : undefined }])
     setSending(true)
-    const sid = ensureTextSession(trimmed)
-    useSessionStore.getState().append(sid, [{ role: 'you', text: trimmed }])
+    const sid = ensureTextSession(message)
+    useSessionStore.getState().append(sid, [{ role: 'you', text: images.length ? `${trimmed} [${images.length} image${images.length > 1 ? 's' : ''}]`.trim() : trimmed }])
     try {
-      const res = await api<SendResponse>('/chat', { method: 'POST', body: JSON.stringify({ message: trimmed, pals: Array.from(selected) }) })
+      const res = await api<SendResponse>('/chat', { method: 'POST', body: JSON.stringify({ message, pals: Array.from(selected), images }) })
       const additions: Msg[] = []
       if (res.reply) additions.push({ id: uid(), kind: 'agent', agentId: 'pal', content: res.reply })
       for (const p of res.pals ?? []) additions.push({ id: uid(), kind: 'agent', agentId: agentFor(p.palId).id, content: p.line })
@@ -220,7 +221,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
         {/* Timeline */}
         <div ref={scrollRef} className="pv-no-scrollbar flex-1 space-y-4 overflow-y-auto px-4 py-4">
           {empty && <EmptyState onPick={sendText} />}
-          {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} />))}
+          {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} />))}
           {sending && <Conferring />}
           {pendingIntent && <IntentCard intent={pendingIntent} onConfirm={confirmIntent} onCancel={() => setPendingIntent(null)} />}
         </div>
@@ -238,18 +239,20 @@ export function Chat({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {/* Pal selector — Auto + specialists, multi-select. This is where the
-            user chooses who answers (Auto = PAL + relevant Pals chime in). */}
-        <div className="pv-no-scrollbar flex flex-none items-center gap-2 overflow-x-auto px-3 pt-1.5">
-          <PalChip label="Auto" active={selectedAgents.length === 0} onClick={setAuto} />
-          <span className="h-5 w-px flex-none" style={{ background: 'var(--pv-line)' }} />
-          {SPECIALISTS.map((a) => (
-            <PalChip key={a.id} label={a.name.replace('PAL', 'Pal')} Icon={a.Icon} color={a.color} active={selected.has(a.id)} onClick={() => togglePal(a.id)} />
-          ))}
-        </div>
-
-        {/* Composer */}
-        <Composer value={input} disabled={sending} placeholder={selectedAgents.length === 0 ? 'Message your Pals…' : `Ask ${palLabel}…`} onChange={setInput} onSend={() => sendText(input)} onCamera={() => setLive({ camera: true })} onVoice={() => setLive({ camera: false })} />
+        {/* Composer — ChatGPT-style: + attachments, integrated Pal picker, scan + voice + send */}
+        <Composer
+          value={input}
+          disabled={sending}
+          placeholder={selectedAgents.length === 0 ? 'Message your Pals…' : `Ask ${palLabel}…`}
+          onChange={setInput}
+          onSend={(t, imgs) => sendText(t, imgs)}
+          onScan={() => setLive({ camera: true })}
+          onVoice={() => setLive({ camera: false })}
+          selected={selected}
+          selectedAgents={selectedAgents}
+          onTogglePal={togglePal}
+          onAuto={setAuto}
+        />
         </div>
       </div>
     </>
@@ -262,7 +265,7 @@ function EmptyState({ onPick }: { onPick: (t: string) => void }) {
       <div className="pv-scale-in mb-4"><AgentOrb agent={AGENTS.pal} size={72} aura /></div>
       <div className="pv-h2 pv-tight pv-rise">Ask your Pals</div>
       <p className="pv-body pv-rise mt-1.5 max-w-xs" style={{ animationDelay: '0.08s', color: 'var(--pv-ink-2)' }}>
-        Ask anything and your Pals answer. Leave it on <b>Auto</b> and the right ones jump in — or pick MoneyPal, StudyPal or HealthPal below.
+        Ask anything, attach a photo, or scan something. Leave it on <b>Auto</b> and the right Pals jump in — or tap the Pals button to choose who answers.
       </p>
       <div className="mt-5 flex w-full flex-col gap-2.5">
         {SUGGESTIONS.map((s, i) => (
@@ -275,12 +278,21 @@ function EmptyState({ onPick }: { onPick: (t: string) => void }) {
   )
 }
 
-function UserBubble({ content }: { content: string }) {
+function UserBubble({ content, images }: { content: string; images?: string[] }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm font-medium leading-relaxed" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', borderBottomRightRadius: 6 }}>
-        {content}
-      </div>
+    <div className="flex flex-col items-end gap-1.5">
+      {images && images.length > 0 && (
+        <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
+          {images.map((src, i) => (
+            <img key={i} src={src} alt="" className="h-28 w-28 rounded-2xl object-cover" style={{ boxShadow: 'var(--pv-shadow-sm)' }} />
+          ))}
+        </div>
+      )}
+      {content && (
+        <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm font-medium leading-relaxed" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', borderBottomRightRadius: 6 }}>
+          {content}
+        </div>
+      )}
     </div>
   )
 }
@@ -340,39 +352,211 @@ function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm
   )
 }
 
-function PalChip({ label, Icon, color, active, onClick }: { label: string; Icon?: LucideIcon; color?: string; active: boolean; onClick: () => void }) {
+// Downscale a picked image to a compact JPEG data URL — vision-ready, small payload.
+async function fileToDataUrl(file: File, max = 1024, quality = 0.7): Promise<string> {
+  const raw = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result as string)
+    r.onerror = reject
+    r.readAsDataURL(file)
+  })
+  return await new Promise<string>((resolve) => {
+    const img = new window.Image()
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { resolve(raw); return }
+      ctx.drawImage(img, 0, 0, w, h)
+      try { resolve(canvas.toDataURL('image/jpeg', quality)) } catch { resolve(raw) }
+    }
+    img.onerror = () => resolve(raw)
+    img.src = raw
+  })
+}
+
+const MAX_IMAGES = 4
+
+function Composer({ value, disabled, placeholder, onChange, onSend, onScan, onVoice, selected, selectedAgents, onTogglePal, onAuto }: {
+  value: string
+  disabled: boolean
+  placeholder: string
+  onChange: (v: string) => void
+  onSend: (text: string, images: string[]) => void
+  onScan: () => void
+  onVoice: () => void
+  selected: Set<string>
+  selectedAgents: Agent[]
+  onTogglePal: (id: string) => void
+  onAuto: () => void
+}) {
+  const [attachOpen, setAttachOpen] = useState(false)
+  const [images, setImages] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [palOpen, setPalOpen] = useState(false)
+  const photoInput = useRef<HTMLInputElement>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
+
+  const canSend = !disabled && (!!value.trim() || images.length > 0)
+
+  // Auto-grow the textarea up to a cap.
+  useEffect(() => {
+    const ta = taRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(ta.scrollHeight, 132)}px`
+  }, [value])
+
+  async function addFiles(list: FileList | null) {
+    const picked = Array.from(list ?? []).filter((f) => f.type.startsWith('image/'))
+    if (picked.length === 0) return
+    setAttachOpen(true)
+    setBusy(true)
+    try {
+      const room = Math.max(0, MAX_IMAGES - images.length)
+      const urls = await Promise.all(picked.slice(0, room).map((f) => fileToDataUrl(f)))
+      setImages((prev) => [...prev, ...urls].slice(0, MAX_IMAGES))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function submit() {
+    if (!canSend) return
+    onSend(value, images)
+    setImages([])
+    setAttachOpen(false)
+    setPalOpen(false)
+    if (taRef.current) taRef.current.style.height = 'auto'
+  }
+
   return (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
-      className={`pv-press flex flex-none items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold ${active ? '' : 'pv-glass'}`}
-      style={active
-        ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }
-        : { color: 'var(--pv-ink-2)' }}
-    >
-      {Icon && <Icon size={14} style={{ color: active ? 'var(--pv-on-accent)' : color }} />}
-      {label}
+    <div className="relative px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
+      {/* Tap-away layer for the Pals popover */}
+      {palOpen && <button aria-hidden tabIndex={-1} className="fixed inset-0 z-10 cursor-default" onClick={() => setPalOpen(false)} />}
+
+      <div className="pv-glass pv-hairline relative z-20 rounded-[28px] p-2">
+        {/* Attachment tray — grows the box; sits ABOVE the input */}
+        {(attachOpen || images.length > 0) && (
+          <div className="pv-rise px-1 pb-2 pt-1">
+            <div className="flex gap-2">
+              <TrayButton icon={ImageIcon} label="Photos" onClick={() => photoInput.current?.click()} />
+              <TrayButton icon={Paperclip} label="Files" onClick={() => fileInput.current?.click()} />
+            </div>
+            {(images.length > 0 || busy) && (
+              <div className="pv-no-scrollbar mt-2 flex gap-2 overflow-x-auto">
+                {images.map((src, i) => (
+                  <div key={i} className="relative h-16 w-16 flex-none overflow-hidden rounded-2xl" style={{ boxShadow: 'var(--pv-shadow-sm)' }}>
+                    <img src={src} alt="" className="h-full w-full object-cover" />
+                    <button onClick={() => setImages((p) => p.filter((_, j) => j !== i))} aria-label="Remove image" className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full" style={{ background: 'rgba(11,12,15,0.6)', color: '#fff' }}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+                {busy && <div className="h-16 w-16 flex-none animate-pulse rounded-2xl" style={{ background: 'var(--pv-surface-2)' }} />}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Text input — auto-grows */}
+        <textarea
+          ref={taRef}
+          rows={1}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
+          placeholder={placeholder}
+          className="pv-no-scrollbar block max-h-[132px] w-full resize-none bg-transparent px-3 pt-1.5 text-[15px] leading-relaxed outline-none"
+          style={{ color: 'var(--pv-ink)' }}
+        />
+
+        {/* Toolbar: left = + & Pals · right = scan, voice, send */}
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <div className="relative flex items-center gap-1.5">
+            <ToolButton onClick={() => setAttachOpen((o) => !o)} active={attachOpen} label="Add photos & files">
+              <Plus size={20} strokeWidth={2.4} />
+            </ToolButton>
+
+            <button
+              type="button"
+              onClick={() => setPalOpen((o) => !o)}
+              className="pv-press pv-glass-soft flex items-center gap-1.5 rounded-full py-1.5 pl-2.5 pr-2 text-[13px] font-bold"
+              style={{ color: 'var(--pv-ink-2)' }}
+            >
+              <Sparkles size={14} style={{ color: 'var(--pv-accent)' }} />
+              {selectedAgents.length === 0 ? 'Auto' : (selectedAgents.length === 1 ? selectedAgents[0].name.replace('PAL', 'Pal') : `${selectedAgents.length} Pals`)}
+              <ChevronDown size={13} />
+            </button>
+
+            {palOpen && (
+              <div className="pv-pop pv-glass pv-hairline absolute bottom-12 left-0 z-30 w-56 rounded-2xl p-2">
+                <div className="pv-label px-2 pb-1">Who answers</div>
+                <PalRow label="Auto" hint="Best Pals chime in" active={selectedAgents.length === 0} onClick={onAuto} />
+                {SPECIALISTS.map((a) => (
+                  <PalRow key={a.id} label={a.name.replace('PAL', 'Pal')} Icon={a.Icon} color={a.color} active={selected.has(a.id)} onClick={() => onTogglePal(a.id)} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {/* Scan — the standout control */}
+            <button type="button" onClick={onScan} aria-label="Scan something with the camera" className="pv-press-lg relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-white" style={{ backgroundImage: 'var(--pv-grad-ink)', boxShadow: 'var(--pv-shadow-md)' }}>
+              <span className="pv-scan-ping absolute inset-0 rounded-full" style={{ border: '1.5px solid var(--pv-accent)' }} />
+              <ScanLine size={20} />
+            </button>
+            <ToolButton onClick={onVoice} label="Talk to your Pals">
+              <AudioLines size={20} />
+            </ToolButton>
+            <button type="button" onClick={submit} disabled={!canSend} aria-label="Send" className="pv-press-lg pv-sheen flex h-11 w-11 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: canSend ? 'var(--pv-shadow-pop)' : undefined }}>
+              <ArrowUp size={20} strokeWidth={2.8} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Hidden pickers. Both target images (vision). On mobile these surface the
+          phone's recent photos / file browser natively. */}
+      <input ref={photoInput} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void addFiles(e.target.files); e.target.value = '' }} />
+      <input ref={fileInput} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void addFiles(e.target.files); e.target.value = '' }} />
+    </div>
+  )
+}
+
+function TrayButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="pv-press pv-glass-soft flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold" style={{ color: 'var(--pv-ink)' }}>
+      <Icon size={18} style={{ color: 'var(--pv-accent)' }} /> {label}
     </button>
   )
 }
 
-function Composer({ value, disabled, placeholder, onChange, onSend, onCamera, onVoice }: {
-  value: string; disabled: boolean; placeholder: string; onChange: (v: string) => void; onSend: () => void; onCamera: () => void; onVoice: () => void
-}) {
-  const canSend = !disabled && !!value.trim()
+function ToolButton({ children, onClick, active, label }: { children: ReactNode; onClick: () => void; active?: boolean; label: string }) {
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSend() }} className="flex items-center gap-2 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
-      <button type="button" onClick={onCamera} aria-label="Point the camera and ask" className="pv-press pv-glass flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }}>
-        <Camera size={20} />
-      </button>
-      <button type="button" onClick={onVoice} aria-label="Talk to PAL" className="pv-press pv-glass flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }}>
-        <AudioLines size={20} />
-      </button>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="pv-glass h-12 flex-1 rounded-full px-4 outline-none" style={{ color: 'var(--pv-ink)' }} />
-      <button type="submit" disabled={!canSend} aria-label="Send" className="pv-press-lg pv-sheen flex h-12 w-12 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: canSend ? 'var(--pv-shadow-pop)' : undefined }}>
-        <ArrowUp size={20} strokeWidth={2.8} />
-      </button>
-    </form>
+    <button type="button" onClick={onClick} aria-label={label} aria-pressed={active} className={`pv-press flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${active ? '' : 'pv-glass-soft'}`} style={active ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' } : { color: 'var(--pv-ink-2)' }}>
+      {children}
+    </button>
+  )
+}
+
+function PalRow({ label, hint, Icon, color, active, onClick }: { label: string; hint?: string; Icon?: LucideIcon; color?: string; active: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="pv-press flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left">
+      <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ background: active ? 'var(--pv-accent)' : 'var(--pv-surface-2)', color: active ? 'var(--pv-on-accent)' : (color ?? 'var(--pv-ink-2)') }}>
+        {Icon ? <Icon size={16} /> : <Sparkles size={16} />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-bold" style={{ color: 'var(--pv-ink)' }}>{label}</span>
+        {hint && <span className="block truncate text-[11px] font-medium" style={{ color: 'var(--pv-ink-3)' }}>{hint}</span>}
+      </span>
+      {active && <Check size={16} style={{ color: 'var(--pv-accent)' }} />}
+    </button>
   )
 }
 

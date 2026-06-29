@@ -40,6 +40,16 @@ const SPECIALIST_PERSONAS: Record<SpecialistId, string> = {
   studypal: 'StudyPal — the study coach. Talks homework, learning, explaining concepts and staying focused. Clear and encouraging.',
 }
 
+/** Build an OpenAI user-turn content from text + optional images (vision). */
+type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+function userTurn(message: string, images: string[]): string | ContentPart[] {
+  if (images.length === 0) return message
+  return [
+    { type: 'text', text: message },
+    ...images.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+  ]
+}
+
 /**
  * Focused mode: the user picked exactly which Pals should answer. Generate a
  * proper reply from each, in their own voice, in one structured call so they
@@ -50,6 +60,7 @@ async function answerAsSpecialists(
   message: string,
   systemPrompt: string,
   history: { role: 'user' | 'assistant'; content: string }[],
+  images: string[] = [],
 ): Promise<{ palId: string; line: string }[]> {
   const personas = ids.map((id) => `- ${id}: ${SPECIALIST_PERSONAS[id]}`).join('\n')
   try {
@@ -61,10 +72,10 @@ async function answerAsSpecialists(
       messages: [
         {
           role: 'system',
-          content: `${systemPrompt}\n\nThe user has chosen to talk to specific BrainPal specialists. Answer ONLY as the specialists listed below — each in their own distinct voice, genuinely helpful, 2-4 short sentences, speaking directly to the user. No preamble, no mentioning other Pals.\n\nSpecialists to answer as:\n${personas}\n\nReturn STRICT JSON: {"answers":[{"palId":"<id>","text":"<their reply>"}]}. Include EXACTLY these palIds, in this order: ${ids.join(', ')}.`,
+          content: `${systemPrompt}\n\nThe user has chosen to talk to specific BrainPal specialists. Answer ONLY as the specialists listed below — each in their own distinct voice, genuinely helpful, 2-4 short sentences, speaking directly to the user. If the user attached an image, look at it and use it in your answer. No preamble, no mentioning other Pals.\n\nSpecialists to answer as:\n${personas}\n\nReturn STRICT JSON: {"answers":[{"palId":"<id>","text":"<their reply>"}]}. Include EXACTLY these palIds, in this order: ${ids.join(', ')}.`,
         },
         ...history,
-        { role: 'user', content: message },
+        { role: 'user', content: userTurn(message, images) },
       ],
     })
     const raw = res.choices[0]?.message?.content ?? '{}'
@@ -96,6 +107,11 @@ chat.post('/chat', async (c) => {
       // Optional: which specialists the user chose to talk to. Empty/omitted =
       // Auto (PAL answers + relevant specialists chime in).
       pals: z.array(z.enum(SPECIALISTS)).max(3).optional(),
+      // Optional: attached images as data: or https: URLs (vision). Capped.
+      images: z
+        .array(z.string().max(2_000_000).refine((s) => /^(data:image\/|https?:\/\/)/i.test(s), 'invalid image url'))
+        .max(4)
+        .optional(),
     })
     .safeParse(body)
 
@@ -104,6 +120,7 @@ chat.post('/chat', async (c) => {
   }
 
   const { message } = parsed.data
+  const images = parsed.data.images ?? []
   // De-dupe the selection while preserving order.
   const selected = [...new Set(parsed.data.pals ?? [])] as SpecialistId[]
   const focused = selected.length > 0
@@ -130,7 +147,7 @@ chat.post('/chat', async (c) => {
   // "main" work depends on mode: Auto = PAL reply + council router; Focused =
   // the chosen specialists each answer directly (no separate PAL reply).
   const mainWork = focused
-    ? answerAsSpecialists(selected, message, systemPrompt, historyMessages).then((answers) => ({ reply: '', pals: answers }))
+    ? answerAsSpecialists(selected, message, systemPrompt, historyMessages, images).then((answers) => ({ reply: '', pals: answers }))
     : Promise.all([
         llm.chat.completions.create({
           model: 'gpt-4o-mini',
@@ -139,7 +156,7 @@ chat.post('/chat', async (c) => {
           messages: [
             { role: 'system', content: systemPrompt },
             ...historyMessages,
-            { role: 'user', content: message },
+            { role: 'user', content: userTurn(message, images) },
           ],
         }),
         llm.chat.completions.create({

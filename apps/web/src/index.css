@@ -90,6 +90,11 @@ html,
 body,
 #root {
   height: 100%;
+  /* App-shell: the document never scrolls — each screen owns its own internal
+     scroll area (chat timeline, MoneyPal lists, onboarding body). This keeps the
+     chat composer and bottom nav pinned to the bottom on mobile web. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {

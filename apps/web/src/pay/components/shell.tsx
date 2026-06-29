@@ -17,7 +17,7 @@ export function PhoneCanvas({ children, pal }: { children: ReactNode; pal?: stri
   return (
     <div
       data-pal={pal}
-      className="pv pv-aurora relative flex min-h-[100dvh] w-full justify-center overflow-hidden"
+      className="pv pv-aurora relative flex h-full w-full justify-center overflow-hidden"
       style={{
         background:
           'radial-gradient(900px 520px at 12% -8%, var(--pv-accent-soft), transparent 60%),' +
@@ -28,11 +28,11 @@ export function PhoneCanvas({ children, pal }: { children: ReactNode; pal?: stri
       <div className="pv-mesh" aria-hidden />
 
       {/* App-width column. Reads as a phone on desktop, full-bleed on mobile.
-          Bounded to the viewport height (not min-height) so the inner screens
-          own their scrolling — the chat composer and MoneyPal's bottom nav stay
-          pinned while only the message/list area scrolls. */}
+          Full-height + min-h-0 (matching the html/body/#root 100% chain) so the
+          document never scrolls — the inner screens own their scrolling, keeping
+          the chat composer and MoneyPal's bottom nav pinned to the bottom. */}
       <div
-        className="relative z-10 flex h-[100dvh] max-h-[100dvh] w-full min-h-0 max-w-[460px] flex-col"
+        className="relative z-10 flex h-full w-full min-h-0 max-w-[460px] flex-col"
         style={{ paddingTop: 'max(0px, env(safe-area-inset-top))' }}
       >
         {children}

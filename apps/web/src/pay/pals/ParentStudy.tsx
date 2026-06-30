@@ -122,6 +122,7 @@ export function ParentStudyView() {
         <div><div className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Family learning</div><div className="pv-title leading-tight">Study oversight</div></div>
         <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}><ShieldCheck size={12} style={{ color: 'var(--pv-pos)' }} /> Parent</span>
       </div>
+      <p className="flex-none px-5 pb-1 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>See how each child is learning — tap an interview to see how they reasoned.</p>
 
       {/* Child switcher */}
       {children.length > 1 && (

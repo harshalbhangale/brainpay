@@ -504,11 +504,29 @@ function SubjectHub({ topicId, onBack, onConcepts, onQuiz, onInterview, onChat, 
           </div>
         </Card>
 
-        {/* Lessons — create + open per-lesson study/interview/history */}
-        <div className="mb-3 flex items-center justify-between">
-          <p className="pv-label">Lessons</p>
-          <button onClick={() => setNewLesson((v) => !v)} className="pv-press flex items-center gap-1 text-sm font-bold pv-text-accent">
-            {newLesson ? <X size={15} /> : <Plus size={15} />} {newLesson ? 'Close' : 'New lesson'}
+        {/* The three things to do — clear and primary. */}
+        <p className="pv-label mb-3">Practise</p>
+        <div className="flex flex-col gap-3">
+          <HubOption tile={TILE.lilac} icon={<BookOpen size={22} />} title="Learn the concepts" subtitle={generating ? 'Preparing your cards…' : `${total} flashcards · tap for cheat sheets`} onClick={onConcepts} disabled={generating} delay={0} />
+          <HubOption tile={TILE.sky} icon={<Sparkles size={22} />} title="Quiz me" subtitle="Quick questions from your concepts" onClick={onQuiz} disabled={generating} delay={60} />
+          <HubOption tile={TILE.amber} icon={<Mic size={22} />} title="AI interview" subtitle="A spoken viva with your tutor" onClick={onInterview} disabled={generating} delay={120} />
+        </div>
+
+        {/* Secondary, clearly lighter-weight. */}
+        <div className="mt-3 grid grid-cols-3 gap-2.5">
+          <MiniAction icon={<MessageCircle size={18} />} label="Ask tutor" onClick={onChat} />
+          <MiniAction icon={<History size={18} />} label="History" onClick={onHistory} />
+          <MiniAction icon={<Bookmark size={18} />} label="Saved" onClick={onSaved} />
+        </div>
+
+        {/* Lessons — optional chapter breakdown, tucked at the bottom. */}
+        <div className="mb-3 mt-7 flex items-center justify-between">
+          <div>
+            <p className="pv-label">Lessons</p>
+            <p className="text-xs" style={{ color: 'var(--pv-ink-3)' }}>Split the subject into chapters — optional</p>
+          </div>
+          <button onClick={() => setNewLesson((v) => !v)} className="pv-press flex flex-none items-center gap-1 text-sm font-bold pv-text-accent">
+            {newLesson ? <X size={15} /> : <Plus size={15} />} {newLesson ? 'Close' : 'New'}
           </button>
         </div>
         {newLesson && (
@@ -518,8 +536,8 @@ function SubjectHub({ topicId, onBack, onConcepts, onQuiz, onInterview, onChat, 
             qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
           }} />
         )}
-        {lessons.length > 0 ? (
-          <div className="mb-6 mt-1 flex flex-col gap-2.5">
+        {lessons.length > 0 && (
+          <div className="mt-1 flex flex-col gap-2.5">
             {lessons.map((ch, i) => {
               const lpct = ch.total > 0 ? Math.round((ch.mastered / ch.total) * 100) : 0
               return (
@@ -535,32 +553,7 @@ function SubjectHub({ topicId, onBack, onConcepts, onQuiz, onInterview, onChat, 
               )
             })}
           </div>
-        ) : !newLesson ? (
-          <Card flat className="mb-6 mt-1 flex flex-col items-center gap-1.5 p-5 text-center">
-            <p className="text-sm font-medium" style={{ color: 'var(--pv-ink-2)' }}>
-              {generating ? 'Generating your first lessons…' : 'Add a lesson — name it and upload its notes, PDF or photos.'}
-            </p>
-          </Card>
-        ) : null}
-
-        <p className="pv-label mb-3">Whole subject</p>
-        <div className="flex flex-col gap-3">
-          <HubOption tile={TILE.lilac} icon={<BookOpen size={22} />} title="Study concepts" subtitle={generating ? 'Preparing your cards…' : `${total} flashcards · tap for cheat sheets`} onClick={onConcepts} disabled={generating} delay={0} />
-          <HubOption tile={TILE.sky} icon={<Sparkles size={22} />} title="Take a quiz" subtitle="Auto-generated questions" onClick={onQuiz} disabled={generating} delay={60} />
-          <HubOption tile={TILE.amber} icon={<Mic size={22} />} title="AI Interview" subtitle="A spoken viva with the tutor" onClick={onInterview} disabled={generating} delay={120} />
-          <HubOption tile={TILE.mint} icon={<MessageCircle size={22} />} title="Ask the tutor" subtitle="Chat about anything in this subject" onClick={onChat} delay={180} />
-          <HubOption
-            tile={TILE.pink}
-            icon={<History size={22} />}
-            title="Past interviews"
-            subtitle={interviews.length > 0
-              ? `${interviews.length} done${typeof interviews[0].score === 'number' ? ` · last ${interviews[0].score}/10` : ''}`
-              : 'Your scores & feedback'}
-            onClick={onHistory}
-            delay={240}
-          />
-          <HubOption tile={TILE.violet} icon={<Bookmark size={22} />} title="Saved cards" subtitle="Your bookmarked concepts" onClick={onSaved} delay={300} />
-        </div>
+        )}
       </div>
     </>
   )
@@ -709,6 +702,15 @@ function HubOption({ icon, title, subtitle, onClick, disabled, delay, tile }: { 
       </div>
       <ChevronRight size={18} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />
     </Card>
+  )
+}
+
+function MiniAction({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="pv-press flex flex-col items-center justify-center gap-1.5 rounded-2xl py-3.5" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+      <span style={{ color: 'var(--pv-accent)' }}>{icon}</span>
+      <span className="text-xs font-bold" style={{ color: 'var(--pv-ink-2)' }}>{label}</span>
+    </button>
   )
 }
 

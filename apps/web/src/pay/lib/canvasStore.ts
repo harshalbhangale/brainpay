@@ -8,7 +8,7 @@
  */
 import { create } from 'zustand'
 
-export type CanvasKind = 'activity' | 'map' | 'family' | 'topup' | 'card' | 'chore'
+export type CanvasKind = 'activity' | 'map' | 'family' | 'topup' | 'card' | 'chore' | 'study'
 
 type CanvasState = {
   kind: CanvasKind | null

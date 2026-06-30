@@ -7,7 +7,7 @@
  * Scope follows the active child (parent) or the kid themselves.
  */
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, ListChecks, Receipt, Plus, CreditCard, MapPin, Target, Wallet } from 'lucide-react'
+import { ChevronRight, ListChecks, Receipt, Plus, CreditCard, MapPin, Target, Wallet, GraduationCap } from 'lucide-react'
 import { Avatar, Card, IconBadge, ListRow } from '../components/primitives'
 import { fmt, signed, timeAgo } from '../data'
 import { api } from '../../lib/api'
@@ -135,6 +135,16 @@ export function HomeCards({ onAsk }: { onAsk: (text: string) => void }) {
           ))
         )}
       </Card>
+
+      {/* StudyPal */}
+      <button onClick={() => open('study')} className="pv-press flex w-full items-center gap-3 rounded-[var(--pv-r-lg)] p-4 text-left" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+        <IconBadge Icon={GraduationCap} tile="lilac" size={40} />
+        <div className="min-w-0 flex-1">
+          <div className="pv-title">{isKid ? 'Learn & revise' : `${subjectName === 'the family' ? "Your kids'" : subjectName + "'s"} learning`}</div>
+          <div className="text-sm font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{isKid ? 'Flashcards, quizzes & an AI tutor' : 'Progress & AI interviews'}</div>
+        </div>
+        <ChevronRight size={18} style={{ color: 'var(--pv-ink-3)' }} />
+      </button>
 
       {/* Where is */}
       <button onClick={() => open('map')} className="pv-press flex w-full items-center gap-3 rounded-[var(--pv-r-lg)] p-4 text-left" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>

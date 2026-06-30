@@ -19,6 +19,7 @@ import { Family } from '../screens/Family'
 import { CardSheet } from '../screens/Card'
 import { TopUpSheet } from '../screens/TopUpSheet'
 import { ChorePickerSheet } from '../chores/verify'
+import { StudyPal } from '../pals/StudyPal'
 
 /* ── Slide-over shell ───────────────────────────────────────────────────── */
 export function Canvas({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -82,6 +83,9 @@ export function CanvasHost() {
       )}
       {kind === 'family' && (
         <Canvas key="family" title="Family" onClose={close}><Family /></Canvas>
+      )}
+      {kind === 'study' && (
+        <Canvas key="study" title="StudyPal" onClose={close}><StudyPal /></Canvas>
       )}
     </AnimatePresence>
   )

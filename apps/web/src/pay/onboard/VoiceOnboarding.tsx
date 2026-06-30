@@ -22,10 +22,12 @@ type Phase = 'connecting' | 'live' | 'saving' | 'done' | 'error'
 
 export function VoiceOnboarding({
   role,
+  name,
   onDone,
   onTypeInstead,
 }: {
   role: 'parent' | 'kid'
+  name?: string
   onDone: () => void
   onTypeInstead: () => void
 }) {
@@ -55,7 +57,7 @@ export function VoiceOnboarding({
     try {
       const res = await api<{ account: Account }>('/me', {
         method: 'PATCH',
-        body: JSON.stringify({ accountType: role, persona: { ...(account?.persona ?? {}), ...persona, onboarded: true } }),
+        body: JSON.stringify({ accountType: role, persona: { ...(account?.persona ?? {}), ...persona, ...(name?.trim() ? { name: name.trim() } : {}), onboarded: true } }),
       })
       updateAccount(res.account)
     } catch {
@@ -86,7 +88,8 @@ export function VoiceOnboarding({
       const sock = connectLiveRt(
         {
           onOpen: () => {
-            sock.start(role, mode, undefined, undefined, getVoiceKey())
+            const seed = name?.trim() ? { name: name.trim() } : undefined
+            sock.start(role, mode, seed, undefined, getVoiceKey())
             setPhase('live')
           },
           onUserTranscript: (t) => setUserLine(t),

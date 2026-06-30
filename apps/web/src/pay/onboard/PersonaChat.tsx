@@ -24,14 +24,19 @@ let tid = 1
 
 const STYLE_MAP: Record<string, string> = { autonomous: 'chill', guided: 'balanced', structured: 'strict' }
 
-export function PersonaChat({ role, onDone }: { role: 'parent' | 'kid'; onDone: () => void }) {
+export function PersonaChat({ role, initialName, onDone }: { role: 'parent' | 'kid'; initialName?: string; onDone: () => void }) {
   const plan = planFor(role)
   const updateAccount = useAuthStore((s) => s.updateAccount)
   const account = useAuthStore((s) => s.account)
 
+  // If onboarding already captured the name (NameCard), seed it and skip that
+  // question so we never ask twice.
+  const seededName = initialName?.trim() && plan[0]?.key === 'name' ? initialName.trim() : ''
+  const startStep = seededName ? 1 : 0
+
   const [turns, setTurns] = useState<Turn[]>([])
-  const [step, setStep] = useState(0)
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
+  const [step, setStep] = useState(startStep)
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>(seededName ? { name: seededName } : {})
   const [draft, setDraft] = useState('')
   const [multi, setMulti] = useState<string[]>([])
   const [thinking, setThinking] = useState(false)
@@ -40,9 +45,9 @@ export function PersonaChat({ role, onDone }: { role: 'parent' | 'kid'; onDone: 
 
   const q: Question | undefined = plan[step]
 
-  // Greet with the first question on mount.
+  // Greet with the first unanswered question on mount.
   useEffect(() => {
-    setTurns([{ id: tid++, who: 'pal', text: plan[0].prompt }])
+    setTurns([{ id: tid++, who: 'pal', text: plan[startStep].prompt }])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

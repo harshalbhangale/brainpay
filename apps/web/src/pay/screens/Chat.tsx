@@ -13,6 +13,9 @@ import { ChorePickerSheet } from '../chores/verify'
 import { registerAiHandler } from '../pals/aiBus'
 import { useSessionStore } from '../lib/sessions'
 import { useHistoryView } from '../lib/historyStore'
+import { useActiveChild } from '../lib/activeChild'
+import { useFamilyKids } from '../useMoneyPal'
+import { HomeCards } from './HomeCards'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../lib/agents'
 
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
@@ -64,6 +67,11 @@ export function Chat({ onClose }: { onClose?: () => void }) {
   // answers + relevant Pals chime in). 1+ = only those Pals answer, in-voice.
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const isKid = useAuthStore((s) => s.account?.accountType === 'kid')
+  const myId = useAuthStore((s) => s.account?.id)
+  const childId = useActiveChild((s) => s.childId)
+  const scopedChildId = isKid ? (myId ?? null) : childId
+  const { kids } = useFamilyKids()
+  const activeKidName = !isKid && childId ? (kids.find((k) => k.id === childId)?.name ?? null) : null
   const scrollRef = useRef<HTMLDivElement>(null)
   // The History session this typed conversation is being recorded into. Reset
   // by "New chat" so each fresh conversation becomes its own session.
@@ -138,7 +146,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
     const sid = ensureTextSession(message)
     useSessionStore.getState().append(sid, [{ role: 'you', text: images.length ? `${trimmed} [${images.length} image${images.length > 1 ? 's' : ''}]`.trim() : trimmed }])
     try {
-      const res = await api<SendResponse>('/chat', { method: 'POST', body: JSON.stringify({ message, pals: Array.from(selected), images }) })
+      const res = await api<SendResponse>('/chat', { method: 'POST', body: JSON.stringify({ message, pals: Array.from(selected), images, childId: scopedChildId ?? undefined }) })
       const additions: Msg[] = []
       if (res.reply) additions.push({ id: uid(), kind: 'agent', agentId: 'pal', content: res.reply })
       for (const p of res.pals ?? []) additions.push({ id: uid(), kind: 'agent', agentId: agentFor(p.palId).id, content: p.line })
@@ -158,7 +166,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
     setPendingIntent(null)
     setSending(true)
     try {
-      const res = await api<ExecuteResponse>('/chat/execute', { method: 'POST', body: JSON.stringify({ intent }) })
+      const res = await api<ExecuteResponse>('/chat/execute', { method: 'POST', body: JSON.stringify({ intent, childId: scopedChildId ?? undefined }) })
       const msg = res.confirmationMessage ?? 'Done.'
       setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'pal', content: msg }])
       if (textSessionRef.current) useSessionStore.getState().append(textSessionRef.current, [{ role: 'pal', text: msg }])
@@ -220,7 +228,8 @@ export function Chat({ onClose }: { onClose?: () => void }) {
 
         {/* Timeline */}
         <div ref={scrollRef} className="pv-no-scrollbar flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          {empty && <EmptyState onPick={sendText} />}
+          <HomeCards onAsk={(t) => sendText(t)} />
+          {empty && <EmptyState onPick={sendText} isKid={isKid} childName={activeKidName} />}
           {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} />))}
           {sending && <Conferring />}
           {pendingIntent && <IntentCard intent={pendingIntent} onConfirm={confirmIntent} onCancel={() => setPendingIntent(null)} />}
@@ -259,17 +268,18 @@ export function Chat({ onClose }: { onClose?: () => void }) {
   )
 }
 
-function EmptyState({ onPick }: { onPick: (t: string) => void }) {
+function EmptyState({ onPick, isKid, childName }: { onPick: (t: string) => void; isKid: boolean; childName: string | null }) {
+  const greeting = isKid
+    ? "Here's your money at a glance. Ask me anything, or tap a card above."
+    : childName
+      ? `Here's ${childName}'s world. Ask me anything, or tap a card above.`
+      : 'Here\u2019s your family at a glance. Ask me anything, or tap a card above.'
   return (
-    <div className="flex flex-col items-center px-4 pt-8 text-center">
-      <div className="pv-scale-in mb-4"><AgentOrb agent={AGENTS.pal} size={72} aura /></div>
-      <div className="pv-h2 pv-tight pv-rise">Ask your Pals</div>
-      <p className="pv-body pv-rise mt-1.5 max-w-xs" style={{ animationDelay: '0.08s', color: 'var(--pv-ink-2)' }}>
-        Ask anything, attach a photo, or scan something. Leave it on <b>Auto</b> and the right Pals jump in — or tap the Pals button to choose who answers.
-      </p>
-      <div className="mt-5 flex w-full flex-col gap-2.5">
+    <div className="flex flex-col items-center px-2 pt-2 text-center">
+      <p className="pv-body pv-rise max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>{greeting}</p>
+      <div className="mt-4 flex w-full flex-col gap-2.5">
         {SUGGESTIONS.map((s, i) => (
-          <button key={s} onClick={() => onPick(s)} className="pv-press pv-pop pv-glass pv-hairline rounded-2xl px-4 py-3.5 text-left text-sm font-semibold" style={{ animationDelay: `${i * 50}ms` }}>
+          <button key={s} onClick={() => onPick(s)} className="pv-press pv-pop pv-glass pv-hairline rounded-2xl px-4 py-3 text-left text-sm font-semibold" style={{ animationDelay: `${i * 50}ms` }}>
             {s}
           </button>
         ))}

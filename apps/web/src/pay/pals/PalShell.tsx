@@ -1,26 +1,29 @@
 /**
- * PalShell — the authenticated home: the animated Pal switcher.
+ * PalShell — the authenticated home, now chat-first (an AI OS).
  * ───────────────────────────────────────────────────────────────────────────
- * A slim Pal rail at the top switches between MoneyPal / StudyPal / HealthPal /
- * ParentPal. Switching plays a circular color flood in the incoming Pal's accent,
- * re-points the whole `.pv` theme underneath, and rises the new Pal into place.
+ * The chat (AIPal) is the home surface. The slim sidebar holds just two things:
+ * a parent/child context card on top and conversation history below. Heavy
+ * views (ledger, map, family) are summoned as slide-over canvases over the chat
+ * (see Canvas/CanvasHost), never as standing tabs. `goPal` survives only for
+ * resuming an avatar/study session.
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { User, Menu, X, SquarePen, Check, ChevronRight, MessageSquareText, AudioLines, Camera, Video } from 'lucide-react'
+import { User, Menu, X, SquarePen, MessageSquareText, AudioLines, Camera, Video } from 'lucide-react'
 import { useLocationReporter } from '../../lib/useLocationReporter'
 import { useAuthStore } from '../../stores/auth'
 import { PhoneCanvas } from '../components/shell'
 import { Avatar } from '../components/primitives'
 import { SwipeDrawer } from '../components/SwipeDrawer'
+import { ContextCard } from '../components/ContextCard'
+import { CanvasHost } from '../components/Canvas'
 import { Profile } from '../screens/Profile'
 import { SessionHistory } from '../screens/SessionHistory'
-import { PALS, PAL_MAP, type PalKey } from './config'
+import { PAL_MAP, type PalKey } from './config'
 import { sendAiCommand } from './aiBus'
 import { useHistoryView } from '../lib/historyStore'
 import { useSessionStore, sortedSessions, type SessionKind, type ChatSession } from '../lib/sessions'
 import { AIPal } from './AIPal'
-import { MoneyPal } from './MoneyPal'
 import { StudyPal } from './StudyPal'
 
 type Reveal = { key: PalKey; x: number; y: number; leaving: boolean }
@@ -41,8 +44,8 @@ export function PalShell() {
   // parents see their kids and kids see their parents on the family map.
   useLocationReporter(!!account)
 
-  // Programmatic Pal switch (drawer nav, or an "Ask AI" shortcut inside
-  // MoneyPal) — plays the circular color flood from the top-center.
+  // Programmatic Pal switch — survives for resuming an avatar/study session.
+  // Plays the circular color flood from the top-center.
   const goPal = useCallback(
     (next: PalKey) => {
       setPal((cur) => {
@@ -64,7 +67,6 @@ export function PalShell() {
   // Drawer actions. Pal-targeting actions switch to the AI Pal first; the
   // command is queued by aiBus and flushed once <Chat> mounts after the switch.
   const closeThen = useCallback((fn: () => void) => { setDrawerOpen(false); fn() }, [])
-  const onDrawerPal = useCallback((key: PalKey) => closeThen(() => goPal(key)), [closeThen, goPal])
   const onNewChat = useCallback(() => closeThen(() => { goPal('ai'); sendAiCommand({ type: 'new-chat' }) }), [closeThen, goPal])
   const onOpenHistory = useCallback((sessionId?: string) => closeThen(() => openHistory(sessionId)), [closeThen, openHistory])
   const onProfile = useCallback(() => closeThen(() => setProfileOpen(true)), [closeThen])
@@ -90,22 +92,21 @@ export function PalShell() {
       />
 
       {pal === 'ai' && <AIPal />}
-      {pal === 'moneypal' && <MoneyPal goPal={goPal} />}
       {pal === 'studypal' && <StudyPal />}
 
       <SwipeDrawer open={drawerOpen} onOpenChange={setDrawerOpen} ariaLabel="BrainPal menu">
         <DrawerContent
-          active={pal}
           name={name}
           photo={photo}
           role={role}
-          onPal={onDrawerPal}
           onNewChat={onNewChat}
           onOpenHistory={onOpenHistory}
           onProfile={onProfile}
           onClose={() => setDrawerOpen(false)}
         />
       </SwipeDrawer>
+
+      <CanvasHost />
 
       {reveal && <PalReveal reveal={reveal} />}
       {historyOpen && <SessionHistory onContinue={continueSession} />}
@@ -115,11 +116,6 @@ export function PalShell() {
 }
 
 /* ───────────────────────────────────────────────────────────────── Top bar */
-/**
- * Slim app bar: menu (opens the swipe drawer) + profile. Pal switching now
- * lives entirely in the drawer, so the old pill switcher is gone — the drawer
- * is the single place to move between Pals.
- */
 function PalRail({ onMenu, onProfile, name, photo }: { onMenu: () => void; onProfile: () => void; name: string; photo?: string }) {
   return (
     <div className="flex items-center justify-between px-4 pb-1 pt-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
@@ -172,31 +168,27 @@ function PalReveal({ reveal }: { reveal: Reveal }) {
   )
 }
 
-
 /* ─────────────────────────────────────────────────────────────── Drawer body */
 /**
- * The contents of the swipe drawer. Everything here maps to something that
- * already works today (no dead-ends): the three real Pals, a fresh-chat action,
- * a live list of recent sessions (text/voice/camera/avatar) with "Load more",
- * and profile & settings. ParentPal is intentionally omitted — it has a theme
- * accent but no screen yet, so a row for it would lead nowhere.
+ * The slim sidebar: a context card on top (who the chat is scoped to + Profile)
+ * and conversation history below (New chat + recent sessions + All history).
+ * No Pal-switcher list, no bottom profile row — those folded into the chat-first
+ * model and the context card.
  */
 const SESSION_ICON: Record<SessionKind, LucideIcon> = { text: MessageSquareText, voice: AudioLines, camera: Camera, avatar: Video }
 
 function DrawerContent({
-  active, name, photo, role, onPal, onNewChat, onOpenHistory, onProfile, onClose,
+  name, photo, role, onNewChat, onOpenHistory, onProfile, onClose,
 }: {
-  active: PalKey
   name: string
   photo?: string
   role: string
-  onPal: (key: PalKey) => void
   onNewChat: () => void
   onOpenHistory: (sessionId?: string) => void
   onProfile: () => void
   onClose: () => void
 }) {
-  // Order the entrance stagger across every row in the drawer.
+  void name; void photo // identity now lives in the context card
   let i = 0
   const next = () => i++
   const rawSessions = useSessionStore((s) => s.sessions)
@@ -206,15 +198,9 @@ function DrawerContent({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-3 pb-3" style={{ paddingTop: 'max(16px, env(safe-area-inset-top))' }}>
-      {/* Brand header */}
-      <div className="pv-drawer-item flex items-center gap-3 px-2 pb-2 pt-1" style={{ ['--i' as string]: next() }}>
-        <span className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
-          <PAL_MAP.ai.Icon size={22} strokeWidth={2.4} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="pv-title leading-tight">BrainPal</div>
-          <div className="pv-label" style={{ letterSpacing: '0.06em' }}>{role} space</div>
-        </div>
+      {/* Top row: space label + close */}
+      <div className="pv-drawer-item flex items-center justify-between px-1 pb-2" style={{ ['--i' as string]: next() }}>
+        <span className="pv-label" style={{ letterSpacing: '0.06em' }}>{role} space</span>
         <button
           onClick={onClose}
           aria-label="Close menu"
@@ -226,34 +212,9 @@ function DrawerContent({
         </button>
       </div>
 
-      {/* Pals */}
-      <div className="pv-drawer-item px-2 pb-1.5 pt-3" style={{ ['--i' as string]: next() }}>
-        <span className="pv-label">Your Pals</span>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {PALS.map((p) => {
-          const on = p.key === active
-          return (
-            <button
-              key={p.key}
-              onClick={() => onPal(p.key)}
-              aria-current={on ? 'page' : undefined}
-              className="pv-drawer-item pv-drawer-row flex items-center gap-3 rounded-2xl px-2 py-2 text-left"
-              style={{ ['--i' as string]: next(), background: on ? 'var(--pv-surface-2)' : 'transparent' }}
-            >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl" style={{ backgroundImage: p.gradient, color: p.onAccent, boxShadow: on ? 'var(--pv-shadow-sm)' : 'var(--pv-shadow-xs)' }}>
-                <p.Icon size={21} strokeWidth={2.3} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="pv-title block truncate">{p.name}</span>
-                <span className="block truncate text-[0.8125rem] font-medium" style={{ color: 'var(--pv-ink-3)' }}>{p.tagline}</span>
-              </span>
-              {on
-                ? <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: p.accent, color: p.onAccent }}><Check size={14} strokeWidth={3} /></span>
-                : <ChevronRight size={18} style={{ color: 'var(--pv-ink-3)' }} />}
-            </button>
-          )
-        })}
+      {/* Context card — the chat scope anchor + Profile entry */}
+      <div className="pv-drawer-item" style={{ ['--i' as string]: next() }}>
+        <ContextCard onProfile={onProfile} onAfterSwitch={onClose} />
       </div>
 
       {/* Chats: a fresh chat + a live list of recent sessions (ChatGPT-style). */}
@@ -265,7 +226,7 @@ function DrawerContent({
           </button>
         )}
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="pv-no-scrollbar flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
         <DrawerAction i={next()} Icon={SquarePen} label="New chat" hint="Start a fresh conversation" onClick={onNewChat} />
 
         {recent.map((s) => {
@@ -300,26 +261,6 @@ function DrawerContent({
           </button>
         )}
       </div>
-
-      <div className="flex-1" />
-
-      {/* Profile & settings — sign out lives inside here. */}
-      <button
-        onClick={onProfile}
-        className="pv-drawer-item pv-drawer-row mt-3 flex items-center gap-3 rounded-2xl p-2 text-left"
-        style={{ ['--i' as string]: next(), background: 'var(--pv-surface-2)' }}
-      >
-        {photo ? <Avatar name={name} src={photo} size={40} /> : (
-          <span className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-xs)' }}>
-            <User size={18} strokeWidth={2.4} />
-          </span>
-        )}
-        <span className="min-w-0 flex-1">
-          <span className="pv-title block truncate">{name}</span>
-          <span className="block truncate text-[0.8125rem] font-medium" style={{ color: 'var(--pv-ink-3)' }}>Profile &amp; settings</span>
-        </span>
-        <ChevronRight size={18} style={{ color: 'var(--pv-ink-3)' }} />
-      </button>
     </div>
   )
 }

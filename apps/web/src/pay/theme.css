@@ -11,6 +11,14 @@
   the payments app root; all tokens cascade to descendants.
   ──────────────────────────────────────────────────────────────────────────── */
 
+/* ── Self-hosted premium type: Clash Display (headlines) + Satoshi (UI). ───── */
+@font-face { font-family: 'Satoshi'; src: url('/fonts/Satoshi-400.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Satoshi'; src: url('/fonts/Satoshi-500.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Satoshi'; src: url('/fonts/Satoshi-700.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Satoshi'; src: url('/fonts/Satoshi-900.woff2') format('woff2'); font-weight: 900; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Clash Display'; src: url('/fonts/ClashDisplay-600.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Clash Display'; src: url('/fonts/ClashDisplay-700.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+
 .pv {
   /* ── Canvas & surfaces (Neobank reference: flat cool light grey) ──────── */
   --pv-bg: #ededef;          /* page backdrop (light grey, like the mock)       */
@@ -78,7 +86,8 @@
   --pv-grad-aurora: linear-gradient(120deg, #b4ec2a 0%, #7fe3a0 45%, #4f46e5 100%);
 
   /* ── Type ────────────────────────────────────────────────────────────── */
-  --pv-font: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --pv-font: "Satoshi", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --pv-font-display: "Clash Display", "Satoshi", ui-sans-serif, system-ui, sans-serif;
 
   /* ── Per-Pal signature accent (overridden by the Pal switcher at runtime). */
   --pv-pal: "moneypal";
@@ -95,22 +104,25 @@
    Big, tight, confident headlines (the mock's signature) → calm body text.
    ════════════════════════════════════════════════════════════════════════════ */
 .pv .pv-display {
+  font-family: var(--pv-font-display);
   font-size: clamp(2.5rem, 9vw, 3.6rem);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 0.96;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.025em;
 }
 .pv .pv-h1 {
+  font-family: var(--pv-font-display);
   font-size: clamp(1.9rem, 6.5vw, 2.4rem);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.02;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 .pv .pv-h2 {
+  font-family: var(--pv-font-display);
   font-size: 1.35rem;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.015em;
 }
 .pv .pv-title {
   font-size: 1.0625rem;

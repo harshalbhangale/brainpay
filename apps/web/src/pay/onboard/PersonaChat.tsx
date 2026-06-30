@@ -15,7 +15,9 @@ import { ArrowUp, Sparkles } from 'lucide-react'
 import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
 import { planFor, type Choice, type Question } from './personaPlan'
-import { PersonaNebula, type Facet } from './PersonaNebula'
+import { PalCompanion } from './PalCompanion'
+
+type Facet = { id: string; label: string; hue: number }
 
 type Turn = { id: number; who: 'pal' | 'you'; text: string }
 let tid = 1
@@ -123,16 +125,22 @@ export function PersonaChat({ role, onDone }: { role: 'parent' | 'kid'; onDone: 
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="pv-mesh" aria-hidden />
 
-      {/* Orb header — pinned, the centerpiece */}
-      <div className="relative z-10 flex flex-none flex-col items-center pt-5">
-        <PersonaNebula facets={facets} total={plan.length} identityHue={identityHue} thinking={thinking} done={phase === 'done'} />
-        <div className="mt-2 flex items-center gap-2">
+      {/* Companion header — pinned, the centerpiece */}
+      <div className="relative z-10 flex flex-none flex-col items-center pt-4">
+        <PalCompanion hue={identityHue} size={168} reactKey={facets.length} celebrate={phase === 'done'} />
+        <div className="-mt-1 flex items-center gap-2">
           <span className="pv-eyebrow">{phase === 'done' ? 'Persona ready' : phase === 'saving' ? 'Saving' : 'Building your BrainPal'}</span>
           <span className="pv-amount text-xs" style={{ color: 'var(--pv-ink-3)' }}>{pct}%</span>
         </div>
 
+        {/* slim completeness bar */}
+        <div className="mt-2 h-1.5 w-40 overflow-hidden rounded-full" style={{ background: 'var(--pv-surface-3)' }}>
+          <motion.div className="h-full rounded-full" style={{ background: `hsl(${identityHue} 80% 52%)` }}
+            initial={false} animate={{ width: `${pct}%` }} transition={{ type: 'spring', stiffness: 90, damping: 18 }} />
+        </div>
+
         {/* Captured traits — pop in as they're learned. */}
-        <div className="mt-2 flex max-w-[340px] flex-wrap justify-center gap-1.5 px-4">
+        <div className="mt-2.5 flex max-w-[340px] flex-wrap justify-center gap-1.5 px-4">
           <AnimatePresence>
             {facets.map((f) => (
               <motion.span

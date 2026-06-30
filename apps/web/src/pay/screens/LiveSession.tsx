@@ -15,11 +15,11 @@ import { useAuthStore } from '../../stores/auth'
 import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../../lib/liveRt'
 import { startCamera, captureJpeg, type CameraHandle } from '../../lib/camera'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../../lib/liveAudio'
-import { avatarSrc, useAvatar } from '../../lib/avatar'
+import { useAvatar } from '../../lib/avatar'
 import { getVoiceKey } from '../../lib/voicePrefs'
 import { appendVoiceLines } from '../../lib/voiceHistory'
 import { useSessionStore } from '../lib/sessions'
-import { VrmCompanion, type CompanionMood } from '../../components/VrmCompanion'
+import { Companion, type CompanionMood } from '../../components/Companion'
 
 const FRAME_INTERVAL_MS = 1000
 const FRAME_MAX_WIDTH = 480
@@ -253,7 +253,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
         <div className={withCamera ? 'pointer-events-none absolute inset-x-0 bottom-24 z-20 flex justify-center' : 'pointer-events-none absolute inset-0 z-20 flex items-center justify-center'}>
           <div className="relative" style={withCamera ? { width: 300, height: 430 } : { width: 'min(86vw, 380px)', height: 'min(66vh, 560px)' }}>
             <div className="pointer-events-none absolute left-1/2 top-1/2 h-3/5 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]" style={{ background: 'var(--pv-accent-soft)', opacity: withCamera ? 0.4 : 1 }} />
-            <VrmCompanion src={avatarSrc(avatar)} getLevel={() => playerRef.current?.getLevel() ?? 0} mood={companionMood} className="relative h-full w-full" />
+            <Companion avatar={avatar} getLevel={() => playerRef.current?.getLevel() ?? 0} mood={companionMood} className="relative h-full w-full" />
           </div>
         </div>
       )}

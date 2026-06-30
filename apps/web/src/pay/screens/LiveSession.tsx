@@ -57,6 +57,9 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   const sockRef = useRef<LiveRtSocket | null>(null)
   const cameraRef = useRef<CameraHandle | null>(null)
   const micRef = useRef<MicCaptureHandle | null>(null)
+  // The combined (camera + mic) capture stream, when in camera mode. Owned here
+  // so a single getUserMedia powers both — a second call kills the camera on iOS.
+  const mediaRef = useRef<MediaStream | null>(null)
   const playerRef = useRef<PcmPlayer | null>(null)
   const micOnRef = useRef(true)
   const speakerOnRef = useRef(true)
@@ -76,24 +79,43 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
       playerRef.current = player
       await player.resume()
 
+      const onPcm = (pcm: Int16Array) => {
+        if (micOnRef.current && sockRef.current?.isOpen()) sockRef.current.sendMicPcm(pcm)
+      }
+
       if (withCamera && videoRef.current) {
+        // ONE combined capture for camera + mic. Acquiring them in two separate
+        // getUserMedia calls makes iOS Safari drop the camera track (black feed).
+        let combined: MediaStream
         try {
-          cameraRef.current = await startCamera(videoRef.current)
-          setRealZoom(!!cameraRef.current.zoomCaps)
+          combined = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          })
         } catch {
-          setError('Camera access was blocked. Allow camera access and try again.')
+          setError('Camera & microphone access was blocked. Allow access and try again.')
           setPhase('no_permission')
           return
         }
-      }
-      try {
-        micRef.current = await startMicCapture((pcm) => {
-          if (micOnRef.current && sockRef.current?.isOpen()) sockRef.current.sendMicPcm(pcm)
-        })
-      } catch {
-        setError('Microphone access was blocked. Allow mic access and try again.')
-        setPhase('no_permission')
-        return
+        if (disposed) { combined.getTracks().forEach((t) => t.stop()); return }
+        mediaRef.current = combined
+        try {
+          cameraRef.current = await startCamera(videoRef.current, combined)
+          setRealZoom(!!cameraRef.current.zoomCaps)
+          micRef.current = await startMicCapture(onPcm, combined)
+        } catch {
+          setError('Camera setup failed. Try again.')
+          setPhase('no_permission')
+          return
+        }
+      } else {
+        try {
+          micRef.current = await startMicCapture(onPcm)
+        } catch {
+          setError('Microphone access was blocked. Allow mic access and try again.')
+          setPhase('no_permission')
+          return
+        }
       }
       if (disposed) return
 
@@ -155,6 +177,8 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
       try { sockRef.current?.close() } catch { /* ignore */ }
       micRef.current?.stop()
       cameraRef.current?.stop()
+      mediaRef.current?.getTracks().forEach((t) => t.stop())
+      mediaRef.current = null
       playerRef.current?.close()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -53,16 +53,23 @@ function downsample(input: Float32Array, fromRate: number, toRate: number): Floa
  */
 export async function startMicCapture(
   onPcm: (pcm: Int16Array) => void,
+  provided?: MediaStream,
 ): Promise<MicCaptureHandle> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      channelCount: 1,
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
-    video: false,
-  })
+  // Reuse a provided combined stream (camera + mic) when available — a second
+  // getUserMedia call would kill the camera track on iOS Safari. The caller
+  // owns teardown of a provided stream.
+  const ownsStream = !provided
+  const stream =
+    provided ??
+    (await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    }))
 
   // Prefer capturing straight at 16k; fall back to device rate + downsample.
   let ctx: AudioContext
@@ -98,7 +105,8 @@ export async function startMicCapture(
       try { processor.disconnect() } catch { /* ignore */ }
       try { source.disconnect() } catch { /* ignore */ }
       try { sink.disconnect() } catch { /* ignore */ }
-      for (const track of stream.getTracks()) track.stop()
+      // Only stop tracks we created; a provided (shared) stream is the caller's.
+      if (ownsStream) for (const track of stream.getTracks()) track.stop()
       ctx.close().catch(() => undefined)
     },
   }

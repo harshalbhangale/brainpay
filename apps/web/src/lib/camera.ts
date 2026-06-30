@@ -16,15 +16,21 @@ export type CameraHandle = {
   setZoom: (z: number) => boolean
 }
 
-export async function startCamera(video: HTMLVideoElement): Promise<CameraHandle> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-    },
-    audio: false,
-  })
+export async function startCamera(video: HTMLVideoElement, provided?: MediaStream): Promise<CameraHandle> {
+  // When a combined (audio+video) stream is provided we reuse it — calling
+  // getUserMedia a second time for the mic kills the camera track on iOS
+  // Safari, which shows up as a black feed. The caller then owns teardown.
+  const ownsStream = !provided
+  const stream =
+    provided ??
+    (await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    }))
   video.srcObject = stream
   video.muted = true
   video.setAttribute('playsinline', 'true')
@@ -52,7 +58,9 @@ export async function startCamera(video: HTMLVideoElement): Promise<CameraHandle
       }
     },
     stop: () => {
-      for (const t of stream.getTracks()) t.stop()
+      // Only stop tracks we created; a provided (shared) stream is owned by
+      // the caller, which tears it down once.
+      if (ownsStream) for (const t of stream.getTracks()) t.stop()
       video.srcObject = null
     },
   }

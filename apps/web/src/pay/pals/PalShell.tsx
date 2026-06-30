@@ -138,14 +138,18 @@ export function PalShell() {
 }
 
 function SectionView({ section }: { section: Section }) {
-  switch (section) {
-    case 'chat': return <AIPal />
-    case 'money': return <MoneyHome />
-    case 'study': return <StudyPal />
-    case 'family': return <Family />
-    case 'activity': return <Activity />
-    case 'map': return <FamilyMap />
-    case 'chores': return <KidChores />
-    default: return <AIPal />
-  }
+  // Chat and the full-bleed map own their own width; everything else reads as a
+  // centered column so the wide desktop pane never stretches content edge-to-edge.
+  if (section === 'chat') return <AIPal />
+  if (section === 'map') return <FamilyMap />
+
+  const inner =
+    section === 'money' ? <MoneyHome />
+      : section === 'study' ? <StudyPal />
+        : section === 'family' ? <Family />
+          : section === 'activity' ? <Activity />
+            : section === 'chores' ? <KidChores />
+              : <AIPal />
+
+  return <div className="mx-auto flex h-full w-full max-w-3xl flex-col">{inner}</div>
 }

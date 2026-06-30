@@ -5,7 +5,7 @@
  * (Those two overlays are swapped to light versions in later phases.)
  */
 import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from 'react'
-import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
@@ -20,7 +20,7 @@ import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../l
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
 
 type Pal = { palId: string; line: string }
-type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' } & Record<string, unknown>
+type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'verify_chore' } & Record<string, unknown>
 type SendResponse = { reply: string; pals?: Pal[]; intent?: Intent; requiresConfirmation?: boolean }
 type ExecuteResponse = { ok: boolean; confirmationMessage?: string }
 type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string; images?: string[] }
@@ -232,7 +232,9 @@ export function Chat({ onClose }: { onClose?: () => void }) {
           {empty && <EmptyState onPick={sendText} isKid={isKid} childName={activeKidName} />}
           {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} />))}
           {sending && <Conferring />}
-          {pendingIntent && <IntentCard intent={pendingIntent} onConfirm={confirmIntent} onCancel={() => setPendingIntent(null)} />}
+          {pendingIntent && (pendingIntent.kind === 'verify_chore'
+            ? <VerifyChoreCard title={typeof pendingIntent.title === 'string' ? pendingIntent.title : undefined} onShow={() => { setPickChore(true); setPendingIntent(null) }} onCancel={() => setPendingIntent(null)} />
+            : <IntentCard intent={pendingIntent} onConfirm={confirmIntent} onCancel={() => setPendingIntent(null)} />)}
           </div>
         </div>
 
@@ -359,6 +361,22 @@ function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm
       <div className="mt-3 flex gap-2">
         <button onClick={onCancel} className="pv-press pv-glass-soft flex-1 rounded-full py-2.5 text-sm font-bold">Cancel</button>
         <button onClick={onConfirm} className="pv-press-lg pv-sheen flex-1 rounded-full py-2.5 text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>Confirm</button>
+      </div>
+    </div>
+  )
+}
+
+function VerifyChoreCard({ title, onShow, onCancel }: { title?: string; onShow: () => void; onCancel: () => void }) {
+  return (
+    <div className="pv-pop pv-glass pv-hairline rounded-2xl p-4">
+      <div className="pv-label pv-text-accent">Verify a chore</div>
+      <div className="mt-1 font-bold">{title ? `Show me you did “${title}”` : 'Show me you did it'}</div>
+      <p className="mt-1 text-sm" style={{ color: 'var(--pv-ink-3)' }}>Point your camera at the finished chore — I’ll check it and release your reward.</p>
+      <div className="mt-3 flex gap-2">
+        <button onClick={onCancel} className="pv-press pv-glass-soft flex-1 rounded-full py-2.5 text-sm font-bold">Not now</button>
+        <button onClick={onShow} className="pv-press-lg pv-sheen flex flex-1 items-center justify-center gap-1.5 rounded-full py-2.5 text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+          <Camera size={16} /> Show me
+        </button>
       </div>
     </div>
   )

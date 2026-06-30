@@ -18,7 +18,7 @@ import type { PalContext } from './pal-context'
  *   query        — just a question, no action needed
  */
 
-export type IntentKind = 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'query'
+export type IntentKind = 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'verify_chore' | 'query'
 
 export type AddChoreIntent = {
   kind: 'add_chore'
@@ -71,6 +71,12 @@ export type RememberIntent = {
   kidAccountId?: string
 }
 
+export type VerifyChoreIntent = {
+  kind: 'verify_chore'
+  /** The chore the kid claims to have done, if named (e.g. "the dishes"). */
+  title?: string
+}
+
 export type QueryIntent = {
   kind: 'query'
 }
@@ -83,6 +89,7 @@ export type ParsedIntent =
   | SendNoteIntent
   | CreateRuleIntent
   | RememberIntent
+  | VerifyChoreIntent
   | QueryIntent
 
 const INTENT_SYSTEM = `You are an intent parser for a family money app called MoneyPal.
@@ -97,7 +104,8 @@ Return one of these shapes:
 5. { "kind": "send_note", "kidName": string, "message": string }
 6. { "kind": "create_rule", "ruleText": string }
 7. { "kind": "remember", "fact": string, "kidName": string | null }
-8. { "kind": "query" }
+8. { "kind": "verify_chore", "title": string | null }
+9. { "kind": "query" }
 
 Rules:
 - Use "query" for anything that is just a question or conversation (no action needed).
@@ -108,6 +116,7 @@ Rules:
 - send_note: send a short message/note to a kid (e.g. "tell Sam I'm proud of him").
 - create_rule: set a family rule or limit (e.g. "no spending over $20", "sugar limit 30g a day"). Put the whole rule in ruleText.
 - remember: store a fact PAL should remember (e.g. "remember Mia loves dinosaurs", "remember I get paid on the 1st"). kidName is who it's about, or null if about the speaker/family.
+- verify_chore: the speaker (a kid) says they DID/finished/completed a chore and wants credit (e.g. "I did the dishes", "finished cleaning my room", "done with homework"). title = the chore named, or null if unspecified.
 - Extract kid names from the message. Match to the family context if possible.
 - Money: 1 AUD = 100 Brains. "$10" → 1000. Applies to topup, contribute_goal, rewards, and targets.
 - Defaults: chore reward = 50; new goal target = 500.
@@ -128,6 +137,7 @@ function intentIsActionable(i: ParsedIntent): boolean {
     case 'send_note': return !!(i.kidAccountId && i.message)
     case 'create_rule': return !!i.ruleText
     case 'remember': return !!i.fact
+    case 'verify_chore': return true // opening the camera verifier never dead-ends
     default: return true // query
   }
 }
@@ -142,6 +152,7 @@ export async function parseIntent(
     'add chore', 'create chore', 'chore', 'top up', 'topup', 'send', 'set goal', 'add goal', 'new goal',
     'goal', 'save', 'saving', 'contribute', 'toward', 'towards', 'put $', 'message', 'tell ', 'note',
     'remember', 'remind', 'rule', 'limit', 'allowance',
+    'i did', 'i finished', 'finished', 'completed', 'done with', 'did my', 'did the', 'cleaned', 'i cleaned',
   ]
   const hasAction = actionWords.some((w) => lower.includes(w))
 

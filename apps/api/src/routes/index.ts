@@ -14,6 +14,7 @@ import { realtime } from './realtime'
 import { twilioVoice } from './twilio-voice'
 import { voiceAgent } from './voice-agent'
 import { voiceOnboarding } from './voice-onboarding'
+import { voiceSample } from './voice-sample'
 import { wallet } from './wallet'
 import { study } from './study'
 import { uploads } from './uploads'
@@ -38,6 +39,7 @@ routes.route('/', goalsRoutes)
 routes.route('/', chat)
 routes.route('/', voiceAgent)
 routes.route('/', voiceOnboarding)
+routes.route('/', voiceSample)
 routes.route('/', realtime)
 routes.route('/', study)
 routes.route('/', uploads)

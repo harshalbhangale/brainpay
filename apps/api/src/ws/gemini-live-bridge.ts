@@ -2,38 +2,12 @@ import type { WebSocket } from 'ws'
 import type { Session, LiveServerMessage } from '@google/genai'
 import { connectLiveSession, type LiveMode, type InterviewContext } from '../services/gemini-live'
 import { streamTts } from '../services/elevenlabs-tts'
+import { resolveVoiceId } from '../services/voices'
 import { loadEnv } from '../env'
 import { logger } from '../logger'
 
 const env = loadEnv()
 const USE_ELEVEN = env.COMPANION_VOICE_PROVIDER === 'elevenlabs'
-
-/**
- * Map a client voice preference (session.start → voice) to an ElevenLabs
- * voice id. Defaults lean Australian/warm; override any of them via env.
- * Applies on the ElevenLabs TTS path (COMPANION_VOICE_PROVIDER=elevenlabs).
- */
-function resolveVoiceId(key?: string): string | undefined {
-  switch (key) {
-    case 'good':
-      return env.ELEVENLABS_TUTOR_VOICE_ID ?? 'pFZP5JQG7iQjIQuC4Bku' // Lily — warm tutor
-    case 'cute':
-      return process.env.ELEVENLABS_VOICE_CUTE ?? 'jBpfuIE2acCO8z3wKNLl' // Gigi — bright/young
-    case 'bright':
-      return process.env.ELEVENLABS_VOICE_BRIGHT ?? 'EXAVITQu4vr4xnSDxMaL' // Bella — soft/warm
-    case 'buddy':
-      return process.env.ELEVENLABS_VOICE_BUDDY ?? 'TxGEqnHWrfWFTfGW9XjX' // Josh — easy-going male
-    case 'story':
-      return process.env.ELEVENLABS_VOICE_STORY ?? 'ThT5KcBeYPX3keUQqHPh' // Dorothy — gentle storyteller
-    case 'real':
-      return process.env.ELEVENLABS_VOICE_REAL ?? 'IKne3meq5aSn9XLyUdCD' // Charlie — Australian
-    case 'anime':
-      return process.env.ELEVENLABS_VOICE_ANIME ?? env.ELEVENLABS_VOICE_ID
-    case 'normal':
-    default:
-      return env.ELEVENLABS_COMPANION_VOICE_ID ?? env.ELEVENLABS_VOICE_ID
-  }
-}
 
 /**
  * Gemini Live bridge — /live-rt

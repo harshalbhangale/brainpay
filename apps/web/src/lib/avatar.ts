@@ -13,7 +13,7 @@ import { persist } from 'zustand/middleware'
  *
  * <Companion> picks the right renderer from `kind`, so call sites never care.
  */
-export type AvatarId = 'kai' | 'luna' | 'nova' | 'milo' | 'mika' | 'shizuka'
+export type AvatarId = 'archie' | 'matilda' | 'kirra' | 'banjo' | 'mika' | 'shizuka'
 export type AvatarKind = 'glb' | 'vrm'
 
 export type AvatarDef = {
@@ -28,15 +28,15 @@ export type AvatarDef = {
 }
 
 export const AVATARS: AvatarDef[] = [
-  { id: 'kai', name: 'Kai', src: '/avatars/kai.glb', kind: 'glb', blurb: 'Adventurous & upbeat', accent: '#4f8cff' },
-  { id: 'luna', name: 'Luna', src: '/avatars/luna.glb', kind: 'glb', blurb: 'Calm & dreamy', accent: '#a78bfa' },
-  { id: 'nova', name: 'Nova', src: '/avatars/nova.glb', kind: 'glb', blurb: 'Curious & clever', accent: '#22c3a6' },
-  { id: 'milo', name: 'Milo', src: '/avatars/milo.glb', kind: 'glb', blurb: 'Playful & warm', accent: '#ff8a5b' },
+  { id: 'archie', name: 'Archie', src: '/avatars/archie.glb', kind: 'glb', blurb: 'Bold & full of beans', accent: '#4f8cff' },
+  { id: 'matilda', name: 'Matilda', src: '/avatars/matilda.glb', kind: 'glb', blurb: 'Kind & quick-witted', accent: '#f472b6' },
+  { id: 'kirra', name: 'Kirra', src: '/avatars/kirra.glb', kind: 'glb', blurb: 'Sunny & free-spirited', accent: '#22c3a6' },
+  { id: 'banjo', name: 'Banjo', src: '/avatars/banjo.glb', kind: 'glb', blurb: 'Cheeky & full of fun', accent: '#ff8a5b' },
   { id: 'mika', name: 'Mika', src: '/mika.vrm', kind: 'vrm', blurb: 'Friendly & bright', accent: '#34d399' },
-  { id: 'shizuka', name: 'Shizuka', src: '/shizuka.vrm', kind: 'vrm', blurb: 'Gentle & wise', accent: '#f472b6' },
+  { id: 'shizuka', name: 'Shizuka', src: '/shizuka.vrm', kind: 'vrm', blurb: 'Gentle & wise', accent: '#a78bfa' },
 ]
 
-const DEFAULT_AVATAR: AvatarId = 'kai'
+const DEFAULT_AVATAR: AvatarId = 'archie'
 
 export function avatarDef(id: AvatarId): AvatarDef {
   return AVATARS.find((a) => a.id === id) ?? AVATARS[0]
@@ -70,7 +70,7 @@ export const useAvatar = create<AvatarState>()(
         if (!s || !AVATARS.some((a) => a.id === s.avatar)) return { avatar: DEFAULT_AVATAR } as AvatarState
         return s as AvatarState
       },
-      version: 2,
+      version: 3,
     },
   ),
 )

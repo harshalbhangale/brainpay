@@ -93,6 +93,33 @@ export function GlbCompanion({
       return null
     }
 
+    /**
+     * Rotate an upper-arm bone so the elbow points downward (+ a slight spread
+     * via `outX`), lifting the model out of its exported T-pose. Geometric, so
+     * it's correct regardless of the bone's local axes.
+     */
+    function lowerArm(upperName: string, lowerName: string, outX: number) {
+      const upper = bones.get(upperName)
+      const lower = bones.get(lowerName)
+      if (!upper || !lower) return
+      upper.updateWorldMatrix(true, false)
+      lower.updateWorldMatrix(true, false)
+      const pa = new THREE.Vector3().setFromMatrixPosition(upper.matrixWorld)
+      const pb = new THREE.Vector3().setFromMatrixPosition(lower.matrixWorld)
+      const curDir = pb.sub(pa).normalize()
+      if (curDir.lengthSq() < 1e-6) return
+      const target = new THREE.Vector3(outX, -1, 0.08).normalize()
+      const qWorld = new THREE.Quaternion().setFromUnitVectors(curDir, target)
+      const parentQuat = new THREE.Quaternion()
+      upper.parent?.getWorldQuaternion(parentQuat)
+      const curWorldQuat = new THREE.Quaternion()
+      upper.getWorldQuaternion(curWorldQuat)
+      const desiredWorld = qWorld.multiply(curWorldQuat)
+      const newLocal = parentQuat.invert().multiply(desiredWorld)
+      upper.quaternion.copy(newLocal)
+      upper.updateWorldMatrix(true, true)
+    }
+
     function frameView(target: THREE.Object3D) {
       target.updateMatrixWorld(true)
       const box = new THREE.Box3().setFromObject(target)
@@ -150,10 +177,7 @@ export function GlbCompanion({
         }
         root = gltf.scene
         root.traverse((obj) => {
-          if (obj.name) {
-            bones.set(obj.name, obj)
-            baseRot.set(obj.name, obj.rotation.clone())
-          }
+          if (obj.name) bones.set(obj.name, obj)
           const mesh = obj as THREE.Mesh
           if (mesh.isMesh) {
             // Skinned meshes shrink their bounding box as bones move; keep them
@@ -170,13 +194,29 @@ export function GlbCompanion({
           }
         })
 
+        scene.add(root)
+        // VRM0-exported glTF faces -Z (away from a +Z camera) — that's why the
+        // raw model showed the back of the head. Turn it to face the camera.
+        root.rotation.y = Math.PI
+        root.updateMatrixWorld(true)
+
+        // Bring the arms down out of the T-pose. Geometric (rotate the upper
+        // arm so the elbow points downward) so it works regardless of each
+        // model's local bone axes.
+        lowerArm('J_Bip_L_UpperArm', 'J_Bip_L_LowerArm', -0.18)
+        lowerArm('J_Bip_R_UpperArm', 'J_Bip_R_LowerArm', 0.18)
+        root.updateMatrixWorld(true)
+
+        // Capture the resting rotation AFTER posing, so idle motion is additive
+        // on top of the natural (arms-down) pose.
+        for (const [name, b] of bones) baseRot.set(name, b.rotation.clone())
+
         mBlink = firstMorph('Fcl_EYE_Close')
         mAa = firstMorph('Fcl_MTH_A', 'Fcl_MTH_Large', 'Fcl_MTH_O')
         mJoy = firstMorph('Fcl_EYE_Joy', 'Fcl_ALL_Joy', 'Fcl_ALL_Fun')
         mSorrow = firstMorph('Fcl_EYE_Sorrow', 'Fcl_ALL_Sorrow')
         mSurprised = firstMorph('Fcl_EYE_Surprised', 'Fcl_ALL_Surprised')
 
-        scene.add(root)
         resize()
         setLoading(false)
       },

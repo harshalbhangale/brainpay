@@ -1,14 +1,14 @@
 /**
- * VoiceOnboarding (light) — the chosen companion interviews the user by voice
- * and fills the persona via its save_persona tool. Renders the selected
- * companion live (GLB or VRM) with lip-sync, in the `.pv` design language.
- * "Type instead" falls back to the tap-based PersonaChat.
+ * VoiceOnboarding (light) — your chosen companion introduces itself by voice
+ * (in your chosen voice) and fills the persona via its save_persona tool, while
+ * the live character lip-syncs and emotes. Designed in the `.pv` language.
  *
- * Pipeline mirrors pay/screens/LiveSession: connectLiveRt (mode onboard_*) +
- * mic capture + PcmPlayer, honouring the user's chosen voice.
+ * Nothing speaks until you tap "Say hi" (a user gesture — required for audio,
+ * and stops it talking on its own). Audio is MP3-only to avoid double playback.
+ * If the mic is unavailable, you can finish with just your name (no dead-end).
  */
 import { useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, Keyboard, Check } from 'lucide-react'
+import { Mic, MicOff, Check, Sparkles } from 'lucide-react'
 import { motion } from 'motion/react'
 import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
@@ -18,25 +18,15 @@ import { getVoiceKey } from '../../lib/voicePrefs'
 import { useAvatar, avatarDef } from '../../lib/avatar'
 import { Companion, type CompanionMood } from '../../components/Companion'
 
-type Phase = 'connecting' | 'live' | 'saving' | 'done' | 'error'
+type Phase = 'ready' | 'connecting' | 'live' | 'saving' | 'done' | 'error'
 
-export function VoiceOnboarding({
-  role,
-  name,
-  onDone,
-  onTypeInstead,
-}: {
-  role: 'parent' | 'kid'
-  name?: string
-  onDone: () => void
-  onTypeInstead: () => void
-}) {
+export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'; name?: string; onDone: () => void }) {
   const avatar = useAvatar((s) => s.avatar)
   const companion = avatarDef(avatar)
   const updateAccount = useAuthStore((s) => s.updateAccount)
   const account = useAuthStore((s) => s.account)
 
-  const [phase, setPhase] = useState<Phase>('connecting')
+  const [phase, setPhase] = useState<Phase>('ready')
   const [palLine, setPalLine] = useState('')
   const [userLine, setUserLine] = useState('')
   const [micOn, setMicOn] = useState(true)
@@ -49,6 +39,17 @@ export function VoiceOnboarding({
   const micOnRef = useRef(true)
   const replyBufRef = useRef('')
   const savedRef = useRef(false)
+  const startedRef = useRef(false)
+
+  function teardown() {
+    try { sockRef.current?.end() } catch { /* ignore */ }
+    try { sockRef.current?.close() } catch { /* ignore */ }
+    micRef.current?.stop()
+    playerRef.current?.close()
+    sockRef.current = null
+    micRef.current = null
+    playerRef.current = null
+  }
 
   async function savePersona(persona: Record<string, unknown>) {
     if (savedRef.current) return
@@ -64,67 +65,57 @@ export function VoiceOnboarding({
       /* still let them in — the gate re-syncs on next load */
     }
     setPhase('done')
-    setTimeout(onDone, 1600)
+    setTimeout(onDone, 1500)
   }
 
-  useEffect(() => {
-    let disposed = false
-    async function begin() {
-      const token = useAuthStore.getState().token
-      const player = new PcmPlayer()
-      playerRef.current = player
-      await player.resume()
-      try {
-        micRef.current = await startMicCapture((pcm) => {
-          if (micOnRef.current && sockRef.current?.isOpen()) sockRef.current.sendMicPcm(pcm)
-        })
-      } catch {
-        setError(`I need your microphone so ${companion.name} can chat. Allow it, or type your answers instead.`)
-        setPhase('error')
-        return
-      }
-      if (disposed) return
-      const mode = role === 'parent' ? 'onboard_parent' : 'onboard_kid'
-      const sock = connectLiveRt(
-        {
-          onOpen: () => {
-            const seed = name?.trim() ? { name: name.trim() } : undefined
-            sock.start(role, mode, seed, undefined, getVoiceKey())
-            setPhase('live')
-          },
-          onUserTranscript: (t) => setUserLine(t),
-          onReplyDelta: (t) => {
-            replyBufRef.current += t
-            setPalLine(replyBufRef.current)
-            setSpeaking(true)
-          },
-          onTurnComplete: () => {
-            replyBufRef.current = ''
-            setSpeaking(false)
-          },
-          onInterrupted: () => {
-            playerRef.current?.clear()
-            setSpeaking(false)
-          },
-          onPalAudio: (pcm) => playerRef.current?.enqueue(pcm),
-          onPalAudioMp3: (mp3) => void playerRef.current?.enqueueEncoded(mp3),
-          onPersona: (persona) => void savePersona(persona),
-          onError: () => undefined,
+  // Finish with just the name (mic denied / "I'd rather skip"). No dead-end.
+  function finishWithName() {
+    teardown()
+    void savePersona({})
+  }
+
+  async function start() {
+    if (startedRef.current) return
+    startedRef.current = true
+    setError(null)
+    setPhase('connecting')
+    const token = useAuthStore.getState().token
+    const player = new PcmPlayer()
+    playerRef.current = player
+    await player.resume()
+    try {
+      micRef.current = await startMicCapture((pcm) => {
+        if (micOnRef.current && sockRef.current?.isOpen()) sockRef.current.sendMicPcm(pcm)
+      })
+    } catch {
+      setError(`I need your microphone so ${companion.name} can chat — or you can finish with just your name.`)
+      setPhase('error')
+      return
+    }
+    const mode = role === 'parent' ? 'onboard_parent' : 'onboard_kid'
+    const sock = connectLiveRt(
+      {
+        onOpen: () => {
+          const seed: Record<string, unknown> = { companion: companion.name }
+          if (name?.trim()) seed.name = name.trim()
+          sock.start(role, mode, seed, undefined, getVoiceKey())
+          setPhase('live')
         },
-        token,
-      )
-      sockRef.current = sock
-    }
-    void begin()
-    return () => {
-      disposed = true
-      try { sockRef.current?.end() } catch { /* ignore */ }
-      try { sockRef.current?.close() } catch { /* ignore */ }
-      micRef.current?.stop()
-      playerRef.current?.close()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+        onUserTranscript: (t) => setUserLine(t),
+        onReplyDelta: (t) => { replyBufRef.current += t; setPalLine(replyBufRef.current); setSpeaking(true) },
+        onTurnComplete: () => { replyBufRef.current = ''; setSpeaking(false) },
+        onInterrupted: () => { playerRef.current?.clear(); setSpeaking(false) },
+        // MP3-only (ElevenLabs path) — avoids double/jarring audio.
+        onPalAudioMp3: (mp3) => void playerRef.current?.enqueueEncoded(mp3),
+        onPersona: (persona) => void savePersona(persona),
+        onError: () => undefined,
+      },
+      token,
+    )
+    sockRef.current = sock
+  }
+
+  useEffect(() => () => teardown(), [])
 
   function toggleMic() {
     setMicOn((on) => {
@@ -137,11 +128,15 @@ export function VoiceOnboarding({
 
   const mood: CompanionMood = speaking ? 'happy' : 'neutral'
   const statusLabel =
-    phase === 'live' ? `Meeting ${companion.name}` : phase === 'saving' ? 'Saving…' : phase === 'done' ? 'All set!' : phase === 'error' ? 'Mic needed' : 'Connecting…'
+    phase === 'live' ? `Chatting with ${companion.name}`
+      : phase === 'connecting' ? 'Connecting…'
+      : phase === 'saving' ? 'Saving…'
+      : phase === 'done' ? 'All set!'
+      : phase === 'error' ? 'Mic needed'
+      : `Meet ${companion.name}`
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* soft accent wash from the companion */}
       <div
         className="absolute inset-x-0 top-0 z-0 h-2/3"
         aria-hidden
@@ -149,21 +144,18 @@ export function VoiceOnboarding({
       />
 
       {/* Header */}
-      <div className="relative z-10 flex flex-none items-center justify-between px-5 pt-[max(16px,env(safe-area-inset-top))]">
+      <div className="relative z-10 flex flex-none items-center justify-center px-5 pt-[max(16px,env(safe-area-inset-top))]">
         <span className="pv-glass pv-hairline rounded-full px-3.5 py-1.5 text-xs font-bold" style={{ color: 'var(--pv-ink-2)' }}>
           {statusLabel}
         </span>
-        <button onClick={onTypeInstead} className="pv-press pv-glass-soft flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold" style={{ color: 'var(--pv-ink-2)' }}>
-          <Keyboard size={14} /> Type instead
-        </button>
       </div>
 
       {/* Companion */}
       <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-6">
-        <div className="relative" style={{ width: 'min(78vw, 300px)', height: 'min(52vh, 440px)' }}>
+        <div className="relative" style={{ width: 'min(80vw, 320px)', height: 'min(54vh, 460px)' }}>
           <div
             className="pointer-events-none absolute left-1/2 top-1/2 h-3/5 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[72px]"
-            style={{ background: companion.accent, opacity: speaking ? 0.4 : 0.24 }}
+            style={{ background: companion.accent, opacity: speaking ? 0.42 : 0.26 }}
           />
           <Companion avatar={avatar} getLevel={() => playerRef.current?.getLevel() ?? 0} mood={mood} className="relative h-full w-full" />
           {phase === 'done' && (
@@ -185,47 +177,61 @@ export function VoiceOnboarding({
       {/* Captions */}
       <div className="relative z-10 flex-none space-y-2 px-5 pb-2">
         {userLine && (
-          <div className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm font-medium" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
-            {userLine}
-          </div>
+          <div className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm font-medium" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>{userLine}</div>
         )}
-        {palLine ? (
-          <div className="pv-glass max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>
-            {palLine}
+        {palLine && (
+          <div className="pv-glass max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{palLine}</div>
+        )}
+        {phase === 'live' && !palLine && (
+          <div className="text-center text-sm" style={{ color: 'var(--pv-ink-3)' }}>
+            Say hi to {companion.name} 💬
           </div>
-        ) : (
-          phase === 'live' && (
-            <div className="text-center text-sm" style={{ color: 'var(--pv-ink-3)' }}>
-              Say hi to {companion.name} — {role === 'kid' ? "they'll ask you a few quick things" : "they'll ask a few quick things about your family"} 💬
-            </div>
-          )
         )}
         {error && (
-          <div className="rounded-2xl px-3.5 py-2.5 text-center text-sm" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>
-            {error}
-            <button onClick={onTypeInstead} className="mt-2 block w-full rounded-full py-2 text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}>
-              Type my answers instead
-            </button>
-          </div>
+          <div className="rounded-2xl px-3.5 py-2.5 text-center text-sm" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>{error}</div>
         )}
       </div>
 
-      {/* Mic */}
-      {phase !== 'error' && (
-        <div className="relative z-10 flex flex-none items-center justify-center px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-2">
+      {/* Action area */}
+      <div className="relative z-10 flex flex-none items-center justify-center px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-2">
+        {phase === 'ready' && (
+          <motion.button
+            onClick={() => void start()}
+            whileTap={{ scale: 0.96 }}
+            className="pv-sheen flex h-14 w-full max-w-sm items-center justify-center gap-2 rounded-full text-base font-bold"
+            style={{ background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-md)' }}
+          >
+            <Sparkles size={18} /> Say hi to {companion.name}
+          </motion.button>
+        )}
+
+        {phase === 'connecting' && (
+          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
+            <span className="h-5 w-5 animate-spin rounded-full" style={{ border: '2px solid var(--pv-surface-3)', borderTopColor: 'var(--pv-accent)' }} />
+            Waking up {companion.name}…
+          </div>
+        )}
+
+        {phase === 'live' && (
           <button onClick={toggleMic} className="pv-press-lg flex flex-col items-center gap-1.5" aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'}>
-            <span
-              className="flex h-16 w-16 items-center justify-center rounded-full"
-              style={micOn
-                ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }
-                : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}
-            >
+            <span className="flex h-16 w-16 items-center justify-center rounded-full" style={micOn ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
               {micOn ? <Mic size={26} /> : <MicOff size={26} />}
             </span>
             <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{micOn ? 'Listening' : 'Muted'}</span>
           </button>
-        </div>
-      )}
+        )}
+
+        {phase === 'error' && (
+          <div className="flex w-full max-w-sm flex-col gap-2">
+            <button onClick={() => { startedRef.current = false; void start() }} className="pv-press h-12 w-full rounded-full text-sm font-bold pv-glass pv-hairline" style={{ color: 'var(--pv-ink)' }}>
+              Try again
+            </button>
+            <button onClick={finishWithName} className="pv-press-lg h-12 w-full rounded-full text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+              Finish with just my name
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

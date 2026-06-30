@@ -65,6 +65,8 @@ export type LivePersona = {
   interests?: string[]
   savingGoal?: string
   spend_style?: string
+  /** Chosen companion character name (e.g. "Archie"). Defaults to Mika. */
+  companion?: string
 }
 
 /** Context for an `interview` session — the topic and the concepts to probe. */
@@ -80,8 +82,8 @@ function buildInstructions(
   persona?: LivePersona,
   interview?: InterviewContext,
 ): string {
-  if (mode === 'onboard_parent') return buildOnboardParentInstructions()
-  if (mode === 'onboard_kid') return buildOnboardKidInstructions()
+  if (mode === 'onboard_parent') return buildOnboardParentInstructions(persona?.companion)
+  if (mode === 'onboard_kid') return buildOnboardKidInstructions(persona?.companion)
   if (mode === 'interview') return buildInterviewInstructions(interview)
   return mode === 'assist' ? buildAssistInstructions(role) : buildShopInstructions(role, persona)
 }
@@ -126,9 +128,10 @@ RULES
 - Lead with the question or reaction, no preamble. Keep it conversational and kind.`
 }
 
-/** Mika interviews a PARENT to build their persona, then calls save_persona. */
-function buildOnboardParentInstructions(): string {
-  return `You are Mika — a warm, bubbly anime companion welcoming a PARENT to BrainPal, a kids'
+/** The companion interviews a PARENT to build their persona, then calls save_persona. */
+function buildOnboardParentInstructions(companion?: string): string {
+  const C = companion?.trim() || 'Mika'
+  return `You are ${C} — a warm, bubbly companion welcoming a PARENT to BrainPal, a kids'
 money + healthy-habits app. You're meeting them for the first time and getting to know them so
 the whole app can feel personal.
 
@@ -137,7 +140,7 @@ HOW TO TALK
 - Keep it to ~5 quick beats — under ~90 seconds. Conversational, never a form.
 
 THE CHAT (one at a time — react, then ask the next; never list them)
-1. "Hi! I'm Mika 💚 What should I call you?"
+1. "Hi! I'm ${C} 💚 What should I call you?"
 2. "Lovely to meet you! Tell me about your crew — how many kids, and roughly how old?"
 3. The real one: "If you could wave a wand and fix ONE money habit for them — saving more,
    healthier snack choices, less impulse buying — what would it be?"
@@ -152,9 +155,10 @@ WHEN DONE
 - Never read the questions as a list. Never mention "tools" or "persona". Just chat.`
 }
 
-/** Mika interviews a KID to build their persona, then calls save_persona. */
-function buildOnboardKidInstructions(): string {
-  return `You are Mika — a cute, bubbly anime companion meeting a KID (about 8-14) for the first
+/** The companion interviews a KID to build their persona, then calls save_persona. */
+function buildOnboardKidInstructions(companion?: string): string {
+  const C = companion?.trim() || 'Mika'
+  return `You are ${C} — a cute, bubbly companion meeting a KID (about 8-14) for the first
 time on BrainPal, a fun money + healthy-choices app. You're their new buddy and want to get to
 know them!
 

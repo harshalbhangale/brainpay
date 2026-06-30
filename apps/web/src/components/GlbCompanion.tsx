@@ -153,8 +153,10 @@ export function GlbCompanion({
     const clock = new THREE.Clock()
     let blinkTimer = 1 + Math.random() * 3
     let blink = 0
-    let nextGlance = 3 + Math.random() * 4
+    let nextGlance = 2.5 + Math.random() * 3
     let glance = 0
+    let nextGesture = 2 + Math.random() * 3
+    let gesture = 0
     const expr = { aa: 0, joy: 0, sorrow: 0, surprised: 0 }
 
     // Resolved mood morph names (depend on what the model ships).
@@ -163,6 +165,7 @@ export function GlbCompanion({
     let mSurprised: string | null = null
     let mBlink: string | null = null
     let mAa: string | null = null
+    let mMouthJoy: string | null = null
 
     const loader = new GLTFLoader()
     loader.load(
@@ -216,6 +219,7 @@ export function GlbCompanion({
         mJoy = firstMorph('Fcl_EYE_Joy', 'Fcl_ALL_Joy', 'Fcl_ALL_Fun')
         mSorrow = firstMorph('Fcl_EYE_Sorrow', 'Fcl_ALL_Sorrow')
         mSurprised = firstMorph('Fcl_EYE_Surprised', 'Fcl_ALL_Surprised')
+        mMouthJoy = firstMorph('Fcl_MTH_Joy', 'Fcl_MTH_Fun')
 
         resize()
         setLoading(false)
@@ -246,47 +250,62 @@ export function GlbCompanion({
           b.rotation.set(base.x + dx, base.y + dy, base.z + dz)
         }
 
-        // Breathing + slow weight-shift on the spine/chest.
-        apply('J_Bip_C_Spine', Math.sin(t * 1.6) * 0.025, 0, Math.sin(t * 0.45) * 0.03)
-        apply('J_Bip_C_Chest', Math.sin(t * 1.6 + 0.5) * 0.02, 0, 0)
+        // Periodic friendly gesture (a little wave / hand-talk).
+        nextGesture -= dt
+        if (nextGesture <= 0) {
+          gesture = 1
+          nextGesture = 5 + Math.random() * 4
+        }
+        gesture = Math.max(0, gesture - dt * 0.7)
+        const gWave = Math.sin(Math.min(1, gesture) * Math.PI) // 0→1→0
 
-        // Gentle arm sway (additive — never forces a pose).
-        const sway = Math.sin(t * 1.1) * 0.05
-        apply('J_Bip_L_UpperArm', 0, 0, -sway)
-        apply('J_Bip_R_UpperArm', 0, 0, sway)
+        // Breathing + lively side-to-side sway through the torso.
+        apply('J_Bip_C_Hips', 0, Math.sin(t * 0.5) * 0.05, Math.sin(t * 0.6) * 0.03)
+        apply('J_Bip_C_Spine', Math.sin(t * 1.4) * 0.05, Math.sin(t * 0.5) * 0.04, Math.sin(t * 0.55) * 0.06)
+        apply('J_Bip_C_Chest', Math.sin(t * 1.4 + 0.5) * 0.04, 0, Math.sin(t * 0.55 + 0.3) * 0.03)
 
-        // Head: subtle motion + occasional glance.
+        // Arms: a gentle continuous swing, opposite phase (additive on rest).
+        const swing = Math.sin(t * 1.0) * 0.12
+        apply('J_Bip_L_UpperArm', swing, 0, -0.03 + Math.sin(t * 0.8) * 0.04)
+        apply('J_Bip_R_UpperArm', -swing - gWave * 0.5, 0, 0.03 - Math.sin(t * 0.8) * 0.04)
+        // During a gesture the right forearm lifts and waves.
+        apply('J_Bip_L_LowerArm', Math.sin(t * 0.9) * 0.05, 0, 0)
+        apply('J_Bip_R_LowerArm', -gWave * 0.7, gWave * Math.sin(t * 12) * 0.35, 0)
+
+        // Head: bob + slow turn + occasional bigger glance.
         nextGlance -= dt
         if (nextGlance <= 0) {
-          glance = (Math.random() - 0.5) * 0.4
-          nextGlance = 3 + Math.random() * 5
+          glance = (Math.random() - 0.5) * 0.6
+          nextGlance = 2.5 + Math.random() * 4
         }
-        glance *= 1 - Math.min(1, dt * 1.5)
-        apply('J_Bip_C_Head', Math.sin(t * 0.9) * 0.02, glance, Math.sin(t * 0.7) * 0.03)
+        glance *= 1 - Math.min(1, dt * 1.2)
+        apply('J_Bip_C_Neck', Math.sin(t * 0.9) * 0.03, glance * 0.4, 0)
+        apply('J_Bip_C_Head', Math.sin(t * 0.85) * 0.05, Math.sin(t * 0.5) * 0.1 + glance, Math.sin(t * 0.7) * 0.06)
 
         // Blink.
         blinkTimer -= dt
         if (blinkTimer <= 0) {
           blink = 1
-          blinkTimer = 2.5 + Math.random() * 3.5
+          blinkTimer = 2.2 + Math.random() * 3
         }
         blink = Math.max(0, blink - dt * 7)
         if (mBlink) setMorph(mBlink, blink)
 
-        // Lip-sync.
+        // Lip-sync (only when audio is flowing).
         const target = Math.min(1, levelRef.current() * 1.2)
         expr.aa += (target - expr.aa) * Math.min(1, dt * 18)
         if (mAa) setMorph(mAa, expr.aa)
 
-        // Mood (eyes — keeps mouth free for lip-sync).
+        // Mood + a warm baseline smile (eases off while actually speaking).
         const m = moodRef.current
         const approach = (cur: number, to: number) => cur + (to - cur) * Math.min(1, dt * 6)
-        expr.joy = approach(expr.joy, m === 'happy' ? 0.9 : 0)
+        expr.joy = approach(expr.joy, m === 'happy' ? 1 : 0.35)
         expr.sorrow = approach(expr.sorrow, m === 'sad' ? 0.85 : 0)
         expr.surprised = approach(expr.surprised, m === 'surprised' ? 0.8 : 0)
-        if (mJoy) setMorph(mJoy, expr.joy)
+        if (mJoy) setMorph(mJoy, expr.joy * 0.8)
         if (mSorrow) setMorph(mSorrow, expr.sorrow)
         if (mSurprised) setMorph(mSurprised, expr.surprised)
+        if (mMouthJoy) setMorph(mMouthJoy, Math.max(0, expr.joy * (1 - expr.aa)))
       }
 
       renderer.render(scene, camera)

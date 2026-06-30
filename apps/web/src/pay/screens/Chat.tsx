@@ -5,7 +5,7 @@
  * (Those two overlays are swapped to light versions in later phases.)
  */
 import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from 'react'
-import { ChevronLeft, SquarePen, History as HistoryIcon, AudioLines, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
@@ -256,7 +256,6 @@ export function Chat({ onClose }: { onClose?: () => void }) {
           onChange={setInput}
           onSend={(t, imgs) => sendText(t, imgs)}
           onScan={() => setLive({ camera: true })}
-          onVoice={() => setLive({ camera: false })}
           selected={selected}
           selectedAgents={selectedAgents}
           onTogglePal={togglePal}
@@ -391,14 +390,13 @@ async function fileToDataUrl(file: File, max = 1024, quality = 0.7): Promise<str
 
 const MAX_IMAGES = 4
 
-function Composer({ value, disabled, placeholder, onChange, onSend, onScan, onVoice, selected, selectedAgents, onTogglePal, onAuto }: {
+function Composer({ value, disabled, placeholder, onChange, onSend, onScan, selected, selectedAgents, onTogglePal, onAuto }: {
   value: string
   disabled: boolean
   placeholder: string
   onChange: (v: string) => void
   onSend: (text: string, images: string[]) => void
   onScan: () => void
-  onVoice: () => void
   selected: Set<string>
   selectedAgents: Agent[]
   onTogglePal: (id: string) => void
@@ -486,9 +484,9 @@ function Composer({ value, disabled, placeholder, onChange, onSend, onScan, onVo
           style={{ color: 'var(--pv-ink)' }}
         />
 
-        {/* Toolbar: left = + & Pals · right = scan, voice, send */}
+        {/* Toolbar: left = + & Pals · right = scan, send */}
         <div className="mt-1 flex items-center justify-between gap-2">
-          <div className="relative flex items-center gap-1.5">
+          <div className="relative flex min-w-0 items-center gap-1.5">
             <ToolButton onClick={() => setAttachOpen((o) => !o)} active={attachOpen} label="Add photos & files">
               <Plus size={20} strokeWidth={2.4} />
             </ToolButton>
@@ -496,12 +494,12 @@ function Composer({ value, disabled, placeholder, onChange, onSend, onScan, onVo
             <button
               type="button"
               onClick={() => setPalOpen((o) => !o)}
-              className="pv-press pv-glass-soft flex items-center gap-1.5 rounded-full py-1.5 pl-2.5 pr-2 text-[13px] font-bold"
+              className="pv-press pv-glass-soft flex min-w-0 max-w-[42vw] items-center gap-1.5 rounded-full py-1.5 pl-2.5 pr-2 text-[13px] font-bold"
               style={{ color: 'var(--pv-ink-2)' }}
             >
-              <Sparkles size={14} style={{ color: 'var(--pv-accent)' }} />
-              {selectedAgents.length === 0 ? 'Auto' : (selectedAgents.length === 1 ? selectedAgents[0].name.replace('PAL', 'Pal') : `${selectedAgents.length} Pals`)}
-              <ChevronDown size={13} />
+              <Sparkles size={14} className="shrink-0" style={{ color: 'var(--pv-accent)' }} />
+              <span className="truncate">{selectedAgents.length === 0 ? 'Auto' : (selectedAgents.length === 1 ? selectedAgents[0].name.replace('PAL', 'Pal') : `${selectedAgents.length} Pals`)}</span>
+              <ChevronDown size={13} className="shrink-0" />
             </button>
 
             {palOpen && (
@@ -515,15 +513,12 @@ function Composer({ value, disabled, placeholder, onChange, onSend, onScan, onVo
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {/* Scan — the standout control */}
-            <button type="button" onClick={onScan} aria-label="Scan something with the camera" className="pv-press-lg relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-white" style={{ backgroundImage: 'var(--pv-grad-ink)', boxShadow: 'var(--pv-shadow-md)' }}>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* Scan — opens the live camera; you can close the camera in there to just talk */}
+            <button type="button" onClick={onScan} aria-label="Scan, or talk to your Pals" className="pv-press-lg relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-white" style={{ backgroundImage: 'var(--pv-grad-ink)', boxShadow: 'var(--pv-shadow-md)' }}>
               <span className="pv-scan-ping absolute inset-0 rounded-full" style={{ border: '1.5px solid var(--pv-accent)' }} />
               <ScanLine size={20} />
             </button>
-            <ToolButton onClick={onVoice} label="Talk to your Pals">
-              <AudioLines size={20} />
-            </ToolButton>
             <button type="button" onClick={submit} disabled={!canSend} aria-label="Send" className="pv-press-lg pv-sheen flex h-11 w-11 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: canSend ? 'var(--pv-shadow-pop)' : undefined }}>
               <ArrowUp size={20} strokeWidth={2.8} />
             </button>

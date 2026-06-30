@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ZoomIn, ZoomOut, ChevronUp, ChevronDown,
-  ShoppingCart, Plus, Check, Trash2, X, Sparkles, PhoneOff, Mic, MicOff, Volume2, VolumeX,
+  ShoppingCart, Plus, Check, Trash2, X, Sparkles, PhoneOff, Mic, MicOff, Volume2, VolumeX, Camera, CameraOff,
 } from 'lucide-react'
 import { useAuthStore } from '../../stores/auth'
 import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../../lib/liveRt'
@@ -51,6 +51,11 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   const [zoom, setZoom] = useState(1)
   const [realZoom, setRealZoom] = useState(false)
   const [showAvatar, setShowAvatar] = useState(true)
+  // Camera can be toggled off mid-session to "just talk to the avatar". The
+  // hardware track is only disabled (not stopped) so it flips back instantly
+  // without a second getUserMedia (which would break the stream on iOS).
+  const [cameraOn, setCameraOn] = useState(true)
+  const showCamera = withCamera && cameraOn
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -142,8 +147,8 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
               // Mirror into the History sessions log (text/voice/camera/avatar).
               if (!sessionIdRef.current) {
                 sessionIdRef.current = useSessionStore.getState().start(
-                  withCamera ? 'camera' : 'voice',
-                  withCamera ? 'Point & Ask' : 'Talk to Mika',
+                  showCamera ? 'camera' : 'voice',
+                  showCamera ? 'Point & Ask' : 'Talk to Mika',
                 )
               }
               useSessionStore.getState().append(sessionIdRef.current, lines.map((l) => ({ role: l.role, text: l.text })))
@@ -185,7 +190,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   }, [mode])
 
   useEffect(() => {
-    if (!withCamera || phase !== 'live') return
+    if (!showCamera || phase !== 'live') return
     cancelledRef.current = false
     let timer: ReturnType<typeof setTimeout> | null = null
     const tick = async () => {
@@ -205,7 +210,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
     }
     timer = setTimeout(tick, 500)
     return () => { if (timer) clearTimeout(timer) }
-  }, [withCamera, phase])
+  }, [showCamera, phase])
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -233,13 +238,23 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   function toggleMic() {
     setMicOn((on) => { const next = !on; micOnRef.current = next; sockRef.current?.setMic(next); return next })
   }
+  // Flip the camera on/off without re-acquiring the stream (iOS-safe).
+  function toggleCamera() {
+    if (!withCamera) return
+    setCameraOn((on) => {
+      const next = !on
+      const track = mediaRef.current?.getVideoTracks?.()[0]
+      if (track) track.enabled = next
+      return next
+    })
+  }
   function toggleSpeaker() {
     setSpeakerOn((on) => { const next = !on; speakerOnRef.current = next; sockRef.current?.setSpeaker(next); if (!next) playerRef.current?.clear(); return next })
   }
 
   const statusLabel = phase === 'live' ? 'LIVE' : phase === 'connecting' ? 'CONNECTING…' : phase === 'error' ? 'RECONNECT' : 'BLOCKED'
-  const title = withCamera ? 'Point & Ask' : 'Talk to Mika'
-  const hint = withCamera ? 'Point at anything and ask…' : 'Say something — Mika is listening…'
+  const title = showCamera ? 'Point & Ask' : 'Talk to Mika'
+  const hint = showCamera ? 'Point at anything and ask…' : 'Say something — Mika is listening…'
 
   const lastDet = detections[detections.length - 1]
   const companionMood: CompanionMood = lastDet
@@ -247,10 +262,10 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
     : speaking ? 'happy' : 'neutral'
 
   // Overlay chips: dark glass over the camera viewfinder, light surfaces in voice mode.
-  const chipBg = withCamera ? 'rgba(0,0,0,0.55)' : 'var(--pv-surface)'
-  const chipFg = withCamera ? '#ffffff' : 'var(--pv-ink)'
-  const chipShadow = withCamera ? undefined : 'var(--pv-shadow-sm)'
-  const subtleFg = withCamera ? 'rgba(255,255,255,0.72)' : 'var(--pv-ink-3)'
+  const chipBg = showCamera ? 'rgba(0,0,0,0.55)' : 'var(--pv-surface)'
+  const chipFg = showCamera ? '#ffffff' : 'var(--pv-ink)'
+  const chipShadow = showCamera ? undefined : 'var(--pv-shadow-sm)'
+  const subtleFg = showCamera ? 'rgba(255,255,255,0.72)' : 'var(--pv-ink-3)'
 
   function inCart(d: LiveDetection) { return cart.some((c) => c.name.toLowerCase() === d.name.toLowerCase()) }
   function toggleCart(d: LiveDetection) {
@@ -262,21 +277,21 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   return (
     <div
       className="pv fixed inset-0 z-50 flex flex-col overflow-hidden"
-      style={{ background: withCamera ? '#000' : 'radial-gradient(900px 520px at 50% -8%, var(--pv-accent-soft), transparent 60%), linear-gradient(180deg, var(--pv-bg) 0%, var(--pv-bg-2) 100%)', color: withCamera ? '#fff' : 'var(--pv-ink)' }}
+      style={{ background: showCamera ? '#000' : 'radial-gradient(900px 520px at 50% -8%, var(--pv-accent-soft), transparent 60%), linear-gradient(180deg, var(--pv-bg) 0%, var(--pv-bg-2) 100%)', color: showCamera ? '#fff' : 'var(--pv-ink)' }}
     >
       {withCamera && (
         <>
-          <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 h-full w-full object-cover transition-transform duration-200" style={{ transform: `scale(${realZoom ? 1 : zoom})` }} />
+          <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 h-full w-full object-cover transition-all duration-300" style={{ transform: `scale(${realZoom ? 1 : zoom})`, opacity: showCamera ? 1 : 0 }} />
           <canvas ref={canvasRef} className="hidden" />
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.3), transparent 30%, transparent 60%, rgba(0,0,0,0.6))' }} />
+          {showCamera && <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.3), transparent 30%, transparent 60%, rgba(0,0,0,0.6))' }} />}
         </>
       )}
 
       {/* Avatar stage */}
       {showAvatar && (
-        <div className={withCamera ? 'pointer-events-none absolute inset-x-0 bottom-24 z-20 flex justify-center' : 'pointer-events-none absolute inset-0 z-20 flex items-center justify-center'}>
-          <div className="relative" style={withCamera ? { width: 300, height: 430 } : { width: 'min(86vw, 380px)', height: 'min(66vh, 560px)' }}>
-            <div className="pointer-events-none absolute left-1/2 top-1/2 h-3/5 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]" style={{ background: 'var(--pv-accent-soft)', opacity: withCamera ? 0.4 : 1 }} />
+        <div className={showCamera ? 'pointer-events-none absolute inset-x-0 bottom-24 z-20 flex justify-center' : 'pointer-events-none absolute inset-0 z-20 flex items-center justify-center'}>
+          <div className="relative" style={showCamera ? { width: 300, height: 430 } : { width: 'min(86vw, 380px)', height: 'min(66vh, 560px)' }}>
+            <div className="pointer-events-none absolute left-1/2 top-1/2 h-3/5 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]" style={{ background: 'var(--pv-accent-soft)', opacity: showCamera ? 0.4 : 1 }} />
             <Companion avatar={avatar} getLevel={() => playerRef.current?.getLevel() ?? 0} mood={companionMood} className="relative h-full w-full" />
           </div>
         </div>
@@ -290,13 +305,13 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
         </div>
         <div className="font-bold">{title}</div>
         <div className="flex-1" />
-        {withCamera && (
+        {showCamera && (
           <div className="flex rounded-full p-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
             <button onClick={() => { if (mode !== 'assist') { setMode('assist'); setPhase('connecting'); setDetections([]) } }} className="pv-press rounded-full px-3 py-1.5 text-xs font-bold" style={mode === 'assist' ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' } : { color: 'rgba(255,255,255,0.7)' }}>Ask</button>
             <button onClick={() => { if (mode !== 'shop') { setMode('shop'); setPhase('connecting'); setDetections([]) } }} className="pv-press rounded-full px-3 py-1.5 text-xs font-bold" style={mode === 'shop' ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' } : { color: 'rgba(255,255,255,0.7)' }}>🛒 Shop</button>
           </div>
         )}
-        {withCamera && (
+        {showCamera && (
           <button onClick={() => setSheet('cart')} className="pv-press relative flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold" style={{ background: chipBg, color: chipFg }} aria-label="Cart">
             <ShoppingCart size={16} />
             {cart.length > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-extrabold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}>{cart.length}</span>}
@@ -306,7 +321,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
       </div>
 
       {/* Zoom control */}
-      {withCamera && (
+      {showCamera && (
         <div className="absolute right-3 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 rounded-full p-1.5" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <button onClick={() => changeZoom(0.5)} className="flex h-9 w-9 items-center justify-center rounded-full text-white active:scale-90" aria-label="Zoom in"><ZoomIn size={18} /></button>
           <span className="text-[10px] font-bold text-white/80">{zoom.toFixed(1)}×</span>
@@ -315,7 +330,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
       )}
 
       {/* Scanned coins */}
-      {withCamera && detections.map((d, i) => {
+      {showCamera && detections.map((d, i) => {
         const anchored = d.anchor && d.anchor.x != null && d.anchor.y != null
         const style: React.CSSProperties = anchored
           ? { left: `${d.anchor!.x * 100}%`, top: `${d.anchor!.y * 100}%`, transform: 'translate(-50%, -50%)' }
@@ -340,7 +355,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
       {/* Transcript / captions */}
       <div className="relative z-30 px-4 pb-2">
         {transcriptOpen ? (
-          <div className="pv-no-scrollbar mb-2 max-h-[45vh] overflow-y-auto rounded-2xl p-3" style={{ background: withCamera ? 'rgba(0,0,0,0.7)' : 'var(--pv-surface)', color: chipFg, boxShadow: chipShadow }}>
+          <div className="pv-no-scrollbar mb-2 max-h-[45vh] overflow-y-auto rounded-2xl p-3" style={{ background: showCamera ? 'rgba(0,0,0,0.7)' : 'var(--pv-surface)', color: chipFg, boxShadow: chipShadow }}>
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wide" style={{ color: subtleFg }}>Transcript</span>
               <button onClick={() => setTranscriptOpen(false)} className="flex items-center gap-1 text-xs" style={{ color: subtleFg }}>Collapse <ChevronDown size={14} /></button>
@@ -351,7 +366,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
               <div className="space-y-2">
                 {transcript.map((l) => (
                   <div key={l.id} className={l.role === 'you' ? 'text-right' : ''}>
-                    <span className="inline-block max-w-[88%] rounded-2xl px-3 py-1.5 text-sm" style={l.role === 'you' ? { background: withCamera ? 'rgba(255,255,255,0.15)' : 'var(--pv-surface-2)' } : { background: withCamera ? 'rgba(0,0,0,0.4)' : 'var(--pv-surface-2)', fontStyle: 'italic' }}>{l.text}</span>
+                    <span className="inline-block max-w-[88%] rounded-2xl px-3 py-1.5 text-sm" style={l.role === 'you' ? { background: showCamera ? 'rgba(255,255,255,0.15)' : 'var(--pv-surface-2)' } : { background: showCamera ? 'rgba(0,0,0,0.4)' : 'var(--pv-surface-2)', fontStyle: 'italic' }}>{l.text}</span>
                   </div>
                 ))}
               </div>
@@ -359,7 +374,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
           </div>
         ) : (
           <div className="space-y-2">
-            {userLine && <div className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm" style={{ background: withCamera ? 'rgba(255,255,255,0.15)' : 'var(--pv-surface-2)', color: chipFg }}>{userLine}</div>}
+            {userLine && <div className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm" style={{ background: showCamera ? 'rgba(255,255,255,0.15)' : 'var(--pv-surface-2)', color: chipFg }}>{userLine}</div>}
             {palLine ? (
               <div className="flex items-end gap-2">
                 <div className="max-w-[80%] rounded-2xl px-3.5 py-2.5 text-[15px] italic leading-relaxed" style={{ background: chipBg, color: chipFg, boxShadow: chipShadow }}>{palLine}</div>
@@ -385,9 +400,12 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
 
       {/* Controls */}
       <div className="relative z-30 flex items-center justify-center gap-4 px-6 pb-7 pt-3" style={{ paddingBottom: 'max(1.75rem, env(safe-area-inset-bottom))' }}>
-        <ControlButton active={showAvatar} dark={withCamera} onClick={() => setShowAvatar((v) => !v)} label={showAvatar ? 'Avatar' : 'Hidden'}><Sparkles size={24} strokeWidth={2.2} /></ControlButton>
-        <ControlButton active={micOn} dark={withCamera} onClick={toggleMic} label={micOn ? 'Mic on' : 'Muted'}>{micOn ? <Mic size={24} /> : <MicOff size={24} />}</ControlButton>
-        <ControlButton active={speakerOn} dark={withCamera} onClick={toggleSpeaker} label={speakerOn ? 'Sound on' : 'Silent'}>{speakerOn ? <Volume2 size={24} /> : <VolumeX size={24} />}</ControlButton>
+        <ControlButton active={showAvatar} dark={showCamera} onClick={() => setShowAvatar((v) => !v)} label={showAvatar ? 'Avatar' : 'Hidden'}><Sparkles size={24} strokeWidth={2.2} /></ControlButton>
+        {withCamera && (
+          <ControlButton active={cameraOn} dark={showCamera} onClick={toggleCamera} label={cameraOn ? 'Camera' : 'Just talk'}>{cameraOn ? <Camera size={24} /> : <CameraOff size={24} />}</ControlButton>
+        )}
+        <ControlButton active={micOn} dark={showCamera} onClick={toggleMic} label={micOn ? 'Mic on' : 'Muted'}>{micOn ? <Mic size={24} /> : <MicOff size={24} />}</ControlButton>
+        <ControlButton active={speakerOn} dark={showCamera} onClick={toggleSpeaker} label={speakerOn ? 'Sound on' : 'Silent'}>{speakerOn ? <Volume2 size={24} /> : <VolumeX size={24} />}</ControlButton>
         <button onClick={onClose} aria-label="End session" className="pv-press-lg flex flex-col items-center gap-1.5">
           <span className="flex h-16 w-16 items-center justify-center rounded-full text-white" style={{ background: 'var(--pv-neg)', boxShadow: '0 12px 30px -8px rgba(229,72,77,0.6)' }}><PhoneOff size={24} strokeWidth={2.4} /></span>
           <span className="text-xs font-semibold" style={{ color: subtleFg }}>End</span>

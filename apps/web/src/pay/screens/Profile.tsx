@@ -16,6 +16,7 @@ import { useAuthStore } from '../../stores/auth'
 import { AVATARS, useAvatar } from '../../lib/avatar'
 import { VOICE_OPTIONS, useVoicePrefs } from '../../lib/voicePrefs'
 import { Avatar, Button } from '../components/primitives'
+import { PersonaDetails } from './PersonaDetails'
 
 type Prefs = { sound: boolean; haptics: boolean; palVoice: boolean }
 const PREFS_KEY = 'brainpal.prefs'
@@ -156,6 +157,9 @@ export function Profile({ onClose }: { onClose: () => void }) {
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPhotoPick} />
         </div>
 
+        {/* About you / your family — editable persona */}
+        <PersonaDetails />
+
         {/* Companion */}
         <Section title="Companion">
           {AVATARS.map((a) => (
@@ -164,7 +168,7 @@ export function Profile({ onClose }: { onClose: () => void }) {
         </Section>
 
         {/* PAL voice */}
-        <Section title="PAL voice" caption="StudyPal interviews always use a warm tutor voice. Voices lean Australian.">
+        <Section title="PAL voice" caption="StudyPal interviews always use a warm tutor voice.">
           {VOICE_OPTIONS.map((v) => (
             <SelectRow key={v.key} label={v.label} sub={v.desc} emoji={v.emoji} selected={voice === v.key} onClick={() => setVoice(v.key)} />
           ))}

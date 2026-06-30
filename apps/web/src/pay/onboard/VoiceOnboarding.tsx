@@ -20,6 +20,9 @@ import { Companion, type CompanionMood } from '../../components/Companion'
 
 type Phase = 'ready' | 'connecting' | 'live' | 'saving' | 'done' | 'error'
 
+type Line = { id: number; who: 'you' | 'pal'; text: string }
+let tlId = 1
+
 export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'; name?: string; onDone: () => void }) {
   const avatar = useAvatar((s) => s.avatar)
   const companion = avatarDef(avatar)
@@ -29,6 +32,7 @@ export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'
   const [phase, setPhase] = useState<Phase>('ready')
   const [palLine, setPalLine] = useState('')
   const [userLine, setUserLine] = useState('')
+  const [transcript, setTranscript] = useState<Line[]>([])
   const [micOn, setMicOn] = useState(true)
   const [speaking, setSpeaking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -38,8 +42,14 @@ export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'
   const playerRef = useRef<PcmPlayer | null>(null)
   const micOnRef = useRef(true)
   const replyBufRef = useRef('')
+  const pendingUserRef = useRef('')
   const savedRef = useRef(false)
   const startedRef = useRef(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [transcript, palLine, userLine])
 
   function teardown() {
     try { sockRef.current?.end() } catch { /* ignore */ }
@@ -64,8 +74,10 @@ export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'
     } catch {
       /* still let them in — the gate re-syncs on next load */
     }
+    // Stop the live session + audio so nothing keeps talking, then let the
+    // user tap Continue when they're ready (the avatar stays for the moment).
+    teardown()
     setPhase('done')
-    setTimeout(onDone, 1500)
   }
 
   // Finish with just the name (mic denied / "I'd rather skip"). No dead-end.
@@ -101,9 +113,22 @@ export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'
           sock.start(role, mode, seed, undefined, getVoiceKey())
           setPhase('live')
         },
-        onUserTranscript: (t) => setUserLine(t),
+        onUserTranscript: (t) => { setUserLine(t); pendingUserRef.current = t },
         onReplyDelta: (t) => { replyBufRef.current += t; setPalLine(replyBufRef.current); setSpeaking(true) },
-        onTurnComplete: () => { replyBufRef.current = ''; setSpeaking(false) },
+        onTurnComplete: () => {
+          const u = pendingUserRef.current.trim()
+          const p = replyBufRef.current.trim()
+          setTranscript((prev) => [
+            ...prev,
+            ...(u ? [{ id: tlId++, who: 'you' as const, text: u }] : []),
+            ...(p ? [{ id: tlId++, who: 'pal' as const, text: p }] : []),
+          ])
+          pendingUserRef.current = ''
+          replyBufRef.current = ''
+          setUserLine('')
+          setPalLine('')
+          setSpeaking(false)
+        },
         onInterrupted: () => { playerRef.current?.clear(); setSpeaking(false) },
         // MP3-only (ElevenLabs path) — avoids double/jarring audio.
         onPalAudioMp3: (mp3) => void playerRef.current?.enqueueEncoded(mp3),
@@ -174,23 +199,26 @@ export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'
         </div>
       </div>
 
-      {/* Captions */}
-      <div className="relative z-10 flex-none space-y-2 px-5 pb-2">
-        {userLine && (
-          <div className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm font-medium" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>{userLine}</div>
-        )}
-        {palLine && (
-          <div className="pv-glass max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{palLine}</div>
-        )}
-        {phase === 'live' && !palLine && (
-          <div className="text-center text-sm" style={{ color: 'var(--pv-ink-3)' }}>
-            Say hi to {companion.name} 💬
-          </div>
-        )}
-        {error && (
-          <div className="rounded-2xl px-3.5 py-2.5 text-center text-sm" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>{error}</div>
-        )}
-      </div>
+      {/* Full transcript (scrolls) */}
+      {(phase === 'live' || transcript.length > 0) && (
+        <div ref={scrollRef} className="pv-no-scrollbar relative z-10 flex-none space-y-2 overflow-y-auto px-5 pb-2" style={{ maxHeight: '28vh' }}>
+          {transcript.map((l) => (
+            l.who === 'you' ? (
+              <div key={l.id} className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm font-medium" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>{l.text}</div>
+            ) : (
+              <div key={l.id} className="pv-glass max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{l.text}</div>
+            )
+          ))}
+          {userLine && <div className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm font-medium" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)', opacity: 0.65 }}>{userLine}</div>}
+          {palLine && <div className="pv-glass max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{palLine}</div>}
+          {phase === 'live' && !palLine && !userLine && transcript.length === 0 && (
+            <div className="text-center text-sm" style={{ color: 'var(--pv-ink-3)' }}>Say hi to {companion.name} 💬</div>
+          )}
+        </div>
+      )}
+      {error && (
+        <div className="relative z-10 mx-5 mb-2 flex-none rounded-2xl px-3.5 py-2.5 text-center text-sm" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>{error}</div>
+      )}
 
       {/* Action area */}
       <div className="relative z-10 flex flex-none items-center justify-center px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-2">
@@ -219,6 +247,19 @@ export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'
             </span>
             <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{micOn ? 'Listening' : 'Muted'}</span>
           </button>
+        )}
+
+        {phase === 'done' && (
+          <motion.button
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={onDone}
+            whileTap={{ scale: 0.96 }}
+            className="pv-sheen flex h-14 w-full max-w-sm items-center justify-center gap-2 rounded-full text-base font-bold"
+            style={{ background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-md)' }}
+          >
+            <Sparkles size={18} /> Continue to BrainPal
+          </motion.button>
         )}
 
         {phase === 'error' && (

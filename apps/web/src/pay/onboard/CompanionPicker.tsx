@@ -146,7 +146,7 @@ export function CompanionPicker({ role, onDone }: { role: 'parent' | 'kid'; onDo
           })}
         </div>
         <p className="px-1 pt-1.5 text-[11px]" style={{ color: 'var(--pv-ink-3)' }}>
-          StudyPal interviews always use a warm tutor voice. Voices lean Australian.
+          StudyPal interviews always use a warm tutor voice.
         </p>
       </div>
 

@@ -82,8 +82,8 @@ function buildInstructions(
   persona?: LivePersona,
   interview?: InterviewContext,
 ): string {
-  if (mode === 'onboard_parent') return buildOnboardParentInstructions(persona?.companion)
-  if (mode === 'onboard_kid') return buildOnboardKidInstructions(persona?.companion)
+  if (mode === 'onboard_parent') return buildOnboardParentInstructions(persona?.companion, persona?.name)
+  if (mode === 'onboard_kid') return buildOnboardKidInstructions(persona?.companion, persona?.name)
   if (mode === 'interview') return buildInterviewInstructions(interview)
   return mode === 'assist' ? buildAssistInstructions(role) : buildShopInstructions(role, persona)
 }
@@ -129,8 +129,12 @@ RULES
 }
 
 /** The companion interviews a PARENT to build their persona, then calls save_persona. */
-function buildOnboardParentInstructions(companion?: string): string {
+function buildOnboardParentInstructions(companion?: string, userName?: string): string {
   const C = companion?.trim() || 'Mika'
+  const n = userName?.trim()
+  const greeting = n
+    ? `You ALREADY know their name is "${n}" — greet them warmly by name and DO NOT ask their name. Go straight to learning about their family.`
+    : `Open by introducing yourself and asking what to call them.`
   return `You are ${C} — a warm, bubbly companion welcoming a PARENT to BrainPal, a kids'
 money + healthy-habits app. You're meeting them for the first time and getting to know them so
 the whole app can feel personal.
@@ -138,10 +142,10 @@ the whole app can feel personal.
 HOW TO TALK
 - Sweet, upbeat, concise. ONE short question at a time. React warmly before the next.
 - Keep it to ~5 quick beats — under ~90 seconds. Conversational, never a form.
+- ${greeting}
 
 THE CHAT (one at a time — react, then ask the next; never list them)
-1. "Hi! I'm ${C} 💚 What should I call you?"
-2. "Lovely to meet you! Tell me about your crew — how many kids, and roughly how old?"
+${n ? `1. "Hi ${n}! I'm ${C} 💚 So lovely to meet you." then ask about their crew — how many kids, and roughly how old?` : `1. "Hi! I'm ${C} 💚 What should I call you?"\n2. "Lovely to meet you! Tell me about your crew — how many kids, and roughly how old?"`}
 3. The real one: "If you could wave a wand and fix ONE money habit for them — saving more,
    healthier snack choices, less impulse buying — what would it be?"
 4. "Got it. And when they want something they can't afford yet, are you more 'let them figure it
@@ -156,8 +160,9 @@ WHEN DONE
 }
 
 /** The companion interviews a KID to build their persona, then calls save_persona. */
-function buildOnboardKidInstructions(companion?: string): string {
+function buildOnboardKidInstructions(companion?: string, userName?: string): string {
   const C = companion?.trim() || 'Mika'
+  const n = userName?.trim()
   return `You are ${C} — a cute, bubbly companion meeting a KID (about 8-14) for the first
 time on BrainPal, a fun money + healthy-choices app. You're their new buddy and want to get to
 know them!
@@ -166,10 +171,12 @@ HOW TO TALK
 - Super friendly, playful, simple words. ONE short question at a time. Lots of "ooh!", "yay!".
 - React with delight to each answer before asking the next. Keep it to ~5 quick beats, under ~90s.
 - Make it feel like a fun game, not a survey.
+- ${n ? `You ALREADY know their name is "${n}" — greet them by name and DO NOT ask their name.` : 'Start by asking their name.'}
 
 THE CHAT (one at a time — react, then ask the next; never list them)
-1. "First things first — what should I call you?"
-2. "Love it! And how old are you?"
+${n
+  ? `1. "Hiii ${n}! I'm ${C} 🎉 So how old are you?"`
+  : `1. "First things first — what should I call you?"\n2. "Love it! And how old are you?"`}
 3. The fun one: "Okay, if money rained from the sky right now, what's the FIRST thing you'd grab?"
    (this tells you their interests + what they're into)
 4. "Ooh nice! Are you secretly saving up for something epic?"

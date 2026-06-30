@@ -4,7 +4,7 @@ const env = loadEnv()
 
 /**
  * Map a client voice preference key (sent on session.start → voice, or the
- * voice-sample route) to an ElevenLabs voice id. Defaults lean Australian/warm;
+ * voice-sample route) to an ElevenLabs voice id. A friendly default set;
  * any of them can be overridden via env. Shared by the live bridge and the
  * /voice/sample preview route so the two never drift.
  */

@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 /**
  * PAL voice preference.
  * The chosen `key` is sent to the live bridge (session.start → voice), which
- * maps it to an ElevenLabs voice id. Voices lean Australian by default.
+ * maps it to an ElevenLabs voice id. A range of friendly voices to choose from.
  * The StudyPal interview always uses the warm tutor voice server-side.
  */
 export type VoiceKey = 'normal' | 'good' | 'cute' | 'real' | 'anime' | 'bright' | 'buddy' | 'story'
@@ -18,7 +18,7 @@ export const VOICE_OPTIONS: VoiceOption[] = [
   { key: 'buddy', label: 'Buddy', desc: 'Easy-going and friendly', emoji: '🧢' },
   { key: 'good', label: 'Warm tutor', desc: 'Calm and encouraging — best for studying', emoji: '🎓' },
   { key: 'story', label: 'Storyteller', desc: 'Gentle and expressive — great for stories', emoji: '📖' },
-  { key: 'real', label: 'Aussie', desc: 'Natural, true-to-life Australian accent', emoji: '🇦🇺' },
+  { key: 'real', label: 'Natural', desc: 'Warm, true-to-life and natural', emoji: '🌿' },
   { key: 'anime', label: 'Anime', desc: 'Stylised character voice', emoji: '✨' },
 ]
 

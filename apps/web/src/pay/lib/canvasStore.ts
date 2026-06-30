@@ -1,17 +1,29 @@
 /**
- * canvasStore — the single switch for the on-demand "canvas" slide-over.
+ * canvasStore — overlay/modal switch (top-up, card, chore picker).
  * ───────────────────────────────────────────────────────────────────────────
- * In the chat-first app the heavy views (ledger, map, family management) are
- * never standing navigation — they are summoned over the chat by a tap on a
- * chat card or by PAL intent, then dismissed. Sheets (top-up, card, chore
- * picker) ride the same switch. Mounted once at the shell (PalShell).
+ * Full views (activity, family, map, study, chores) are no longer slide-overs —
+ * they own the main pane via `useNav`. For backwards-compatible call sites,
+ * `open()` transparently routes those kinds to the nav section instead, and
+ * only true modals stay here. Mounted once at the shell (SheetHost).
  */
 import { create } from 'zustand'
+import { useNav, type Section } from './useNav'
 
-export type CanvasKind = 'activity' | 'map' | 'family' | 'topup' | 'card' | 'chore' | 'study'
+export type CanvasKind = 'activity' | 'map' | 'family' | 'topup' | 'card' | 'chore' | 'study' | 'chores'
+
+/** Kinds that are really full sections — routed to the main pane via useNav. */
+const SECTION_OF: Partial<Record<CanvasKind, Section>> = {
+  activity: 'activity',
+  family: 'family',
+  map: 'map',
+  study: 'study',
+  chores: 'chores',
+}
+
+type SheetKind = 'topup' | 'card' | 'chore'
 
 type CanvasState = {
-  kind: CanvasKind | null
+  kind: SheetKind | null
   /** Optional param, e.g. a kid id for a scoped top-up. */
   param?: string
   open: (kind: CanvasKind, param?: string) => void
@@ -21,6 +33,14 @@ type CanvasState = {
 export const useCanvas = create<CanvasState>((set) => ({
   kind: null,
   param: undefined,
-  open: (kind, param) => set({ kind, param }),
+  open: (kind, param) => {
+    const section = SECTION_OF[kind]
+    if (section) {
+      useNav.getState().setSection(section)
+      set({ kind: null, param: undefined })
+      return
+    }
+    set({ kind: kind as SheetKind, param })
+  },
   close: () => set({ kind: null, param: undefined }),
 }))

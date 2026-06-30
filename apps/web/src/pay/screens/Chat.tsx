@@ -15,7 +15,6 @@ import { useSessionStore } from '../lib/sessions'
 import { useHistoryView } from '../lib/historyStore'
 import { useActiveChild } from '../lib/activeChild'
 import { useFamilyKids } from '../useMoneyPal'
-import { HomeCards } from './HomeCards'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../lib/agents'
 
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
@@ -133,6 +132,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
     if (cmd.type === 'new-chat') void newChat()
     else if (cmd.type === 'resume') resumeSession(cmd.sessionId)
     else if (cmd.type === 'live') setLive({ camera: cmd.camera })
+    else if (cmd.type === 'ask') void sendText(cmd.text)
   }), [])
 
   async function sendText(text: string, images: string[] = []) {
@@ -228,14 +228,16 @@ export function Chat({ onClose }: { onClose?: () => void }) {
 
         {/* Timeline */}
         <div ref={scrollRef} className="pv-no-scrollbar flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          <HomeCards onAsk={(t) => sendText(t)} />
+          <div className="mx-auto w-full max-w-2xl space-y-4">
           {empty && <EmptyState onPick={sendText} isKid={isKid} childName={activeKidName} />}
           {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} />))}
           {sending && <Conferring />}
           {pendingIntent && <IntentCard intent={pendingIntent} onConfirm={confirmIntent} onCancel={() => setPendingIntent(null)} />}
+          </div>
         </div>
 
-        {/* Kid quick action: jump straight to camera chore verification */}
+        {/* Kid quick action + composer — centered on wide screens */}
+        <div className="mx-auto w-full max-w-2xl">
         {isKid && (
           <div className="flex flex-none px-3 pt-1">
             <button
@@ -261,6 +263,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
           onTogglePal={togglePal}
           onAuto={setAuto}
         />
+        </div>
         </div>
       </div>
     </>

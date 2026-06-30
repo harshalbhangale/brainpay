@@ -13,6 +13,7 @@ export type AiCommand =
   | { type: 'new-chat' }
   | { type: 'resume'; sessionId: string }
   | { type: 'live'; camera: boolean }
+  | { type: 'ask'; text: string }
 
 type Handler = (cmd: AiCommand) => void
 

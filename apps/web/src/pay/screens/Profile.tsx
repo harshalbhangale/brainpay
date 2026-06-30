@@ -4,6 +4,9 @@
  * Opened from the profile button beside the Pal rail. Built entirely from `.pv`
  * primitives so it matches MoneyPal / StudyPal. Logout lives ONLY here (and the
  * pre-onboarding role screen), so it's consistent across the app.
+ *
+ * Layout: a sticky translucent header (separated by a hairline so it never
+ * collides with scrolling content) over calmly-spaced, grouped setting cards.
  */
 import { useState, useRef, Children } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -12,7 +15,7 @@ import { api } from '../../lib/api'
 import { useAuthStore } from '../../stores/auth'
 import { AVATARS, useAvatar } from '../../lib/avatar'
 import { VOICE_OPTIONS, useVoicePrefs } from '../../lib/voicePrefs'
-import { Avatar, Button, Card } from '../components/primitives'
+import { Avatar, Button } from '../components/primitives'
 
 type Prefs = { sound: boolean; haptics: boolean; palVoice: boolean }
 const PREFS_KEY = 'brainpal.prefs'
@@ -105,17 +108,20 @@ export function Profile({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="pv fixed inset-0 z-[70] flex flex-col" style={{ background: 'var(--pv-bg)' }} role="dialog" aria-modal="true">
-      {/* Header */}
-      <div className="flex flex-none items-center justify-between px-5 pb-2 pt-[max(16px,env(safe-area-inset-top))]">
-        <h1 className="pv-h1">Profile</h1>
+      {/* Sticky translucent header — hairline keeps it off the scroll content. */}
+      <header
+        className="sticky top-0 z-10 flex flex-none items-center justify-between px-5 pb-3 pt-[max(16px,env(safe-area-inset-top))]"
+        style={{ background: 'color-mix(in srgb, var(--pv-bg) 72%, transparent)', backdropFilter: 'blur(14px) saturate(160%)', WebkitBackdropFilter: 'blur(14px) saturate(160%)', borderBottom: '1px solid var(--pv-line)' }}
+      >
+        <h1 className="pv-h2">Profile</h1>
         <button onClick={onClose} aria-label="Close" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink-2)' }}>
           <X size={20} />
         </button>
-      </div>
+      </header>
 
-      <div className="pv-no-scrollbar flex-1 overflow-y-auto px-5 pb-10">
+      <div className="pv-no-scrollbar flex-1 overflow-y-auto px-5 pb-10 pt-5">
         {/* Identity card — editable photo + name */}
-        <Card className="pv-rise p-5" style={{ background: 'var(--pv-grad-ink)' }}>
+        <div className="pv-rise overflow-hidden rounded-[var(--pv-r-lg)] p-5" style={{ background: 'var(--pv-grad-ink)', boxShadow: 'var(--pv-shadow-md)' }}>
           <div className="flex items-center gap-4">
             <button onClick={() => fileRef.current?.click()} aria-label="Change photo" className="pv-press relative shrink-0 rounded-full">
               <Avatar name={name} src={photo} size={64} />
@@ -132,23 +138,23 @@ export function Profile({ onClose }: { onClose: () => void }) {
                   onBlur={commitName}
                   onKeyDown={(e) => { if (e.key === 'Enter') commitName() }}
                   maxLength={40}
-                  className="w-full rounded-xl px-3 py-1.5 text-lg font-extrabold outline-none"
+                  className="w-full rounded-xl px-3 py-1.5 text-lg font-bold outline-none"
                   style={{ background: 'rgba(255,255,255,0.14)', color: 'var(--pv-on-dark)' }}
                 />
               ) : (
                 <button onClick={() => { setDraftName(name); setEditingName(true) }} className="pv-press flex max-w-full items-center gap-1.5 text-left">
-                  <span className="truncate text-lg font-extrabold" style={{ color: 'var(--pv-on-dark)' }}>{name}</span>
-                  {savingId ? <Loader2 size={14} className="animate-spin" style={{ color: 'rgba(255,255,255,0.6)' }} /> : <Pencil size={13} className="shrink-0" style={{ color: 'rgba(255,255,255,0.55)' }} />}
+                  <span className="truncate text-xl font-bold tracking-tight" style={{ color: 'var(--pv-on-dark)' }}>{name}</span>
+                  {savingId ? <Loader2 size={14} className="shrink-0 animate-spin" style={{ color: 'rgba(255,255,255,0.6)' }} /> : <Pencil size={13} className="shrink-0" style={{ color: 'rgba(255,255,255,0.55)' }} />}
                 </button>
               )}
-              <div className="mt-1 flex items-center gap-2">
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: 'rgba(255,255,255,0.16)', color: 'var(--pv-on-dark)' }}>{role}</span>
                 {account?.phone && <span className="truncate text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>{account.phone}</span>}
               </div>
             </div>
           </div>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPhotoPick} />
-        </Card>
+        </div>
 
         {/* Companion */}
         <Section title="Companion">
@@ -158,14 +164,11 @@ export function Profile({ onClose }: { onClose: () => void }) {
         </Section>
 
         {/* PAL voice */}
-        <Section title="PAL voice">
+        <Section title="PAL voice" caption="StudyPal interviews always use a warm tutor voice. Voices lean Australian.">
           {VOICE_OPTIONS.map((v) => (
             <SelectRow key={v.key} label={v.label} sub={v.desc} emoji={v.emoji} selected={voice === v.key} onClick={() => setVoice(v.key)} />
           ))}
         </Section>
-        <p className="-mt-3 mb-6 px-1 text-xs" style={{ color: 'var(--pv-ink-3)' }}>
-          StudyPal interviews always use a warm tutor voice. Voices lean Australian.
-        </p>
 
         {/* Preferences */}
         <Section title="Preferences">
@@ -176,11 +179,11 @@ export function Profile({ onClose }: { onClose: () => void }) {
 
         {/* Data */}
         <Section title="Data">
-          <button onClick={clearChat} disabled={clearing} className="pv-press flex w-full items-center justify-between px-4 py-3.5 text-left disabled:opacity-50">
+          <button onClick={clearChat} disabled={clearing} className="pv-press flex min-h-[52px] w-full items-center justify-between px-4 py-3.5 text-left disabled:opacity-50">
             <span className="flex items-center gap-3 text-sm font-semibold" style={{ color: 'var(--pv-ink)' }}>
               <Trash2 size={18} style={{ color: 'var(--pv-ink-3)' }} /> Clear PAL chat history
             </span>
-            <span className="text-sm" style={{ color: 'var(--pv-ink-3)' }}>{cleared ? 'Cleared' : clearing ? '…' : ''}</span>
+            <span className="text-sm font-semibold" style={{ color: cleared ? 'var(--pv-pos)' : 'var(--pv-ink-3)' }}>{cleared ? 'Cleared' : clearing ? '…' : ''}</span>
           </button>
         </Section>
 
@@ -188,28 +191,30 @@ export function Profile({ onClose }: { onClose: () => void }) {
         <Section title="About">
           <Row label="App" value="BrainPal Web" />
           <Row label="Version" value="1.0.0" />
-          <a href="https://brainpal.com.au" target="_blank" rel="noreferrer" className="flex items-center justify-between px-4 py-3.5">
+          <a href="https://brainpal.com.au" target="_blank" rel="noreferrer" className="pv-press flex min-h-[52px] items-center justify-between px-4 py-3.5">
             <span className="text-sm font-semibold" style={{ color: 'var(--pv-ink)' }}>Terms &amp; Privacy</span>
             <ChevronRight size={16} style={{ color: 'var(--pv-ink-3)' }} />
           </a>
         </Section>
 
         {/* Sign out — the single, consistent logout */}
-        {confirmOut ? (
-          <Card className="pv-pop mt-2 p-4">
-            <p className="pv-body" style={{ color: 'var(--pv-ink-2)' }}>Sign out of BrainPal on this device?</p>
-            <div className="mt-3 flex gap-2">
-              <Button variant="soft" full onClick={() => setConfirmOut(false)}>Cancel</Button>
-              <button onClick={signOut} className="pv-press-lg inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-bold" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>
-                <LogOut size={16} /> Sign out
-              </button>
+        <div className="mt-7">
+          {confirmOut ? (
+            <div className="pv-pop rounded-[var(--pv-r-lg)] p-4" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-md)' }}>
+              <p className="pv-body" style={{ color: 'var(--pv-ink-2)' }}>Sign out of BrainPal on this device?</p>
+              <div className="mt-3 flex gap-2">
+                <Button variant="soft" full onClick={() => setConfirmOut(false)}>Cancel</Button>
+                <button onClick={signOut} className="pv-press-lg inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-bold" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>
+                  <LogOut size={16} /> Sign out
+                </button>
+              </div>
             </div>
-          </Card>
-        ) : (
-          <button onClick={() => setConfirmOut(true)} className="pv-press mt-2 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>
-            <LogOut size={16} /> Sign out
-          </button>
-        )}
+          ) : (
+            <button onClick={() => setConfirmOut(true)} className="pv-press flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>
+              <LogOut size={16} /> Sign out
+            </button>
+          )}
+        </div>
 
         <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
@@ -217,25 +222,26 @@ export function Profile({ onClose }: { onClose: () => void }) {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, caption, children }: { title: string; caption?: string; children: React.ReactNode }) {
   const items = Children.toArray(children)
   return (
     <section className="mt-6">
-      <h3 className="pv-label mb-2">{title}</h3>
-      <Card flat className="overflow-hidden p-0">
+      <h3 className="pv-label mb-2.5">{title}</h3>
+      <div className="overflow-hidden rounded-[var(--pv-r-lg)]" style={{ background: 'var(--pv-surface)', border: '1px solid var(--pv-line)' }}>
         {items.map((child, i) => (
           <div key={i} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--pv-line)' }}>
             {child}
           </div>
         ))}
-      </Card>
+      </div>
+      {caption && <p className="mt-2.5 px-1 text-xs" style={{ color: 'var(--pv-ink-3)' }}>{caption}</p>}
     </section>
   )
 }
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3.5">
+    <div className="flex min-h-[52px] items-center justify-between px-4 py-3.5">
       <span className="text-sm font-semibold" style={{ color: 'var(--pv-ink)' }}>{label}</span>
       <span className="text-sm" style={{ color: 'var(--pv-ink-3)' }}>{value}</span>
     </div>
@@ -244,11 +250,11 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function SelectRow({ label, sub, emoji, selected, onClick }: { label: string; sub?: string; emoji?: string; selected: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="pv-press flex w-full items-center gap-3 px-4 py-3.5 text-left">
-      {emoji && <span className="text-xl">{emoji}</span>}
+    <button onClick={onClick} className="pv-press flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left">
+      {emoji && <span className="shrink-0 text-xl">{emoji}</span>}
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold" style={{ color: 'var(--pv-ink)' }}>{label}</span>
-        {sub && <span className="block text-xs" style={{ color: 'var(--pv-ink-3)' }}>{sub}</span>}
+        <span className="block truncate text-sm font-semibold" style={{ color: 'var(--pv-ink)' }}>{label}</span>
+        {sub && <span className="block truncate text-xs" style={{ color: 'var(--pv-ink-3)' }}>{sub}</span>}
       </span>
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={selected ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' } : { border: '2px solid var(--pv-line-strong)' }}>
         {selected && <Check size={14} strokeWidth={3} />}
@@ -259,9 +265,9 @@ function SelectRow({ label, sub, emoji, selected, onClick }: { label: string; su
 
 function ToggleRow({ label, on, onToggle }: { label: string; on: boolean; onToggle: () => void }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3.5">
+    <div className="flex min-h-[52px] items-center justify-between px-4 py-3.5">
       <span className="text-sm font-semibold" style={{ color: 'var(--pv-ink)' }}>{label}</span>
-      <button onClick={onToggle} aria-pressed={on} className="relative h-6 w-11 rounded-full transition-colors" style={{ background: on ? 'var(--pv-accent)' : 'var(--pv-surface-3)' }}>
+      <button onClick={onToggle} aria-pressed={on} aria-label={label} className="pv-press relative h-6 w-11 shrink-0 rounded-full transition-colors" style={{ background: on ? 'var(--pv-accent)' : 'var(--pv-surface-3)' }}>
         <span className="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" style={{ left: on ? '22px' : '2px' }} />
       </button>
     </div>

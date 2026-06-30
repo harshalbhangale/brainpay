@@ -8,9 +8,9 @@
  * (freeze, online, ATM, contactless, daily limit) is real and persisted.
  */
 import { useState } from 'react'
-import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, type LucideIcon } from 'lucide-react'
+import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, Sparkles, Ban, type LucideIcon } from 'lucide-react'
 import { useAuthStore } from '../../stores/auth'
-import { useCardSettings, cardNumber, cardExpiry, cardCvv, cardLast4, maskedNumber } from '../../lib/card'
+import { useCardSettings, cardNumber, cardExpiry, cardCvv, cardLast4, maskedNumber, blockLabel } from '../../lib/card'
 import { aud } from '../../lib/format'
 import { Avatar, Button, Card, PressButton } from '../components/primitives'
 import { BottomSheet } from '../components/BottomSheet'
@@ -80,15 +80,18 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
         style={{ backgroundImage: holder.you ? 'var(--pv-grad-ink)' : 'var(--pv-grad-accent)', color: holder.you ? '#fff' : 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-lg)', aspectRatio: '1.586', position: 'relative' }}
       >
         <div className="flex items-start justify-between">
-          <div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: holder.you ? 'rgba(255,255,255,0.2)' : 'rgba(11,12,15,0.14)' }}>
+              <Sparkles size={15} strokeWidth={2.4} />
+            </span>
             <span className="text-sm font-extrabold tracking-tight">BrainPal</span>
-            <div className="pv-amount mt-2 text-2xl">{aud(holder.balance)}</div>
           </div>
-          <span className="text-xs font-bold uppercase tracking-widest" style={{ opacity: 0.7 }}>
-            {settings.frozen ? 'Frozen' : 'Debit'}
+          <span className="text-[0.625rem] font-bold uppercase tracking-widest" style={{ opacity: 0.7 }}>
+            {settings.frozen ? 'Frozen' : settings.issued ? 'Virtual' : 'Not issued'}
           </span>
         </div>
-        <div className="mt-5 h-8 w-11 rounded-md" style={{ background: holder.you ? 'rgba(255,255,255,0.22)' : 'rgba(11,12,15,0.18)' }} />
+        <div className="pv-amount mt-3 text-2xl">{aud(holder.balance)}</div>
+        <div className="mt-4 h-8 w-11 rounded-md" style={{ background: holder.you ? 'rgba(255,255,255,0.22)' : 'rgba(11,12,15,0.18)' }} />
         <div className="pv-amount mt-4 text-lg tracking-[0.14em]">
           {revealed ? cardNumber(holder.id) : maskedNumber(cardLast4(holder.id))}
         </div>
@@ -142,9 +145,27 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
         </div>
       </Card>
 
+      {/* Blocked categories — real, persisted spend blocks */}
+      <p className="pv-label mt-6">Blocked categories</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {['gambling', 'in_app', 'crypto', 'alcohol'].map((b) => {
+          const on = settings.blocks.includes(b)
+          return (
+            <button
+              key={b}
+              onClick={() => update({ blocks: on ? settings.blocks.filter((x) => x !== b) : [...settings.blocks, b] })}
+              className="pv-press inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-bold"
+              style={on ? { background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}
+            >
+              {on && <Ban size={13} strokeWidth={2.6} />} {blockLabel(b)}
+            </button>
+          )
+        })}
+      </div>
+
       <button
         onClick={() => update({ frozen: true })}
-        className="pv-press mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold"
+        className="pv-press mt-6 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold"
         style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}
       >
         <ShieldAlert size={16} /> Report lost or stolen

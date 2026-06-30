@@ -20,7 +20,7 @@ import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../l
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
 
 type Pal = { palId: string; line: string }
-type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'verify_chore' } & Record<string, unknown>
+type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'verify_chore' | 'issue_card' } & Record<string, unknown>
 type SendResponse = { reply: string; pals?: Pal[]; intent?: Intent; requiresConfirmation?: boolean }
 type ExecuteResponse = { ok: boolean; confirmationMessage?: string }
 type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string; images?: string[] }
@@ -47,6 +47,12 @@ function describeIntent(intent: Intent): string {
       return intent.kidName
         ? `Remember about ${kidName}: “${intent.fact as string}”`
         : `Remember: “${intent.fact as string}”`
+    case 'issue_card': {
+      const limit = (intent.dailyLimit as number) ?? 20
+      const blocks = Array.isArray(intent.blocks) ? (intent.blocks as string[]) : ['gambling', 'in_app']
+      const blockLabel = blocks.map((b) => b.replace('in_app', 'in-app')).join(' + ')
+      return `Issue ${kidName} a BrainPal card — $${limit}/day${blockLabel ? `, blocking ${blockLabel}` : ''}`
+    }
     default:
       return 'Confirm this action?'
   }

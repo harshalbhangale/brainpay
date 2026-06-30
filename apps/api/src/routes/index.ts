@@ -18,6 +18,7 @@ import { voiceSample } from './voice-sample'
 import { wallet } from './wallet'
 import { study } from './study'
 import { uploads } from './uploads'
+import { cards } from './cards'
 
 export const routes = new Hono()
 routes.route('/', health)
@@ -43,3 +44,4 @@ routes.route('/', voiceOnboarding)
 routes.route('/', realtime)
 routes.route('/', study)
 routes.route('/', uploads)
+routes.route('/', cards)

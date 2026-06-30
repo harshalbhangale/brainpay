@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { api } from './api'
 
 /**
- * Card presentation + controls.
+ * Card presentation + REAL controls.
  *
- * NOTE: BrainPal has no real card processor. The card number/expiry/CVV are
- * generated deterministically from the account id so they're stable per kid,
- * and the controls persist client-side (localStorage). This is the realistic
- * card-management UX; wiring it to an issuer is future backend work.
+ * BrainPal has no card processor, so the PAN/expiry/CVV are generated
+ * deterministically from the account id (stable per holder, presentation only).
+ * The CONTROLS, however, are real: freeze, channel toggles, daily limit and
+ * category blocks persist server-side in the account's persona via
+ * GET/PUT /cards/:accountId (parents manage kids; kids manage their own).
  */
 
 function hash(s: string): number {
@@ -43,51 +45,63 @@ export function cardCvv(accountId: string): string {
 export const maskedNumber = (last4: string) => `•••• •••• •••• ${last4}`
 
 export type CardSettings = {
+  issued: boolean
   frozen: boolean
   online: boolean
   atm: boolean
   contactless: boolean
   dailyLimit: number
+  blocks: string[]
 }
 
 const DEFAULTS: CardSettings = {
+  issued: true,
   frozen: false,
   online: true,
   atm: true,
   contactless: true,
   dailyLimit: 100,
+  blocks: [],
 }
 
-/** Card controls persisted per account in localStorage (demo persistence). */
+/** Human label for a block category. */
+export function blockLabel(b: string): string {
+  const map: Record<string, string> = { gambling: 'Gambling', in_app: 'In-app purchases', crypto: 'Crypto', alcohol: 'Alcohol' }
+  return map[b] ?? b.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase())
+}
+
+/** Card controls — real, persisted per account on the server. */
 export function useCardSettings(accountId: string) {
-  const key = `bp.card.${accountId}`
+  const qc = useQueryClient()
+  const key = ['card', accountId]
+  const real = !!accountId && accountId !== 'preview'
 
-  const load = (): CardSettings => {
-    try {
-      const raw = localStorage.getItem(key)
-      return raw ? { ...DEFAULTS, ...(JSON.parse(raw) as Partial<CardSettings>) } : DEFAULTS
-    } catch {
-      return DEFAULTS
-    }
-  }
+  const q = useQuery({
+    queryKey: key,
+    queryFn: () => api<{ settings: CardSettings }>(`/cards/${accountId}`).then((r) => ({ ...DEFAULTS, ...r.settings })),
+    enabled: real,
+    staleTime: 15_000,
+  })
 
-  const [settings, setSettings] = useState<CardSettings>(load)
+  const settings: CardSettings = q.data ?? DEFAULTS
 
-  useEffect(() => {
-    setSettings(load())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  const mut = useMutation({
+    mutationFn: (patch: Partial<CardSettings>) =>
+      api<{ settings: CardSettings }>(`/cards/${accountId}`, { method: 'PUT', body: JSON.stringify(patch) }).then((r) => r.settings),
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: key })
+      const prev = qc.getQueryData<CardSettings>(key) ?? settings
+      qc.setQueryData<CardSettings>(key, { ...prev, ...patch })
+      return { prev }
+    },
+    onError: (_e, _p, ctx) => { if (ctx?.prev) qc.setQueryData(key, ctx.prev) },
+    onSuccess: (s) => qc.setQueryData<CardSettings>(key, { ...DEFAULTS, ...s }),
+  })
 
   function update(patch: Partial<CardSettings>) {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch }
-      try {
-        localStorage.setItem(key, JSON.stringify(next))
-      } catch {
-        /* ignore */
-      }
-      return next
-    })
+    // Public preview (logged-out) has no real account — keep it local-only.
+    if (!real) { qc.setQueryData<CardSettings>(key, { ...settings, ...patch }); return }
+    mut.mutate(patch)
   }
 
   return [settings, update] as const

@@ -18,7 +18,7 @@ import type { PalContext } from './pal-context'
  *   query        — just a question, no action needed
  */
 
-export type IntentKind = 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'verify_chore' | 'query'
+export type IntentKind = 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'verify_chore' | 'issue_card' | 'query'
 
 export type AddChoreIntent = {
   kind: 'add_chore'
@@ -77,6 +77,16 @@ export type VerifyChoreIntent = {
   title?: string
 }
 
+export type IssueCardIntent = {
+  kind: 'issue_card'
+  kidName: string
+  kidAccountId?: string
+  /** Daily spend cap in dollars. */
+  dailyLimit?: number
+  /** Category blocks, e.g. ["gambling", "in_app"]. */
+  blocks?: string[]
+}
+
 export type QueryIntent = {
   kind: 'query'
 }
@@ -90,6 +100,7 @@ export type ParsedIntent =
   | CreateRuleIntent
   | RememberIntent
   | VerifyChoreIntent
+  | IssueCardIntent
   | QueryIntent
 
 const INTENT_SYSTEM = `You are an intent parser for a family money app called MoneyPal.
@@ -105,7 +116,8 @@ Return one of these shapes:
 6. { "kind": "create_rule", "ruleText": string }
 7. { "kind": "remember", "fact": string, "kidName": string | null }
 8. { "kind": "verify_chore", "title": string | null }
-9. { "kind": "query" }
+9. { "kind": "issue_card", "kidName": string, "dailyLimit": number | null, "blocks": string[] }
+10. { "kind": "query" }
 
 Rules:
 - Use "query" for anything that is just a question or conversation (no action needed).
@@ -117,6 +129,7 @@ Rules:
 - create_rule: set a family rule or limit (e.g. "no spending over $20", "sugar limit 30g a day"). Put the whole rule in ruleText.
 - remember: store a fact PAL should remember (e.g. "remember Mia loves dinosaurs", "remember I get paid on the 1st"). kidName is who it's about, or null if about the speaker/family.
 - verify_chore: the speaker (a kid) says they DID/finished/completed a chore and wants credit (e.g. "I did the dishes", "finished cleaning my room", "done with homework"). title = the chore named, or null if unspecified.
+- issue_card: a parent wants to set up / issue / give a kid their card (e.g. "set up Cody's card", "give Mia a card"). dailyLimit = a daily spend cap in dollars (default 20 if unspecified). blocks = categories to block; default ["gambling","in_app"] unless the parent says otherwise.
 - Extract kid names from the message. Match to the family context if possible.
 - Money: 1 AUD = 100 Brains. "$10" → 1000. Applies to topup, contribute_goal, rewards, and targets.
 - Defaults: chore reward = 50; new goal target = 500.
@@ -138,6 +151,7 @@ function intentIsActionable(i: ParsedIntent): boolean {
     case 'create_rule': return !!i.ruleText
     case 'remember': return !!i.fact
     case 'verify_chore': return true // opening the camera verifier never dead-ends
+    case 'issue_card': return !!i.kidAccountId
     default: return true // query
   }
 }
@@ -153,6 +167,7 @@ export async function parseIntent(
     'goal', 'save', 'saving', 'contribute', 'toward', 'towards', 'put $', 'message', 'tell ', 'note',
     'remember', 'remind', 'rule', 'limit', 'allowance',
     'i did', 'i finished', 'finished', 'completed', 'done with', 'did my', 'did the', 'cleaned', 'i cleaned',
+    'card', 'set up', 'issue', 'give ',
   ]
   const hasAction = actionWords.some((w) => lower.includes(w))
 
@@ -185,7 +200,7 @@ export async function parseIntent(
         return name === want || name.startsWith(want) || want.startsWith(name) || name.split(' ')[0] === want
       })
       if (match) {
-        (raw as AddChoreIntent | TopupIntent | SetGoalIntent | ContributeGoalIntent | SendNoteIntent | RememberIntent).kidAccountId = match.accountId
+        (raw as AddChoreIntent | TopupIntent | SetGoalIntent | ContributeGoalIntent | SendNoteIntent | RememberIntent | IssueCardIntent).kidAccountId = match.accountId
       }
     }
 

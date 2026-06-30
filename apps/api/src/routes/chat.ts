@@ -242,7 +242,7 @@ chat.post('/chat/execute', async (c) => {
   const parsed = z
     .object({
       intent: z.object({
-        kind: z.enum(['add_chore', 'topup', 'set_goal', 'contribute_goal', 'send_note', 'create_rule', 'remember']),
+        kind: z.enum(['add_chore', 'topup', 'set_goal', 'contribute_goal', 'send_note', 'create_rule', 'remember', 'issue_card']),
         // The intent parser (and the LLM behind it) may emit `null` for fields it
         // can't fill, so accept null/undefined and coerce numbers. Domain guards
         // below turn any genuinely-missing field into a friendly error.
@@ -257,6 +257,8 @@ chat.post('/chat/execute', async (c) => {
         message: z.string().max(500).nullish(),
         ruleText: z.string().max(300).nullish(),
         fact: z.string().max(300).nullish(),
+        dailyLimit: z.coerce.number().int().min(0).max(100000).nullish(),
+        blocks: z.array(z.string().max(40)).max(20).nullish(),
       }),
     })
     .safeParse(body)
@@ -519,6 +521,44 @@ chat.post('/chat/execute', async (c) => {
       confirmationMessage: intent.kidName
         ? `Got it — I'll remember that about ${intent.kidName}.`
         : `Got it — I'll remember that.`,
+    })
+  }
+
+  // ── issue_card ────────────────────────────────────────────────────────
+  // "Set up Cody's card" — persist real card policy on the kid's account
+  // (no card processor; controls are real and durable in persona.cardSettings).
+  if (intent.kind === 'issue_card') {
+    if (!isParent) return c.json({ error: 'only_parents_can_issue_cards' }, 403)
+    if (!intent.kidAccountId) return c.json({ error: 'kid_not_found' }, 400)
+
+    const [kidMember] = await db
+      .select({ familyId: memberships.familyId })
+      .from(memberships)
+      .where(eq(memberships.accountId, intent.kidAccountId))
+      .limit(1)
+    if (!kidMember || kidMember.familyId !== familyId) return c.json({ error: 'kid_not_in_family' }, 403)
+
+    const [kidAcct] = await db
+      .select({ persona: accounts.persona })
+      .from(accounts)
+      .where(eq(accounts.id, intent.kidAccountId))
+      .limit(1)
+    if (!kidAcct) return c.json({ error: 'kid_not_found' }, 404)
+
+    const dailyLimit = intent.dailyLimit ?? 20
+    const blocks = (intent.blocks && intent.blocks.length ? intent.blocks : ['gambling', 'in_app'])
+    const cur = ((kidAcct.persona as { cardSettings?: Record<string, unknown> } | null)?.cardSettings) ?? {}
+    const cardSettings = { online: true, atm: true, contactless: true, ...cur, issued: true, frozen: false, dailyLimit, blocks }
+    const persona = { ...((kidAcct.persona as Record<string, unknown>) ?? {}), cardSettings }
+    await db.update(accounts).set({ persona }).where(eq(accounts.id, intent.kidAccountId))
+
+    const blockLabel = blocks.map((b) => b.replace('in_app', 'in-app')).join(' + ')
+    logger.info({ kidAccountId: intent.kidAccountId, via: 'chat' }, 'chat.execute.issue_card')
+    return c.json({
+      ok: true,
+      kind: 'issue_card',
+      result: { cardSettings },
+      confirmationMessage: `Issued ${intent.kidName ?? 'their'} BrainPal card — $${dailyLimit}/day limit${blockLabel ? `, blocking ${blockLabel}` : ''}.`,
     })
   }
 

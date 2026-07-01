@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Apple, Wallet, CheckCircle2, AlertCircle, XCircle, ZoomIn, ZoomOut, ChevronUp, ChevronDown,
-  ShoppingCart, Plus, Check, Trash2, X, Sparkles, PhoneOff, Mic, MicOff, Volume2, VolumeX, Camera, CameraOff,
+  ShoppingCart, Plus, Check, Trash2, X, Sparkles, PhoneOff, Mic, MicOff, Volume2, VolumeX, Camera, CameraOff, Keyboard,
 } from 'lucide-react'
 import { useAuthStore } from '../../stores/auth'
 import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../../lib/liveRt'
@@ -29,10 +29,13 @@ type Phase = 'connecting' | 'live' | 'error' | 'no_permission'
 type Line = { id: number; role: 'you' | 'mika'; text: string }
 let lineId = 1
 
-export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { withCamera: boolean; onClose: () => void; initialMode?: 'assist' | 'shop' }) {
+export function LiveSession({ withCamera, onClose, initialMode = 'assist', embedded = false, onSwitchPal, onCamera, speaker }: { withCamera: boolean; onClose: () => void; initialMode?: 'assist' | 'shop'; embedded?: boolean; onSwitchPal?: () => void; onCamera?: () => void; speaker?: string }) {
   const account = useAuthStore((s) => s.account)
   const role: 'parent' | 'kid' = account?.accountType === 'kid' ? 'kid' : 'parent'
   const avatar = useAvatar((s) => s.avatar)
+  // The character fronting this session (e.g. the chosen Pal). Used for copy
+  // and the History session title so voice mode reads in the Pal's voice.
+  const who = speaker || 'Mika'
 
   const [mode, setMode] = useState<'assist' | 'shop'>(initialMode)
   const [phase, setPhase] = useState<Phase>('connecting')
@@ -148,7 +151,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
               if (!sessionIdRef.current) {
                 sessionIdRef.current = useSessionStore.getState().start(
                   showCamera ? 'camera' : 'voice',
-                  showCamera ? 'Point & Ask' : 'Talk to Mika',
+                  showCamera ? 'Point & Ask' : `Talk to ${who}`,
                 )
               }
               useSessionStore.getState().append(sessionIdRef.current, lines.map((l) => ({ role: l.role, text: l.text })))
@@ -253,8 +256,8 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
   }
 
   const statusLabel = phase === 'live' ? 'LIVE' : phase === 'connecting' ? 'CONNECTING…' : phase === 'error' ? 'RECONNECT' : 'BLOCKED'
-  const title = showCamera ? 'Point & Ask' : 'Talk to Mika'
-  const hint = showCamera ? 'Point at anything and ask…' : 'Say something — Mika is listening…'
+  const title = showCamera ? 'Point & Ask' : `Talk to ${who}`
+  const hint = showCamera ? 'Point at anything and ask…' : `Say something — ${who} is listening…`
 
   const lastDet = detections[detections.length - 1]
   const companionMood: CompanionMood = lastDet
@@ -276,8 +279,8 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
 
   return (
     <div
-      className="pv fixed inset-0 z-50 flex flex-col overflow-hidden"
-      style={{ background: showCamera ? '#000' : 'radial-gradient(900px 520px at 50% -8%, var(--pv-accent-soft), transparent 60%), linear-gradient(180deg, var(--pv-bg) 0%, var(--pv-bg-2) 100%)', color: showCamera ? '#fff' : 'var(--pv-ink)' }}
+      className={embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-hidden' : 'pv fixed inset-0 z-50 flex flex-col overflow-hidden'}
+      style={{ background: embedded ? 'transparent' : (showCamera ? '#000' : 'radial-gradient(900px 520px at 50% -8%, var(--pv-accent-soft), transparent 60%), linear-gradient(180deg, var(--pv-bg) 0%, var(--pv-bg-2) 100%)'), color: showCamera ? '#fff' : 'var(--pv-ink)' }}
     >
       {withCamera && (
         <>
@@ -298,12 +301,19 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
       )}
 
       {/* Top bar */}
-      <div className="relative z-30 flex items-center gap-3 p-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
+      <div className="relative z-30 flex items-center gap-3 p-4" style={{ paddingTop: embedded ? '1rem' : 'max(1rem, env(safe-area-inset-top))' }}>
         <div className="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-extrabold tracking-wide" style={phase === 'live' ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: chipBg, color: chipFg, boxShadow: chipShadow }}>
           {phase === 'live' && <span className="h-2 w-2 rounded-full" style={{ background: 'rgba(0,0,0,0.6)' }} />}
           {statusLabel}
         </div>
-        <div className="font-bold">{title}</div>
+        {onSwitchPal ? (
+          <button onClick={onSwitchPal} aria-label="Switch Pal" className="pv-press flex min-w-0 items-center gap-1 font-bold">
+            <span className="truncate">{title}</span>
+            <ChevronDown size={15} style={{ color: chipFg, opacity: 0.65 }} />
+          </button>
+        ) : (
+          <div className="font-bold">{title}</div>
+        )}
         <div className="flex-1" />
         {showCamera && (
           <div className="flex rounded-full p-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
@@ -317,7 +327,7 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
             {cart.length > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-extrabold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}>{cart.length}</span>}
           </button>
         )}
-        <button onClick={onClose} aria-label="Close" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: chipBg, color: chipFg, boxShadow: chipShadow }}><X size={20} /></button>
+        <button onClick={onClose} aria-label={embedded ? 'Switch to typing' : 'Close'} className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: chipBg, color: chipFg, boxShadow: chipShadow }}>{embedded ? <Keyboard size={19} /> : <X size={20} />}</button>
       </div>
 
       {/* Zoom control */}
@@ -399,17 +409,29 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist' }: { w
       {sheet === 'cart' && <CartSheet cart={cart} total={cartTotal} onRemove={toggleCart} onClose={() => setSheet('none')} />}
 
       {/* Controls */}
-      <div className="relative z-30 flex items-center justify-center gap-4 px-6 pb-7 pt-3" style={{ paddingBottom: 'max(1.75rem, env(safe-area-inset-bottom))' }}>
-        <ControlButton active={showAvatar} dark={showCamera} onClick={() => setShowAvatar((v) => !v)} label={showAvatar ? 'Avatar' : 'Hidden'}><Sparkles size={24} strokeWidth={2.2} /></ControlButton>
-        {withCamera && (
-          <ControlButton active={cameraOn} dark={showCamera} onClick={toggleCamera} label={cameraOn ? 'Camera' : 'Just talk'}>{cameraOn ? <Camera size={24} /> : <CameraOff size={24} />}</ControlButton>
+      <div className="relative z-30 flex items-center justify-center gap-4 px-6 pt-3" style={{ paddingBottom: embedded ? '0.75rem' : 'max(1.75rem, env(safe-area-inset-bottom))' }}>
+        {embedded ? (
+          <>
+            {onCamera && (
+              <ControlButton active={false} dark={false} onClick={onCamera} label="Camera"><Camera size={24} /></ControlButton>
+            )}
+            <ControlButton active={micOn} dark={false} onClick={toggleMic} label={micOn ? 'Mic on' : 'Muted'}>{micOn ? <Mic size={24} /> : <MicOff size={24} />}</ControlButton>
+            <ControlButton active={speakerOn} dark={false} onClick={toggleSpeaker} label={speakerOn ? 'Sound on' : 'Silent'}>{speakerOn ? <Volume2 size={24} /> : <VolumeX size={24} />}</ControlButton>
+          </>
+        ) : (
+          <>
+            <ControlButton active={showAvatar} dark={showCamera} onClick={() => setShowAvatar((v) => !v)} label={showAvatar ? 'Avatar' : 'Hidden'}><Sparkles size={24} strokeWidth={2.2} /></ControlButton>
+            {withCamera && (
+              <ControlButton active={cameraOn} dark={showCamera} onClick={toggleCamera} label={cameraOn ? 'Camera' : 'Just talk'}>{cameraOn ? <Camera size={24} /> : <CameraOff size={24} />}</ControlButton>
+            )}
+            <ControlButton active={micOn} dark={showCamera} onClick={toggleMic} label={micOn ? 'Mic on' : 'Muted'}>{micOn ? <Mic size={24} /> : <MicOff size={24} />}</ControlButton>
+            <ControlButton active={speakerOn} dark={showCamera} onClick={toggleSpeaker} label={speakerOn ? 'Sound on' : 'Silent'}>{speakerOn ? <Volume2 size={24} /> : <VolumeX size={24} />}</ControlButton>
+            <button onClick={onClose} aria-label="End session" className="pv-press-lg flex flex-col items-center gap-1.5">
+              <span className="flex h-16 w-16 items-center justify-center rounded-full text-white" style={{ background: 'var(--pv-neg)', boxShadow: '0 12px 30px -8px rgba(229,72,77,0.6)' }}><PhoneOff size={24} strokeWidth={2.4} /></span>
+              <span className="text-xs font-semibold" style={{ color: subtleFg }}>End</span>
+            </button>
+          </>
         )}
-        <ControlButton active={micOn} dark={showCamera} onClick={toggleMic} label={micOn ? 'Mic on' : 'Muted'}>{micOn ? <Mic size={24} /> : <MicOff size={24} />}</ControlButton>
-        <ControlButton active={speakerOn} dark={showCamera} onClick={toggleSpeaker} label={speakerOn ? 'Sound on' : 'Silent'}>{speakerOn ? <Volume2 size={24} /> : <VolumeX size={24} />}</ControlButton>
-        <button onClick={onClose} aria-label="End session" className="pv-press-lg flex flex-col items-center gap-1.5">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full text-white" style={{ background: 'var(--pv-neg)', boxShadow: '0 12px 30px -8px rgba(229,72,77,0.6)' }}><PhoneOff size={24} strokeWidth={2.4} /></span>
-          <span className="text-xs font-semibold" style={{ color: subtleFg }}>End</span>
-        </button>
       </div>
     </div>
   )

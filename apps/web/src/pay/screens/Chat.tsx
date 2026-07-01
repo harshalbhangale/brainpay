@@ -5,7 +5,7 @@
  * (Those two overlays are swapped to light versions in later phases.)
  */
 import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from 'react'
-import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, Wallet, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, Wallet, AudioLines, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
@@ -70,6 +70,10 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [live, setLive] = useState<{ camera: boolean } | null>(null)
+  // The chat has two faces: an immersive full-avatar LIVE voice screen (camera
+  // off) that the surface opens onto by default, and the typed timeline. One
+  // tap flips between them — talking is never a dead-end.
+  const [mode, setMode] = useState<'talk' | 'type'>('talk')
   const [pickChore, setPickChore] = useState(false)
   // Which specialist Pals the user has chosen to talk to. Empty = Auto (PAL
   // answers + relevant Pals chime in). 1+ = only those Pals answer, in-voice.
@@ -142,10 +146,10 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
   // Let the app-shell drawer / history drive the chat. Commands sent while this
   // screen is unmounted are queued by the bus and flushed on mount.
   useEffect(() => registerAiHandler((cmd) => {
-    if (cmd.type === 'new-chat') void newChat()
-    else if (cmd.type === 'resume') resumeSession(cmd.sessionId)
-    else if (cmd.type === 'live') setLive({ camera: cmd.camera })
-    else if (cmd.type === 'ask') void sendText(cmd.text)
+    if (cmd.type === 'new-chat') { setMode('type'); void newChat() }
+    else if (cmd.type === 'resume') { setMode('type'); resumeSession(cmd.sessionId) }
+    else if (cmd.type === 'live') { if (cmd.camera) setLive({ camera: true }); else { setLive(null); setMode('talk') } }
+    else if (cmd.type === 'ask') { setMode('type'); void sendText(cmd.text) }
   }), [])
 
   async function sendText(text: string, images: string[] = []) {
@@ -221,6 +225,11 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
       )}
       {pickChore && <ChorePickerSheet onClose={() => setPickChore(false)} />}
 
+      {mode === 'talk' && !live ? (
+        <Suspense fallback={<div className="flex min-h-0 flex-1 items-center justify-center"><span className="h-8 w-8 animate-spin rounded-full" style={{ border: '3px solid var(--pv-surface-3)', borderTopColor: 'var(--pv-accent)' }} /></div>}>
+          <LiveSession embedded withCamera={false} speaker={ch.characterName} onClose={() => setMode('type')} onSwitchPal={onSwitchPal} onCamera={() => setLive({ camera: true })} />
+        </Suspense>
+      ) : (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="pv-mesh" aria-hidden />
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -250,6 +259,9 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
                 {selectedAgents.length === 0 ? `Talking to ${ch.characterName}` : `Talking to ${palLabel}`}
               </span>
             </span>
+          </button>
+          <button onClick={() => setMode('talk')} aria-label="Talk to your Pal" className="pv-press pv-glass flex h-10 w-10 items-center justify-center rounded-full">
+            <AudioLines size={18} style={{ color: 'var(--pv-ink-2)' }} />
           </button>
           <button onClick={() => openHistory()} aria-label="History" className="pv-press pv-glass flex h-10 w-10 items-center justify-center rounded-full">
             <HistoryIcon size={18} style={{ color: 'var(--pv-ink-2)' }} />
@@ -302,6 +314,7 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
         </div>
         </div>
       </div>
+      )}
     </>
   )
 }

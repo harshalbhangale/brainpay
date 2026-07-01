@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { motion } from 'motion/react'
 import { ChevronRight } from 'lucide-react'
 import { useAvatar, avatarDef } from '../../lib/avatar'
+import { OnboardBackdrop } from './OnboardBackdrop'
 
 export function NameCard({ role, onDone }: { role: 'parent' | 'kid'; onDone: (name: string) => void }) {
   const avatar = useAvatar((s) => s.avatar)
@@ -24,11 +25,7 @@ export function NameCard({ role, onDone }: { role: 'parent' | 'kid'; onDone: (na
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div
-        className="absolute inset-x-0 top-0 z-0 h-1/2"
-        aria-hidden
-        style={{ background: `radial-gradient(80% 70% at 50% 0%, ${companion.accent}2e, transparent 75%)` }}
-      />
+      <OnboardBackdrop accent={companion.accent} />
 
       {/* Header */}
       <div className="relative z-10 flex-none px-7 pt-8 text-center">

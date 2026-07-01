@@ -1,13 +1,16 @@
 /**
- * FeatureIntro — a clean, spacious "Meet BrainPal" deck. One big bespoke
- * animated illustration per moment, a confident Clash Display headline, and a
- * single subline. Swipe or tap; slim progress; per-card hue tints the canvas.
+ * FeatureIntro — a clean, spacious "Meet BrainPal" deck in the Linear-glass
+ * language: a drifting ambient mesh, one big bespoke illustration per moment
+ * seated on a frosted glass coin, and a confident tight-tracked Clash Display
+ * headline printed on a floating glass plate. Swipe or tap; a glass progress
+ * bar; per-card accent tints the whole scene.
  */
 import { useState, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { ChevronRight } from 'lucide-react'
 import { PalCompanion } from './PalCompanion'
 import { SaveScene, LearnScene, HealthScene, ControlScene, FamilyScene } from './illustrations'
+import { OnboardBackdrop } from './OnboardBackdrop'
 
 type Slide = { hue: number; eyebrow: string; title: string; body: string; visual: ReactNode }
 
@@ -31,6 +34,7 @@ export function FeatureIntro({ role, onDone }: { role: 'parent' | 'kid'; onDone:
   const [dir, setDir] = useState(1)
   const last = i === slides.length - 1
   const s = slides[i]
+  const accent = `hsl(${s.hue} 82% 60%)`
 
   function go(n: number) {
     if (n < 0 || n >= slides.length) return
@@ -46,27 +50,21 @@ export function FeatureIntro({ role, onDone }: { role: 'parent' | 'kid'; onDone:
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* very soft, clean per-card wash */}
-      <motion.div
-        className="absolute inset-x-0 top-0 z-0 h-1/2"
-        aria-hidden
-        animate={{ background: `radial-gradient(80% 70% at 50% 0%, hsl(${s.hue} 90% 92%), transparent 75%)` }}
-        transition={{ duration: 0.6 }}
-      />
+      <OnboardBackdrop accent={accent} />
 
-      {/* progress + skip */}
-      <div className="relative z-10 flex items-center justify-between px-6 pt-6">
-        <div className="flex gap-1.5">
+      {/* progress + skip — one floating glass bar */}
+      <div className="relative z-10 flex items-center justify-between px-5 pt-[max(14px,env(safe-area-inset-top))]">
+        <div className="pv-glass pv-hairline flex items-center gap-1.5 rounded-full px-3 py-2">
           {slides.map((_, k) => (
             <button key={k} onClick={() => go(k)} aria-label={`Card ${k + 1}`} className="h-1.5 rounded-full transition-all duration-300"
-              style={{ width: k === i ? 24 : 7, background: k === i ? `hsl(${s.hue} 70% 45%)` : 'var(--pv-line-strong)' }} />
+              style={{ width: k === i ? 22 : 6, background: k === i ? `hsl(${s.hue} 68% 44%)` : 'var(--pv-line-strong)' }} />
           ))}
         </div>
-        <button onClick={onDone} className="pv-press text-sm font-bold" style={{ color: 'var(--pv-ink-3)' }}>Skip</button>
+        <button onClick={onDone} className="pv-press pv-glass pv-hairline rounded-full px-4 py-2 text-[13px] font-bold" style={{ color: 'var(--pv-ink-2)' }}>Skip</button>
       </div>
 
       {/* stage */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center px-7 text-center">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center px-6">
         <AnimatePresence custom={dir} mode="wait">
           <motion.div
             key={i}
@@ -80,18 +78,27 @@ export function FeatureIntro({ role, onDone }: { role: 'parent' | 'kid'; onDone:
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.16}
             onDragEnd={(_, info) => { if (info.offset.x < -64) go(i + 1); else if (info.offset.x > 64) go(i - 1) }}
-            className="flex flex-col items-center"
+            className="flex w-full max-w-[360px] flex-col items-center"
           >
-            <div className="grid h-[260px] place-items-center">{s.visual}</div>
-            <div className="pv-eyebrow mt-6" style={{ color: `hsl(${s.hue} 55% 40%)` }}>{s.eyebrow}</div>
-            <h1 className="pv-h1 pv-tight mt-2.5 max-w-[300px]">{s.title}</h1>
-            <p className="pv-body mt-3 max-w-[290px]" style={{ color: 'var(--pv-ink-2)' }}>{s.body}</p>
+            {/* illustration on a frosted glass coin */}
+            <div className="relative grid h-[212px] w-full place-items-center">
+              <div className="pv-glass-soft absolute left-1/2 top-1/2 h-[188px] w-[188px] -translate-x-1/2 -translate-y-1/2 rounded-full" aria-hidden />
+              <div className="pointer-events-none absolute left-1/2 top-1/2 h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[52px]" aria-hidden style={{ background: accent, opacity: 0.28 }} />
+              <div className="relative">{s.visual}</div>
+            </div>
+
+            {/* the text, printed on a floating glass plate */}
+            <div className="pv-glass pv-hairline pv-rise mt-6 w-full rounded-[var(--pv-r-lg)] px-6 py-5 text-center">
+              <div className="pv-eyebrow" style={{ color: `hsl(${s.hue} 52% 38%)` }}>{s.eyebrow}</div>
+              <h1 className="pv-tight mt-2 leading-[0.98]" style={{ fontFamily: 'var(--pv-font-display)', fontWeight: 700, fontSize: 'clamp(2rem, 8vw, 2.75rem)' }}>{s.title}</h1>
+              <p className="pv-body mx-auto mt-2.5 max-w-[290px]" style={{ color: 'var(--pv-ink-2)' }}>{s.body}</p>
+            </div>
           </motion.div>
         </AnimatePresence>
       </div>
 
       {/* CTA */}
-      <div className="relative z-10 flex-none px-7 pb-[max(22px,env(safe-area-inset-bottom))] pt-2">
+      <div className="relative z-10 flex-none px-6 pb-[max(22px,env(safe-area-inset-bottom))] pt-3">
         <motion.button
           onClick={() => (last ? onDone() : go(i + 1))}
           whileTap={{ scale: 0.96 }}

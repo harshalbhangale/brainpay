@@ -12,6 +12,7 @@ import { Companion } from '../../components/Companion'
 import { AVATARS, useAvatar, type AvatarId } from '../../lib/avatar'
 import { VOICE_OPTIONS, useVoicePrefs, type VoiceKey } from '../../lib/voicePrefs'
 import { env } from '../../lib/env'
+import { OnboardBackdrop } from './OnboardBackdrop'
 
 export function CompanionPicker({ role, onDone }: { role: 'parent' | 'kid'; onDone: () => void }) {
   const { avatar, setAvatar } = useAvatar()
@@ -46,13 +47,7 @@ export function CompanionPicker({ role, onDone }: { role: 'parent' | 'kid'; onDo
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* soft accent aura from the selected companion */}
-      <motion.div
-        className="absolute inset-x-0 top-0 z-0 h-[55%]"
-        aria-hidden
-        animate={{ background: `radial-gradient(75% 65% at 50% 0%, ${current.accent}38, transparent 72%)` }}
-        transition={{ duration: 0.5 }}
-      />
+      <OnboardBackdrop accent={current.accent} />
 
       {/* Header */}
       <div className="relative z-10 flex-none px-7 pt-6 text-center">
@@ -61,7 +56,7 @@ export function CompanionPicker({ role, onDone }: { role: 'parent' | 'kid'; onDo
 
       {/* Stage: chevrons + live portrait */}
       <div className="relative z-10 flex min-h-0 flex-1 items-center gap-1 px-3">
-        <button onClick={() => step(-1)} aria-label="Previous companion" className="pv-press flex h-11 w-11 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink-2)' }}>
+        <button onClick={() => step(-1)} aria-label="Previous companion" className="pv-press pv-glass pv-hairline flex h-11 w-11 shrink-0 items-center justify-center rounded-full" style={{ color: 'var(--pv-ink-2)' }}>
           <ChevronLeft size={22} />
         </button>
 
@@ -75,42 +70,44 @@ export function CompanionPicker({ role, onDone }: { role: 'parent' | 'kid'; onDo
           </div>
         </div>
 
-        <button onClick={() => step(1)} aria-label="Next companion" className="pv-press flex h-11 w-11 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink-2)' }}>
+        <button onClick={() => step(1)} aria-label="Next companion" className="pv-press pv-glass pv-hairline flex h-11 w-11 shrink-0 items-center justify-center rounded-full" style={{ color: 'var(--pv-ink-2)' }}>
           <ChevronRight size={22} />
         </button>
       </div>
 
-      {/* Name + blurb (oversized display type) */}
-      <div className="relative z-10 flex-none px-7 text-center">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={current.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <h1
-              className="pv-tight leading-none"
-              style={{ fontFamily: 'var(--pv-font-display)', fontStyle: 'italic', fontWeight: 700, fontSize: 'clamp(2.4rem, 11vw, 3.4rem)', color: 'var(--pv-ink)' }}
+      {/* Name + blurb on a floating glass plate (oversized display type) */}
+      <div className="relative z-10 flex-none px-6">
+        <div className="pv-glass pv-hairline mx-auto max-w-[360px] rounded-[var(--pv-r-lg)] px-6 py-4 text-center">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={current.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             >
-              {current.name}
-            </h1>
-            <p className="mt-1.5 text-sm font-semibold" style={{ color: 'var(--pv-ink-2)' }}>{current.blurb}</p>
-          </motion.div>
-        </AnimatePresence>
+              <h1
+                className="pv-tight leading-none"
+                style={{ fontFamily: 'var(--pv-font-display)', fontStyle: 'italic', fontWeight: 700, fontSize: 'clamp(2.3rem, 10vw, 3.2rem)', color: 'var(--pv-ink)' }}
+              >
+                {current.name}
+              </h1>
+              <p className="mt-1.5 text-sm font-semibold" style={{ color: 'var(--pv-ink-2)' }}>{current.blurb}</p>
+            </motion.div>
+          </AnimatePresence>
 
-        {/* position dots */}
-        <div className="mt-3 flex items-center justify-center gap-1.5">
-          {AVATARS.map((a, k) => (
-            <button
-              key={a.id}
-              onClick={() => setAvatar(a.id)}
-              aria-label={a.name}
-              className="h-1.5 rounded-full transition-all duration-300"
-              style={{ width: k === idx ? 22 : 7, background: k === idx ? current.accent : 'var(--pv-line-strong)' }}
-            />
-          ))}
+          {/* position dots */}
+          <div className="mt-3 flex items-center justify-center gap-1.5">
+            {AVATARS.map((a, k) => (
+              <button
+                key={a.id}
+                onClick={() => setAvatar(a.id)}
+                aria-label={a.name}
+                className="h-1.5 rounded-full transition-all duration-300"
+                style={{ width: k === idx ? 22 : 7, background: k === idx ? current.accent : 'var(--pv-line-strong)' }}
+              />
+            ))}
+          </div>
         </div>
       </div>
 

@@ -152,13 +152,17 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
 
         <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           {/* Identity / switcher */}
-          <div className="flex flex-none items-center gap-2 px-4 pb-1 pt-2">
-            <button type="button" onClick={onSwitchPal} disabled={!onSwitchPal} aria-label={onSwitchPal ? 'Switch Pal' : undefined} className="pv-press pv-glass flex min-w-0 flex-1 items-center gap-2.5 rounded-full py-1 pl-1 pr-3 text-left disabled:cursor-default">
-              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ backgroundImage: ch.gradient, color: ch.onAccent }}>
-                <Sparkles size={16} strokeWidth={2.4} />
+          <div className="flex flex-none items-center gap-2 px-4 pb-1 pt-[max(8px,env(safe-area-inset-top))]">
+            <button type="button" onClick={onSwitchPal} disabled={!onSwitchPal} aria-label={onSwitchPal ? 'Switch Pal' : undefined} className="pv-press pv-glass pv-hairline flex min-w-0 items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-4 text-left disabled:cursor-default">
+              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ backgroundImage: ch.gradient, color: ch.onAccent, boxShadow: 'var(--pv-shadow-sm)' }}>
+                <Sparkles size={17} strokeWidth={2.4} />
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1"><span className="pv-title pv-tight truncate text-sm leading-tight">{ch.palName}</span>{onSwitchPal && <ChevronDown size={14} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />}</span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1">
+                  <span className="pv-title pv-tight truncate text-[15px] leading-none">{ch.palName}</span>
+                  {onSwitchPal && <ChevronDown size={14} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />}
+                </span>
+                <span className="mt-1 block truncate text-[11px] font-semibold leading-none" style={{ color: 'var(--pv-ink-3)' }}>Money & study</span>
               </span>
             </button>
           </div>
@@ -227,7 +231,7 @@ function Bubble({ m, onAction }: { m: CMsg; onAction: (a: Action) => void }) {
       <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}><Sparkles size={14} strokeWidth={2.4} /></span>
       <div className="min-w-0 max-w-[86%]">
         {m.text && (
-          <div className="pv-glass whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{m.text}</div>
+          <div className="pv-glass whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{m.text}</div>
         )}
         {m.actions && m.actions.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">

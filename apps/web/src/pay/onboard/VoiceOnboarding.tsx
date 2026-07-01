@@ -17,6 +17,7 @@ import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../../lib/liv
 import { getVoiceKey } from '../../lib/voicePrefs'
 import { useAvatar, avatarDef } from '../../lib/avatar'
 import { Companion, type CompanionMood } from '../../components/Companion'
+import { OnboardBackdrop } from './OnboardBackdrop'
 
 type Phase = 'ready' | 'connecting' | 'live' | 'saving' | 'done' | 'error'
 
@@ -162,11 +163,7 @@ export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div
-        className="absolute inset-x-0 top-0 z-0 h-2/3"
-        aria-hidden
-        style={{ background: `radial-gradient(80% 70% at 50% 0%, ${companion.accent}33, transparent 75%)` }}
-      />
+      <OnboardBackdrop accent={companion.accent} />
 
       {/* Header */}
       <div className="relative z-10 flex flex-none items-center justify-center px-5 pt-[max(16px,env(safe-area-inset-top))]">

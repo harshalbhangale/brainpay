@@ -1,17 +1,13 @@
 /**
- * AIPal — the AI section of the app (a top-level Pal in the switcher).
+ * AIPal — the conversational home of the app (a top-level Pal in the switcher).
  * ───────────────────────────────────────────────────────────────────────────
- * Renders the real multi-agent "money council" chat (wired to /chat) standalone,
- * i.e. with no back button — the Pal rail handles navigation. The camera
- * (point & ask) and voice (talk to Mika) live inside the chat composer and open
- * the real-time LiveSession, exactly like the original app.
+ * Renders the unified, avatar-first PalSurface: one screen fronted by the
+ * chosen Pal's character (reused Companion avatar), wired to the real
+ * multi-agent "money council" chat (`/chat`) plus live voice/camera
+ * (LiveSession) from a single composer. Switching character is one tap.
  */
-import { Chat } from '../screens/Chat'
+import { PalSurface } from './PalSurface'
 
 export function AIPal() {
-  return (
-    <div className="pv-pal-enter flex min-h-0 flex-1 flex-col">
-      <Chat />
-    </div>
-  )
+  return <PalSurface />
 }

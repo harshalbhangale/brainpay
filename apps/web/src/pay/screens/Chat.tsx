@@ -16,6 +16,9 @@ import { useHistoryView } from '../lib/historyStore'
 import { useActiveChild } from '../lib/activeChild'
 import { useFamilyKids } from '../useMoneyPal'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../lib/agents'
+import { PalHero } from '../pals/PalHero'
+import { PAL_MAP, type PalKey } from '../pals/config'
+import { palCharacter } from '../pals/palCharacters'
 
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
 
@@ -60,7 +63,7 @@ function describeIntent(intent: Intent): string {
 
 const SUGGESTIONS = ['Add a dishes chore for $50', 'Put $5 toward Mia\u2019s bike goal', 'Tell Sam I\u2019m proud of him', 'Set a rule: no spending over $20']
 
-export function Chat({ onClose }: { onClose?: () => void }) {
+export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => void; pal?: PalKey; onSwitchPal?: () => void }) {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -185,6 +188,10 @@ export function Chat({ onClose }: { onClose?: () => void }) {
 
   const empty = !loadingHistory && messages.length === 0
 
+  // The character fronting this surface (reused Companion avatar + accent).
+  const ch = palCharacter(pal)
+  const PalIcon = PAL_MAP[pal].Icon
+
   // Pal selection: derived label + toggles.
   const selectedAgents = SPECIALISTS.filter((a) => selected.has(a.id))
   const palLabel = selectedAgents.length === 0
@@ -218,12 +225,26 @@ export function Chat({ onClose }: { onClose?: () => void }) {
               <ChevronLeft size={20} />
             </button>
           )}
-          <div className="min-w-0 flex-1">
-            <div className="pv-title pv-tight leading-tight">Your Pals</div>
-            <div className="truncate pt-0.5 text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
-              {selectedAgents.length === 0 ? 'Auto · your Pals chime in' : `Talking to ${palLabel}`}
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={onSwitchPal}
+            disabled={!onSwitchPal}
+            aria-label={onSwitchPal ? 'Switch Pal' : undefined}
+            className="pv-press flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl py-0.5 pl-0.5 pr-2 text-left disabled:cursor-default"
+          >
+            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ backgroundImage: ch.gradient, color: ch.onAccent, boxShadow: 'var(--pv-shadow-sm)' }}>
+              <PalIcon size={17} strokeWidth={2.4} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1">
+                <span className="pv-title pv-tight truncate leading-tight">{ch.palName}</span>
+                {onSwitchPal && <ChevronDown size={15} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />}
+              </span>
+              <span className="block truncate pt-0.5 text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
+                {selectedAgents.length === 0 ? `Talking to ${ch.characterName}` : `Talking to ${palLabel}`}
+              </span>
+            </span>
+          </button>
           <button onClick={() => openHistory()} aria-label="History" className="pv-press pv-glass flex h-10 w-10 items-center justify-center rounded-full">
             <HistoryIcon size={18} style={{ color: 'var(--pv-ink-2)' }} />
           </button>
@@ -235,7 +256,7 @@ export function Chat({ onClose }: { onClose?: () => void }) {
         {/* Timeline */}
         <div ref={scrollRef} className="pv-no-scrollbar flex-1 space-y-4 overflow-y-auto px-4 py-4">
           <div className="mx-auto w-full max-w-2xl space-y-4">
-          {empty && <EmptyState onPick={sendText} isKid={isKid} childName={activeKidName} />}
+          {empty && <EmptyState onPick={sendText} isKid={isKid} childName={activeKidName} pal={pal} />}
           {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} />))}
           {sending && <Conferring />}
           {pendingIntent && (pendingIntent.kind === 'verify_chore'
@@ -278,16 +299,16 @@ export function Chat({ onClose }: { onClose?: () => void }) {
   )
 }
 
-function EmptyState({ onPick, isKid, childName }: { onPick: (t: string) => void; isKid: boolean; childName: string | null }) {
+function EmptyState({ onPick, isKid, childName, pal }: { onPick: (t: string) => void; isKid: boolean; childName: string | null; pal: PalKey }) {
   const greeting = isKid
     ? "Here's your money at a glance. Ask me anything, or tap a card above."
     : childName
       ? `Here's ${childName}'s world. Ask me anything, or tap a card above.`
       : 'Here\u2019s your family at a glance. Ask me anything, or tap a card above.'
   return (
-    <div className="flex flex-col items-center px-2 pt-2 text-center">
-      <p className="pv-body pv-rise max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>{greeting}</p>
-      <div className="mt-4 flex w-full flex-col gap-2.5">
+    <div className="flex flex-col items-center px-2 pt-3 text-center">
+      <PalHero pal={pal} caption={greeting} />
+      <div className="mt-6 flex w-full flex-col gap-2.5">
         {SUGGESTIONS.map((s, i) => (
           <button key={s} onClick={() => onPick(s)} className="pv-press pv-pop pv-glass pv-hairline rounded-2xl px-4 py-3 text-left text-sm font-semibold" style={{ animationDelay: `${i * 50}ms` }}>
             {s}

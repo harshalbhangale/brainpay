@@ -123,6 +123,7 @@ export function PalPicker({
                 const c = palCharacter(p.key)
                 const active = p.key === focus
                 const Icon = p.Icon
+                const palLabel = p.key === 'ai' ? 'BrainPal' : p.name
                 return (
                   <motion.button
                     key={p.key}
@@ -136,6 +137,13 @@ export function PalPicker({
                     whileTap={{ scale: active ? 1.05 : 0.82 }}
                   >
                     <Icon size={26} strokeWidth={2.3} />
+                    {/* Pal product name — above the active (top) orb, below the others, so it never covers the avatar */}
+                    <span
+                      className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-extrabold"
+                      style={{ ...(active ? { bottom: '100%', marginBottom: 8 } : { top: '100%', marginTop: 8 }), background: active ? 'var(--pv-surface)' : 'color-mix(in srgb, var(--pv-surface) 82%, transparent)', color: active ? c.accent : 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-xs)' }}
+                    >
+                      {palLabel}
+                    </span>
                     {active && (
                       <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', color: c.accent, boxShadow: 'var(--pv-shadow-sm)' }}>
                         <Check size={13} strokeWidth={3.2} />

@@ -65,29 +65,37 @@ async function getOrCreateFamilyId(accountId: string): Promise<string> {
 // TOPICS
 // ═══════════════════════════════════════════════════════════════════════
 
-const INTAKE_SYSTEM = `You are StudyPal's onboarding. From a kid's short, natural reply, infer just enough to set them up — WITHOUT a form.
-
-GOAL: return { reply, grade, board, school, subjects[] } as JSON.
-
+const INTAKE_SYSTEM = `You are StudyPal, a warm, sharp study coach for a school kid in AUSTRALIA. In the first ~20 seconds learn just enough to be useful WITHOUT a form.
+GOAL: infer { grade, school?, city?, curriculum, subjects[] } from minimal input.
 RULES:
-- Infer "grade" like "Grade 8" (normalise "8th"/"class 8"/"year 8" -> "Grade 8").
-- Infer "board" from the school name when possible, else from any board the kid mentions:
-  - "Delhi Public School"/"DPS"/"Kendriya Vidyalaya"/"KV"/"DAV" -> "CBSE"
-  - names containing "ICSE" or "Convent" -> "ICSE"
-  - "International"/"IB World School" -> "IB"
-  - else leave board "" (empty).
-- "school": the school name if stated, else "".
-- "subjects": GENERATE the standard subject list for that grade + board (Indian curriculum). Examples:
-  Grade 8 CBSE -> ["Maths","Science","English","Social Studies","Hindi","Computer Science"]
-  Grade 10 CBSE -> ["Maths","Physics","Chemistry","Biology","English","Social Studies","Hindi","Computer Science"]
-  Grade 11/12 -> science/commerce core. If unsure, use ["Maths","Science","English","Social Studies","Computer Science"].
-- "reply": ONE short, warm line confirming what you understood and asking which subject is bugging them most. No baby talk. <= 22 words.
-- If grade is unclear, set grade "" and make "reply" a single short question asking their grade.
-Return ONLY valid JSON.`
+- Ask at most TWO questions. Start: "Which school and grade are you in?"
+- Infer the AU curriculum from city/state/school. Australia uses ACARA nationally with state variants: NSW, VIC, QLD, WA, SA, TAS, ACT, NT. If unsure, ask ONE short follow-up: "Which state are you in?"
+- Normalise grade like "Grade 8" (accept "year 8"/"8th"/"class 8" -> "Grade 8").
+- From grade + curriculum, GENERATE the subject list yourself (don't ask the kid to list subjects). Present subjects as tappable chips. Use Australian subject names (English, Mathematics, Science, History, Geography, HASS, Health & PE, Digital Technologies, The Arts; senior: Mathematics Methods, Physics, Chemistry, Biology, Modern History, Economics).
+- Warm, brief, age-appropriate. No baby talk, no gratuitous praise.
+- When a subject is chosen, offer modes: Study concepts / Quiz / Mock interview.
+Return JSON: { "reply": "...", "profile": { "grade": "...", "state": "...", "curriculum": "ACARA/NSW/...", "subjects": ["..."] }, "chips": ["..."], "stage": "intake|subject_chosen|mode_chosen" }`
+
+// AU grounding (extendable): major cities -> state, so "Sydney" resolves even
+// when the kid never names the state; and state -> curriculum label.
+const AU_STATE_BY_CITY: Record<string, string> = {
+  sydney: 'NSW', newcastle: 'NSW', wollongong: 'NSW',
+  melbourne: 'VIC', geelong: 'VIC', ballarat: 'VIC',
+  brisbane: 'QLD', goldcoast: 'QLD', cairns: 'QLD', townsville: 'QLD',
+  perth: 'WA', fremantle: 'WA',
+  adelaide: 'SA',
+  hobart: 'TAS', launceston: 'TAS',
+  canberra: 'ACT',
+  darwin: 'NT',
+}
+const AU_CURRICULUM_BY_STATE: Record<string, string> = {
+  NSW: 'NSW (ACARA)', VIC: 'VIC F-10 / VCE (ACARA)', QLD: 'QLD (ACARA)', WA: 'WA (ACARA)',
+  SA: 'SA (ACARA)', TAS: 'TAS (ACARA)', ACT: 'ACT (ACARA)', NT: 'NT (ACARA)',
+}
 
 // ─── POST /study/intake ───────────────────────────────────────────────
-// Conversational setup: "Grade 8 at DPS" -> infer grade/board/school + subjects.
-// Persists grade/board/school to the account persona (no form).
+// Conversational AU setup: "Grade 8, Sydney" -> infer grade + state/curriculum
+// + subject chips (no form). Persists grade/state/curriculum to the persona.
 study.post('/study/intake', async (c) => {
   const accountId = authedAccountId(c)
   const body = await c.req.json().catch(() => ({}))
@@ -101,7 +109,7 @@ study.post('/study/intake', async (c) => {
     const resp = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0.3,
-      max_tokens: 300,
+      max_tokens: 400,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: INTAKE_SYSTEM },
@@ -109,25 +117,45 @@ study.post('/study/intake', async (c) => {
       ],
     })
     const raw = JSON.parse(resp.choices[0]?.message?.content ?? '{}') as {
-      reply?: string; grade?: string; board?: string; school?: string; subjects?: unknown
+      reply?: string
+      profile?: { grade?: string; state?: string; curriculum?: string; subjects?: unknown }
+      chips?: unknown
+      stage?: string
     }
-    const grade = (raw.grade || '').toString().trim()
-    const board = (raw.board || '').toString().trim()
-    const school = (raw.school || '').toString().trim()
-    const subjects = Array.isArray(raw.subjects)
-      ? raw.subjects.filter((s): s is string => typeof s === 'string').slice(0, 10)
+    const p = raw.profile ?? {}
+    const grade = (p.grade || '').toString().trim()
+    let state = (p.state || '').toString().trim().toUpperCase()
+    let curriculum = (p.curriculum || '').toString().trim()
+    const subjects = Array.isArray(p.subjects)
+      ? p.subjects.filter((s): s is string => typeof s === 'string').slice(0, 12)
       : []
 
-    if (grade || board || school) {
-      const nextPersona = { ...persona, ...(grade ? { grade } : {}), ...(board ? { board } : {}), ...(school ? { school } : {}) }
+    // Grounding backfill: recover the state from a mentioned city, then the
+    // curriculum from the state, so inference is robust even if the model omits them.
+    if (!state) {
+      const hay = parsed.data.text.toLowerCase().replace(/[^a-z]/g, '')
+      for (const [city, st] of Object.entries(AU_STATE_BY_CITY)) {
+        if (hay.includes(city)) { state = st; break }
+      }
+    }
+    if (!curriculum && state && AU_CURRICULUM_BY_STATE[state]) curriculum = AU_CURRICULUM_BY_STATE[state]
+    if (!curriculum) curriculum = 'ACARA'
+
+    const chips = Array.isArray(raw.chips)
+      ? raw.chips.filter((s): s is string => typeof s === 'string').slice(0, 12)
+      : subjects
+    const stage = typeof raw.stage === 'string' ? raw.stage : 'intake'
+
+    if (grade || state || curriculum) {
+      const nextPersona = { ...persona, ...(grade ? { grade } : {}), ...(state ? { state } : {}), ...(curriculum ? { curriculum } : {}) }
       await db.update(accounts).set({ persona: nextPersona }).where(eq(accounts.id, accountId))
     }
 
-    logger.info({ accountId, grade, board, subjectCount: subjects.length }, 'study.intake')
-    return c.json({ reply: raw.reply || 'Got it!', profile: { grade, board, school, subjects }, chips: subjects })
+    logger.info({ accountId, grade, state, curriculum, subjectCount: subjects.length }, 'study.intake')
+    return c.json({ reply: raw.reply || 'Got it!', profile: { grade, state, curriculum, subjects }, chips, stage })
   } catch (err) {
     logger.warn({ err: String(err).slice(0, 120) }, 'study.intake_failed')
-    return c.json({ reply: "Tell me your grade and school and I'll set you up.", profile: { grade: '', board: '', school: '', subjects: [] }, chips: [] })
+    return c.json({ reply: 'Which school and grade are you in?', profile: { grade: '', state: '', curriculum: '', subjects: [] }, chips: [], stage: 'intake' })
   }
 })
 

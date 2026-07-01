@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  BookOpen, Brain, ChevronLeft, ChevronRight, GraduationCap, Mic, MicOff, Sparkles, Upload,
+  BookOpen, Brain, ChevronLeft, ChevronRight, ChevronDown, GraduationCap, Mic, MicOff, Sparkles, Upload,
   Check, Plus, Flame, Trophy, Bookmark, MessageCircle, RefreshCw, Send as SendIcon, X,
   History, Clock, Eye, ExternalLink, SlidersHorizontal,
 } from 'lucide-react'
@@ -20,7 +20,7 @@ import { useAuthStore } from '../../stores/auth'
 import { Button, Card, IconButton, ProgressBar } from '../components/primitives'
 import { TopBar } from '../components/shell'
 import { InterviewView } from './StudyInterview'
-import { GRADES, BOARDS, subjectsForGrade, subjectEmoji } from './subjects'
+import { GRADES, AU_STATES, subjectsForGrade, subjectEmoji, curriculumForState } from './subjects'
 import { ParentStudyView } from './ParentStudy'
 import { BrainCoin, Brains, BrainsPill, RewardsHelp } from '../components/Brains'
 import { InterviewInsights, type InterviewAnalysis } from './InterviewInsights'
@@ -40,12 +40,25 @@ type InterviewRow = {
 }
 type View = 'setup' | 'home' | 'subject' | 'concepts' | 'quiz' | 'interview' | 'chat' | 'saved' | 'history' | 'interviewDetail' | 'lesson' | 'cheatsheet'
 
-export function StudyPal() {
+// Seed material for the one-tap demo. Written so the study pipeline generates a
+// solid WWI flashcard deck for an Australian Year 8 History student (ANZAC lens).
+const WWI_SEED = `Generate key concepts, definitions, dates and cause-and-effect flashcards for an Australian Year 8 History student studying World War I (1914–1918). Cover:
+- Causes: the M.A.I.N. factors (Militarism, Alliances, Imperialism, Nationalism) and the assassination of Archduke Franz Ferdinand in Sarajevo (June 1914) as the trigger.
+- The alliance system: Triple Entente (Britain, France, Russia) vs Triple Alliance / Central Powers (Germany, Austria-Hungary, Ottoman Empire).
+- Trench warfare on the Western Front, no-man's-land, stalemate, and new technology (machine guns, artillery, poison gas, tanks, aircraft).
+- Gallipoli (1915): the ANZAC landing at Gallipoli, why it mattered to Australia, and the birth of the ANZAC legend / spirit (mateship, endurance).
+- The Australian Home Front: enlistment, the two conscription referendums (1916, 1917) and why they were divisive, and the role of the AIF.
+- Key turning points and the end of the war: the entry of the USA (1917), the Armistice on 11 November 1918, and Remembrance Day.
+- Consequences: scale of casualties, the Treaty of Versailles (1919), and the war's lasting impact on Australian national identity.
+Create clear, exam-style concept cards (front: a question or term; back: a concise, accurate answer) suitable for a 13–14 year old.`
+
+export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
   // Parents get an oversight view of their kids' studying; kids get the full
   // study surface. (The study tools — cards, quizzes, interviews — are the kid's.)
   const accountType = useAuthStore((s) => s.account?.accountType)
   if (accountType === 'parent') return <ParentStudyView />
 
+  const qc = useQueryClient()
   const { data: stats } = useQuery({ queryKey: ['study-stats'], queryFn: () => api<Stats>('/study/stats') })
   const { data: topicsData, isLoading } = useQuery({ queryKey: ['study-topics'], queryFn: () => api<{ topics: Topic[] }>('/study/topics') })
 
@@ -57,10 +70,39 @@ export function StudyPal() {
   const [selectedCard, setSelectedCard] = useState<ConceptCard | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [setupMode, setSetupMode] = useState<'chat' | 'form'>('chat')
+  const [demoBusy, setDemoBusy] = useState(false)
 
   useEffect(() => {
     if (!isLoading && topicsData && topicsData.topics.length === 0) setView('setup')
   }, [isLoading, topicsData])
+
+  // One-tap demo: seed a WWI (History) chapter through the REAL pipeline, then
+  // drop straight into its flashcards. Cards generate in a few seconds (the
+  // deck shows its own "generating" state), and live upload still works as the
+  // headline feature.
+  async function startDemo() {
+    if (demoBusy) return
+    setDemoBusy(true)
+    try {
+      const existing = (topicsData?.topics ?? []).find((t) => t.title.toLowerCase() === 'history')
+      const topicId = existing
+        ? existing.id
+        : (await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title: 'History', emoji: '🏛️' }) })).topic.id
+      await api(`/study/topics/${topicId}/documents`, {
+        method: 'POST',
+        body: JSON.stringify({ title: 'World War I', fileUrl: 'text://inline', fileType: 'text', chapter: 'World War I', content: WWI_SEED }),
+      })
+      qc.invalidateQueries({ queryKey: ['study-topics'] })
+      qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
+      qc.invalidateQueries({ queryKey: ['study-chapters', topicId] })
+      setSelectedTopic(topicId)
+      setSelectedLesson('World War I')
+      setView('concepts')
+    } catch {
+      /* leave the user on home; nothing destructive happened */
+    }
+    setDemoBusy(false)
+  }
 
   return (
     <div className="pv-pal-enter flex min-h-0 flex-1 flex-col">
@@ -75,7 +117,7 @@ export function StudyPal() {
       ) : view === 'lesson' && selectedTopic && selectedLesson ? (
         <LessonHub topicId={selectedTopic} chapter={selectedLesson} onBack={() => setView('subject')} onStudy={() => setView('concepts')} onInterview={() => setView('interview')} onHistory={() => setView('history')} />
       ) : view === 'concepts' && selectedTopic ? (
-        <ConceptsView topicId={selectedTopic} chapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onQuiz={() => setView('quiz')} onCheatsheet={(card) => { setSelectedCard(card); setView('cheatsheet') }} />
+        <ConceptsView topicId={selectedTopic} chapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onQuiz={() => setView('quiz')} onInterview={() => setView('interview')} onCheatsheet={(card) => { setSelectedCard(card); setView('cheatsheet') }} />
       ) : view === 'cheatsheet' && selectedCard ? (
         <ConceptCheatSheet card={selectedCard} onBack={() => setView('concepts')} onQuiz={() => setView('quiz')} onChat={() => setView('chat')} />
       ) : view === 'quiz' && selectedTopic ? (
@@ -91,7 +133,7 @@ export function StudyPal() {
       ) : view === 'interviewDetail' && selectedInterview ? (
         <InterviewDetailView interviewId={selectedInterview} onBack={() => setView('history')} />
       ) : (
-        <HomeView stats={stats} topics={topicsData?.topics ?? []} onSelect={(id) => { setSelectedTopic(id); setView('subject') }} onSetup={() => setView('setup')} onRewards={() => setHelpOpen(true)} />
+        <HomeView stats={stats} topics={topicsData?.topics ?? []} onSelect={(id) => { setSelectedTopic(id); setView('subject') }} onSetup={() => setView('setup')} onRewards={() => setHelpOpen(true)} onSwitchPal={onSwitchPal} onDemo={startDemo} demoBusy={demoBusy} />
       )}
       {helpOpen && <RewardsHelp onClose={() => setHelpOpen(false)} />}
     </div>
@@ -139,7 +181,7 @@ function StudyIntake({ onDone, canCancel, onCancel, onManual }: { onDone: () => 
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
   const [reply, setReply] = useState('')
-  const [profile, setProfile] = useState<{ grade: string; board: string; school: string; subjects: string[] }>({ grade: '', board: '', school: '', subjects: [] })
+  const [profile, setProfile] = useState<{ grade: string; state: string; curriculum: string; subjects: string[] }>({ grade: '', state: '', curriculum: '', subjects: [] })
   const [selected, setSelected] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -172,7 +214,7 @@ function StudyIntake({ onDone, canCancel, onCancel, onManual }: { onDone: () => 
     try {
       for (const subject of selected) {
         const { topic } = await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title: subject, emoji: subjectEmoji(subject) }) })
-        const content = `Generate key concepts, important definitions, formulas and study material for:\nSubject: ${subject}\nGrade: ${profile.grade}${profile.board ? `\nBoard / exam: ${profile.board}` : ''}\n\nCreate comprehensive study material covering the most important topics for this grade level.`
+        const content = `Generate key concepts, important definitions and study material for:\nSubject: ${subject}\nGrade: ${profile.grade} (Australia)\nCurriculum: ${profile.curriculum || 'ACARA'}${profile.state ? ` — ${profile.state}` : ''}\n\nUse Australian curriculum terminology, spelling and examples. Create comprehensive study material covering the most important topics for this grade level.`
         await api(`/study/topics/${topic.id}/documents`, { method: 'POST', body: JSON.stringify({ title: `${subject} concepts`, fileUrl: 'text://inline', fileType: 'text', content }) })
       }
       qc.invalidateQueries({ queryKey: ['study-topics'] })
@@ -224,7 +266,7 @@ function StudyIntake({ onDone, canCancel, onCancel, onManual }: { onDone: () => 
               autoFocus
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="e.g. Grade 8 at Delhi Public School"
+              placeholder="e.g. Grade 8 in Sydney"
               className="pv-glass h-12 flex-1 rounded-full px-4 text-[0.95rem] font-semibold outline-none"
               style={{ color: 'var(--pv-ink)' }}
             />
@@ -234,9 +276,10 @@ function StudyIntake({ onDone, canCancel, onCancel, onManual }: { onDone: () => 
           </form>
         ) : (
           <>
-            <div className="mb-4 flex items-center gap-2">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
               {profile.grade && <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}>{profile.grade}</span>}
-              {profile.board && <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>{profile.board}</span>}
+              {profile.curriculum && <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>{profile.curriculum}</span>}
+              {profile.state && !profile.curriculum.includes(profile.state) && <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>{profile.state}</span>}
             </div>
             <p className="pv-label mb-2.5">Your subjects · tap to adjust</p>
             <div className="mb-5 flex flex-wrap gap-2">
@@ -276,11 +319,11 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
   // Grade + board come from the child's profile. We only ask once (first run),
   // then persist to the persona so StudyPal never asks again.
   const profileGrade = (account?.persona?.grade as string) || ''
-  const profileBoard = (account?.persona?.board as string) || ''
+  const profileState = (account?.persona?.state as string) || ''
 
   const [step, setStep] = useState<'grade' | 'subjects' | 'extra'>(profileGrade ? 'subjects' : 'grade')
   const [grade, setGrade] = useState(profileGrade)
-  const [board, setBoard] = useState(profileBoard)
+  const [auState, setAuState] = useState(profileState)
   const [savingGrade, setSavingGrade] = useState(false)
   const [subjects, setSubjects] = useState<string[]>([])
   const [extraInfo, setExtraInfo] = useState('')
@@ -294,7 +337,7 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
     setSavingGrade(true)
     setError(null)
     try {
-      const persona = { ...(account?.persona ?? {}), grade, ...(board ? { board } : {}) }
+      const persona = { ...(account?.persona ?? {}), grade, ...(auState ? { state: auState, curriculum: curriculumForState(auState) } : {}) }
       const res = await api<{ account: NonNullable<typeof account> }>('/me', { method: 'PATCH', body: JSON.stringify({ persona }) })
       updateAccount(res.account)
     } catch {
@@ -324,7 +367,7 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
         const { topic } = await api<{ topic: { id: string } }>('/study/topics', {
           method: 'POST', body: JSON.stringify({ title: subject, emoji: subjectEmoji(subject) }),
         })
-        const content = `Generate key concepts, important definitions, formulas, and study material for:\nSubject: ${subject}\nGrade: ${grade}${board ? `\nBoard / exam: ${board}` : ''}\n${extraInfo ? `Additional context from student: ${extraInfo}` : ''}\n\nCreate comprehensive study material covering the most important topics for this grade level.`
+        const content = `Generate key concepts, important definitions, and study material for:\nSubject: ${subject}\nGrade: ${grade} (Australia)\nCurriculum: ${auState ? curriculumForState(auState) : 'ACARA'}${auState ? ` — ${auState}` : ''}\n${extraInfo ? `Additional context from student: ${extraInfo}` : ''}\n\nUse Australian curriculum terminology, spelling and examples. Create comprehensive study material covering the most important topics for this grade level.`
         await api(`/study/topics/${topic.id}/documents`, { method: 'POST', body: JSON.stringify({ title: `${subject} concepts`, fileUrl: 'text://inline', fileType: 'text', content }) })
         // Attach the student's uploaded PDFs / images / notes as extra material.
         for (const body of fileBodies) {
@@ -404,12 +447,12 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
                 )
               })}
             </div>
-            <p className="pv-label mb-2.5 mt-7">Board / exam <span style={{ color: 'var(--pv-ink-3)', fontWeight: 600 }}>· optional</span></p>
+            <p className="pv-label mb-2.5 mt-7">State / territory <span style={{ color: 'var(--pv-ink-3)', fontWeight: 600 }}>· optional</span></p>
             <div className="flex flex-wrap gap-2">
-              {BOARDS.map((b) => {
-                const on = board === b
+              {AU_STATES.map((b) => {
+                const on = auState === b
                 return (
-                  <button key={b} onClick={() => setBoard(on ? '' : b)}
+                  <button key={b} onClick={() => setAuState(on ? '' : b)}
                     className="pv-press rounded-full px-3.5 py-2 text-sm font-bold"
                     style={on
                       ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }
@@ -501,7 +544,7 @@ function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCa
 // HOME
 // ═══════════════════════════════════════════════════════════════════════
 
-function HomeView({ stats, topics, onSelect, onSetup, onRewards }: { stats?: Stats | null; topics: Topic[]; onSelect: (id: string) => void; onSetup: () => void; onRewards: () => void }) {
+function HomeView({ stats, topics, onSelect, onSetup, onRewards, onSwitchPal, onDemo, demoBusy }: { stats?: Stats | null; topics: Topic[]; onSelect: (id: string) => void; onSetup: () => void; onRewards: () => void; onSwitchPal?: () => void; onDemo: () => void; demoBusy: boolean }) {
   const healthPct = stats && stats.cardsMastered + stats.cardsDue > 0
     ? Math.min(100, Math.round((stats.cardsMastered / (stats.cardsMastered + stats.cardsDue)) * 100))
     : 0
@@ -509,7 +552,16 @@ function HomeView({ stats, topics, onSelect, onSetup, onRewards }: { stats?: Sta
   return (
     <>
       <TopBar
-        leading={<div><div className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Keep your brain sharp</div><div className="pv-title leading-tight">StudyPal</div></div>}
+        leading={onSwitchPal ? (
+          <button onClick={onSwitchPal} className="pv-press flex items-center gap-1.5 text-left">
+            <span>
+              <span className="block text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Tap to switch Pal</span>
+              <span className="pv-title flex items-center gap-1 leading-tight">StudyPal <ChevronDown size={16} style={{ color: 'var(--pv-ink-3)' }} /></span>
+            </span>
+          </button>
+        ) : (
+          <div><div className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Keep your brain sharp</div><div className="pv-title leading-tight">StudyPal</div></div>
+        )}
         trailing={
           <div className="flex items-center gap-2">
             <button onClick={onRewards} aria-label="How Brains work" className="pv-press flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}><BrainCoin size={22} /></button>
@@ -548,6 +600,16 @@ function HomeView({ stats, topics, onSelect, onSetup, onRewards }: { stats?: Sta
 
         <p className="pv-label pv-rise mb-3 mt-7" style={{ ['--i' as string]: 2 }}>Subjects</p>
         <div className="flex flex-col gap-3">
+          <button onClick={onDemo} disabled={demoBusy} className="pv-press pv-pop pv-glass pv-hairline flex items-center gap-4 rounded-2xl p-4 text-left disabled:opacity-60">
+            <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl text-2xl" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}>🏛️</span>
+            <div className="min-w-0 flex-1">
+              <p className="pv-title truncate">{demoBusy ? 'Building your WWI deck…' : 'Try a demo — World War I'}</p>
+              <p className="mt-0.5 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>History · Year 8 · flashcards in seconds</p>
+            </div>
+            {demoBusy
+              ? <span className="h-4 w-4 flex-none animate-spin rounded-full" style={{ border: '2px solid var(--pv-surface-3)', borderTopColor: 'var(--pv-accent)' }} />
+              : <ChevronRight size={16} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />}
+          </button>
           {topics.map((t, i) => {
             const pct = t.totalCards > 0 ? Math.round(((t.totalCards - t.cardsDue) / t.totalCards) * 100) : 0
             return (
@@ -871,7 +933,7 @@ function ProgressRing({ pct }: { pct: number }) {
 // CONCEPTS
 // ═══════════════════════════════════════════════════════════════════════
 
-function ConceptsView({ topicId, chapter, onBack, onQuiz, onCheatsheet }: { topicId: string; chapter?: string; onBack: () => void; onQuiz: () => void; onCheatsheet: (card: ConceptCard) => void }) {
+function ConceptsView({ topicId, chapter, onBack, onQuiz, onInterview, onCheatsheet }: { topicId: string; chapter?: string; onBack: () => void; onQuiz: () => void; onInterview: () => void; onCheatsheet: (card: ConceptCard) => void }) {
   const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ['study-topic', topicId],
@@ -952,8 +1014,12 @@ function ConceptsView({ topicId, chapter, onBack, onQuiz, onCheatsheet }: { topi
           </div>
         </div>
         <div className="pv-rise flex-none px-6 py-5" style={{ animationDelay: '0.35s' }}>
-          <Button variant="accent" size="lg" full leadingIcon={Sparkles} onClick={onQuiz}>Take a quiz</Button>
-          <button onClick={onBack} className="pv-press mt-3 w-full py-2 text-sm font-medium" style={{ color: 'var(--pv-ink-3)' }}>Back to subject</button>
+          <Button variant="accent" size="lg" full leadingIcon={Mic} onClick={onInterview}>Start interview</Button>
+          <div className="mt-3 flex gap-2.5">
+            <Button variant="soft" full leadingIcon={Sparkles} onClick={onQuiz}>Quiz me</Button>
+            <Button variant="soft" full onClick={onBack}>Back to subject</Button>
+          </div>
+          <p className="mt-3 text-center text-xs" style={{ color: 'var(--pv-ink-3)' }}>Your tutor builds a viva from these concepts.</p>
         </div>
       </div>
     )

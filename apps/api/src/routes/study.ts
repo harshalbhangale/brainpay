@@ -17,7 +17,7 @@ import { logger } from '../logger'
 import { processDocument } from '../services/study-pipeline'
 import { resolveReadUrl } from '../services/storage'
 import { generateTutorSpeech } from '../services/study-tutor-voice'
-import { awardStudyBrains, STUDY_REWARD_AMOUNTS } from '../services/study-rewards'
+import { awardStudyBrains, resolveStudyRewards, getFamilyPrimaryParent, DEFAULT_STUDY_REWARDS, type StudyRewardConfig } from '../services/study-rewards'
 import { createInterviewConversation, tavusConfigured } from '../services/tavus'
 import { createAvatarSession, runwayConfigured, attachAvatarKnowledge, pickAvatarId } from '../services/runway-avatar'
 import { generateBlueprint } from '../services/interview-blueprint'
@@ -772,7 +772,10 @@ study.post('/study/cards/:id/review', async (c) => {
       .from(studyCards)
       .where(and(eq(studyCards.accountId, accountId), sql`${studyCards.lastReviewedAt} >= ${today}`))
     if (reviewed?.count === 10) {
-      await awardStudyBrains(accountId, familyId, 'study_review_session', STUDY_REWARD_AMOUNTS.study_review_session, { reviewedToday: 10 })
+      const rewards = await resolveStudyRewards(familyId)
+      if (rewards.enabled && rewards.study_review_session > 0) {
+        await awardStudyBrains(accountId, familyId, 'study_review_session', rewards.study_review_session, { reviewedToday: 10 })
+      }
     }
   }
 
@@ -855,7 +858,10 @@ async function updateStreak(accountId: string) {
   if (newStreak === 7 || (newStreak > 7 && newStreak % 7 === 0)) {
     const familyId = await getFamilyId(accountId)
     if (familyId) {
-      await awardStudyBrains(accountId, familyId, 'study_streak', STUDY_REWARD_AMOUNTS.study_streak, { streak: newStreak })
+      const rewards = await resolveStudyRewards(familyId)
+      if (rewards.enabled && rewards.study_streak > 0) {
+        await awardStudyBrains(accountId, familyId, 'study_streak', rewards.study_streak, { streak: newStreak })
+      }
     }
   }
 }
@@ -1061,6 +1067,43 @@ async function kidInFamily(familyId: string, kidId: string): Promise<boolean> {
     .limit(1)
   return !!m
 }
+
+// GET /study/rewards-config — the family's study-to-earn settings (parent only).
+study.get('/study/rewards-config', async (c) => {
+  const accountId = authedAccountId(c)
+  const familyId = await parentFamilyId(accountId)
+  if (!familyId) return c.json({ error: 'not_a_parent' }, 403)
+  const config = await resolveStudyRewards(familyId)
+  return c.json({ config })
+})
+
+// PUT /study/rewards-config — tune study-to-earn amounts (parent only). Stored
+// on the family's primary parent so every parent shares one config.
+study.put('/study/rewards-config', async (c) => {
+  const accountId = authedAccountId(c)
+  const familyId = await parentFamilyId(accountId)
+  if (!familyId) return c.json({ error: 'not_a_parent' }, 403)
+
+  const amt = z.number().int().min(0).max(1000)
+  const parsed = z.object({
+    enabled: z.boolean().optional(),
+    study_quiz_pass: amt.optional(),
+    study_quiz_perfect: amt.optional(),
+    study_review_session: amt.optional(),
+    study_streak: amt.optional(),
+    study_upload: amt.optional(),
+  }).safeParse(await c.req.json().catch(() => ({})))
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+
+  const parent = await getFamilyPrimaryParent(familyId)
+  if (!parent) return c.json({ error: 'no_parent' }, 404)
+  const current = (parent.persona.studyRewards ?? {}) as Partial<StudyRewardConfig>
+  const nextRewards = { ...DEFAULT_STUDY_REWARDS, ...current, ...parsed.data }
+  await db.update(accounts).set({ persona: { ...parent.persona, studyRewards: nextRewards } }).where(eq(accounts.id, parent.accountId))
+
+  const config = await resolveStudyRewards(familyId)
+  return c.json({ ok: true, config })
+})
 
 // GET /study/children — the parent's kids, each with a study summary.
 study.get('/study/children', async (c) => {
@@ -1502,10 +1545,14 @@ study.post('/study/quizzes/:id/submit', async (c) => {
 
   const scorePct = Math.round((correctCount / quiz.questionCount) * 100)
 
-  // Calculate brains earned
+  // Calculate brains earned (parent-tunable, family-wide).
+  const familyId = await getFamilyId(accountId)
+  const rewards = familyId ? await resolveStudyRewards(familyId) : DEFAULT_STUDY_REWARDS
   let brainsEarned = 0
-  if (scorePct === 100) brainsEarned = STUDY_REWARD_AMOUNTS.study_quiz_perfect
-  else if (scorePct >= 80) brainsEarned = STUDY_REWARD_AMOUNTS.study_quiz_pass
+  if (rewards.enabled) {
+    if (scorePct === 100) brainsEarned = rewards.study_quiz_perfect
+    else if (scorePct >= 80) brainsEarned = rewards.study_quiz_pass
+  }
 
   await db.update(studyQuizzes).set({
     correctCount,
@@ -1518,12 +1565,9 @@ study.post('/study/quizzes/:id/submit', async (c) => {
   }).where(eq(studyQuizzes.id, quizId))
 
   // Award brains
-  if (brainsEarned > 0) {
-    const familyId = await getFamilyId(accountId)
-    if (familyId) {
-      const kind = scorePct === 100 ? 'study_quiz_perfect' as const : 'study_quiz_pass' as const
-      await awardStudyBrains(accountId, familyId, kind, brainsEarned, { quizId, scorePct })
-    }
+  if (brainsEarned > 0 && familyId) {
+    const kind = scorePct === 100 ? 'study_quiz_perfect' as const : 'study_quiz_pass' as const
+    await awardStudyBrains(accountId, familyId, kind, brainsEarned, { quizId, scorePct })
   }
 
   return c.json({ ok: true, correctCount, scorePct, brainsEarned, weakConcepts, questions })

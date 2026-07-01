@@ -9,8 +9,8 @@
  * Rendered by StudyPal when the logged-in account is a parent. Backed by the
  * parent-scoped read endpoints (/study/children…).
  */
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronLeft, ChevronRight, Flame, BookOpen, History, Clock, Eye, Trophy, GraduationCap, ShieldCheck, Target, CalendarDays, Sparkles,
 } from 'lucide-react'
@@ -196,6 +196,9 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
           {/* Weekly digest — an at-a-glance summary of the last 7 days. */}
           <WeeklyDigest kid={kid} subjects={subjects} interviews={interviews} />
 
+          {/* Study-to-earn — parent-tunable rewards that pay Brains to the wallet. */}
+          <StudyRewardsCard />
+
           {/* Subjects */}
           <p className="pv-label mb-3">Subjects</p>
           {subjects.length === 0 ? (
@@ -268,6 +271,85 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
         </>
       )}
     </div>
+  )
+}
+
+/** Study-to-earn — a parent tunes how many Brains each study win pays. */
+function StudyRewardsCard() {
+  const qc = useQueryClient()
+  type Cfg = { enabled: boolean; study_quiz_pass: number; study_quiz_perfect: number; study_review_session: number; study_streak: number; study_upload: number }
+  const { data } = useQuery({ queryKey: ['study-rewards-config'], queryFn: () => api<{ config: Cfg }>('/study/rewards-config') })
+  const [open, setOpen] = useState(false)
+  const [cfg, setCfg] = useState<Cfg | null>(null)
+  useEffect(() => { if (data?.config) setCfg((prev) => prev ?? data.config) }, [data])
+  const save = useMutation({
+    mutationFn: (c: Cfg) => api<{ config: Cfg }>('/study/rewards-config', { method: 'PUT', body: JSON.stringify(c) }),
+    onSuccess: (r) => { qc.setQueryData(['study-rewards-config'], r); setCfg(r.config) },
+  })
+  if (!cfg) return null
+
+  const rows: { key: keyof Cfg; label: string; hint: string }[] = [
+    { key: 'study_quiz_perfect', label: 'Perfect quiz', hint: '100% score' },
+    { key: 'study_quiz_pass', label: 'Passed quiz', hint: '80%+ score' },
+    { key: 'study_review_session', label: 'Daily review', hint: '10 cards a day' },
+    { key: 'study_streak', label: '7-day streak', hint: 'every 7 days' },
+  ]
+  const bump = (k: keyof Cfg, d: number) => setCfg((c) => (c ? { ...c, [k]: Math.max(0, Math.min(1000, (c[k] as number) + d)) } : c))
+
+  return (
+    <Card className="pv-rise pv-hairline mb-5 p-4">
+      <button onClick={() => setOpen((o) => !o)} className="pv-press flex w-full items-center gap-3 text-left">
+        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ background: 'var(--pv-accent-soft)' }}><BrainCoin size={18} /></span>
+        <div className="min-w-0 flex-1">
+          <p className="pv-title text-sm">Study rewards</p>
+          <p className="text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{cfg.enabled ? 'Kids earn Brains for studying — paid to their wallet' : 'Turned off'}</p>
+        </div>
+        <ChevronRight size={18} className="flex-none transition-transform" style={{ color: 'var(--pv-ink-3)', transform: open ? 'rotate(90deg)' : 'none' }} />
+      </button>
+
+      {open && (
+        <div className="mt-3.5">
+          <div className="flex items-center justify-between rounded-2xl px-3.5 py-2.5" style={{ background: 'var(--pv-surface-2)' }}>
+            <span className="text-sm font-bold">Reward studying</span>
+            <button
+              onClick={() => setCfg((c) => (c ? { ...c, enabled: !c.enabled } : c))}
+              aria-pressed={cfg.enabled}
+              className="relative h-6 w-11 rounded-full transition-all"
+              style={{ background: cfg.enabled ? 'var(--pv-accent)' : 'var(--pv-surface-3)' }}
+            >
+              <span className="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" style={{ left: cfg.enabled ? '22px' : '2px' }} />
+            </button>
+          </div>
+
+          {cfg.enabled && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {rows.map((r) => (
+                <div key={String(r.key)} className="flex items-center gap-3 rounded-2xl px-3.5 py-2" style={{ background: 'var(--pv-surface-2)' }}>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold" style={{ color: 'var(--pv-ink)' }}>{r.label}</p>
+                    <p className="text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{r.hint}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => bump(r.key, -5)} className="pv-press h-7 w-7 rounded-full text-base font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>−</button>
+                    <span className="flex w-14 items-center justify-center gap-1 text-sm font-extrabold"><BrainCoin size={13} />{cfg[r.key] as number}</span>
+                    <button onClick={() => bump(r.key, 5)} className="pv-press h-7 w-7 rounded-full text-base font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>+</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => save.mutate(cfg)}
+            disabled={save.isPending}
+            className="pv-press-lg pv-sheen mt-3 w-full rounded-full py-3 text-sm font-extrabold disabled:opacity-50"
+            style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}
+          >
+            {save.isPending ? 'Saving…' : save.isSuccess ? 'Saved ✓' : 'Save rewards'}
+          </button>
+        </div>
+      )}
+    </Card>
   )
 }
 

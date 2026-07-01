@@ -15,7 +15,7 @@ import {
   ChevronLeft, ChevronRight, Flame, BookOpen, History, Clock, Eye, Trophy, GraduationCap, ShieldCheck, Target,
 } from 'lucide-react'
 import { api } from '../../lib/api'
-import { Card } from '../components/primitives'
+import { Card, ProgressBar } from '../components/primitives'
 import { BrainCoin } from '../components/Brains'
 import { InterviewInsights, type InterviewAnalysis } from './InterviewInsights'
 
@@ -118,11 +118,14 @@ export function ParentStudyView() {
 
   return (
     <div className="pv-pal-enter flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-none items-center justify-between px-5 pb-1 pt-3">
-        <div><div className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Family learning</div><div className="pv-title leading-tight">Study oversight</div></div>
+      <div className="flex flex-none items-start justify-between px-5 pb-1 pt-3">
+        <div>
+          <span className="pv-eyebrow">Family learning</span>
+          <h1 className="pv-h1 mt-1">Study oversight</h1>
+        </div>
         <span className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}><ShieldCheck size={12} style={{ color: 'var(--pv-pos)' }} /> Parent</span>
       </div>
-      <p className="flex-none px-5 pb-1 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>See how each child is learning — tap an interview to see how they reasoned.</p>
+      <p className="flex-none px-5 pb-1 pt-1.5 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>See how each child is learning — tap an interview to see how they reasoned.</p>
 
       {/* Child switcher */}
       {children.length > 1 && (
@@ -146,9 +149,9 @@ export function ParentStudyView() {
 
 function Stat({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
   return (
-    <div className="flex flex-col items-center gap-1 rounded-2xl py-3" style={{ background: 'var(--pv-surface-2)' }}>
-      <span className="flex items-center gap-1 pv-amount text-lg">{icon}{value}</span>
-      <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--pv-ink-3)' }}>{label}</span>
+    <div className="flex flex-col items-center gap-1 rounded-2xl py-3" style={{ background: 'rgba(255,255,255,0.1)' }}>
+      <span className="flex items-center gap-1 pv-amount text-lg" style={{ color: 'var(--pv-on-dark)' }}>{icon}{value}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.55)' }}>{label}</span>
     </div>
   )
 }
@@ -170,15 +173,16 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
   return (
     <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-10 pt-1">
       {/* Hero stats */}
-      <Card className="pv-pop mb-5 p-5" style={{ background: 'var(--pv-grad-ink)' }}>
-        <div className="mb-4 flex items-center gap-3">
-          <Avatar child={kid} size={44} active />
+      <Card className="pv-pop pv-sheen relative mb-5 overflow-hidden p-5" style={{ background: 'var(--pv-grad-ink)' }}>
+        <span aria-hidden className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', opacity: 0.2, filter: 'blur(26px)' }} />
+        <div className="relative mb-4 flex items-center gap-3">
+          <span className="rounded-full" style={{ boxShadow: '0 0 0 2.5px rgba(255,255,255,0.22)' }}><Avatar child={kid} size={48} active /></span>
           <div>
             <p className="pv-title leading-tight" style={{ color: 'var(--pv-on-dark)' }}>{kid.name}</p>
             {kid.grade && <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.6)' }}>{kid.grade}</p>}
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="relative grid grid-cols-3 gap-2">
           <Stat icon={<Flame size={14} style={{ color: '#ffb24a' }} />} value={String(kid.streak)} label="day streak" />
           <Stat icon={<Trophy size={14} style={{ color: 'var(--pv-accent)' }} />} value={avg != null ? `${avg}` : '—'} label="avg score" />
           <Stat icon={<History size={14} style={{ color: 'var(--pv-accent)' }} />} value={String(kid.interviewCount)} label="interviews" />
@@ -198,13 +202,16 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
               {subjects.map((s, i) => {
                 const pct = s.totalCards > 0 ? Math.round(((s.totalCards - s.cardsDue) / s.totalCards) * 100) : 0
                 return (
-                  <Card key={s.id} className="pv-rise flex items-center gap-3 p-3.5" style={{ ['--i' as string]: Math.min(i, 8) }}>
-                    <span className="flex h-10 w-10 flex-none items-center justify-center rounded-2xl text-xl" style={{ background: 'var(--pv-surface-2)' }}>{s.emoji ?? '📚'}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="pv-title truncate text-sm">{s.title}</p>
-                      <p className="mt-0.5 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>{s.totalCards} concepts · {s.cardsDue} to review</p>
+                  <Card key={s.id} className="pv-rise p-3.5" style={{ ['--i' as string]: Math.min(i, 8) }}>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 flex-none items-center justify-center rounded-2xl text-xl" style={{ background: 'var(--pv-surface-2)' }}>{s.emoji ?? '📚'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="pv-title truncate text-sm">{s.title}</p>
+                        <p className="mt-0.5 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>{s.totalCards} concepts · {s.cardsDue} to review</p>
+                      </div>
+                      <span className="pv-amount text-sm pv-text-accent">{pct}%</span>
                     </div>
-                    <span className="pv-amount text-sm pv-text-accent">{pct}%</span>
+                    <div className="mt-2.5"><ProgressBar value={s.totalCards - s.cardsDue} max={Math.max(1, s.totalCards)} /></div>
                   </Card>
                 )
               })}
@@ -236,8 +243,11 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
                 const tone = scoreTone(iv.score)
                 const flags = iv.focus?.flags ?? []
                 return (
-                  <Card key={iv.id} onClick={() => onOpenInterview(iv.id)} className="pv-rise flex items-center gap-4 p-4" style={{ ['--i' as string]: Math.min(i, 10) }}>
-                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl text-lg font-extrabold" style={{ background: tone.bg, color: tone.fg }}>{typeof iv.score === 'number' ? iv.score : '—'}</span>
+                  <Card key={iv.id} onClick={() => onOpenInterview(iv.id)} className="pv-rise pv-hairline flex items-center gap-4 p-4" style={{ ['--i' as string]: Math.min(i, 10) }}>
+                    <span className="flex h-12 w-12 flex-none flex-col items-center justify-center rounded-2xl font-extrabold leading-none" style={{ background: tone.bg, color: tone.fg }}>
+                      <span className="text-lg">{typeof iv.score === 'number' ? iv.score : '—'}</span>
+                      {typeof iv.score === 'number' && <span className="text-[8px] font-bold" style={{ opacity: 0.7 }}>/ 10</span>}
+                    </span>
                     <div className="min-w-0 flex-1">
                       <p className="pv-title truncate text-sm">{iv.chapter || iv.topicTitle || 'Interview'}</p>
                       <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>

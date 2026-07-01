@@ -348,9 +348,13 @@ function FamilyOverview({
 
   return (
     <div className="pt-2">
-      <h1 className="pv-display pv-rise mt-1">Hi {parentName}</h1>
+      <div className="pv-rise mt-1">
+        <span className="pv-eyebrow">Your family</span>
+        <h1 className="pv-display mt-1">Hi {parentName}</h1>
+      </div>
 
       <DailySummary
+        kids={kids}
         kidsCount={kids.length}
         totalPocket={totalPocket}
         toApprove={toApprove}
@@ -359,8 +363,8 @@ function FamilyOverview({
       />
 
       {/* Quick actions */}
-      <div className="pv-rise mt-5 flex items-start justify-around">
-        <CircleAction Icon={Send} label="Send money" tone="dark" onClick={onSendMoney} />
+      <div className="pv-rise mt-6 grid grid-cols-3 gap-3">
+        <CircleAction Icon={Send} label="Send money" tone="accent" onClick={onSendMoney} />
         <CircleAction Icon={ListChecks} label="Add a chore" onClick={onAddChore} />
         <CircleAction Icon={Plus} label="Add child" onClick={onAddChild} />
       </div>
@@ -423,12 +427,14 @@ function FamilyOverview({
 }
 
 function DailySummary({
+  kids,
   kidsCount,
   totalPocket,
   toApprove,
   allowanceDue,
   pendingCount,
 }: {
+  kids: FamilyKidVM[]
   kidsCount: number
   totalPocket: number
   toApprove: number
@@ -442,42 +448,78 @@ function DailySummary({
   const allGood = recs.length === 0
 
   return (
-    <Card className="pv-rise mt-4 p-5" style={{ background: 'var(--pv-grad-ink)' }}>
-      <div className="flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.14)', color: '#7ef0b0' }}>
-          <Sparkles size={18} strokeWidth={2.4} />
-        </span>
-        <div className="pv-label" style={{ color: 'rgba(255,255,255,0.6)' }}>Today&apos;s summary</div>
-      </div>
-      <p className="mt-3 text-[0.95rem] font-semibold leading-snug" style={{ color: 'var(--pv-on-dark)' }}>
-        {allGood
-          ? `All caught up — ${fmt(totalPocket)} across ${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'}, and nothing needs you right now. 🎉`
-          : `${kidsCount} ${kidsCount === 1 ? 'kid' : 'kids'} with ${fmt(totalPocket)} in their pockets. A few things could use a look:`}
-      </p>
-      {!allGood && (
-        <div className="mt-3 space-y-2">
-          {recs.map((r, i) => (
-            <div key={i} className="flex items-center gap-2.5 rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.08)' }}>
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: '#7ef0b0' }} />
-              <span className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.92)' }}>{r}</span>
-            </div>
-          ))}
+    <Card className="pv-rise pv-sheen relative mt-4 overflow-hidden p-5" style={{ background: 'var(--pv-grad-ink)' }}>
+      {/* ambient accent glow */}
+      <span aria-hidden className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', opacity: 0.22, filter: 'blur(26px)' }} />
+
+      <div className="relative">
+        <div className="flex items-center justify-between">
+          <span className="pv-eyebrow" style={{ color: 'rgba(255,255,255,0.5)' }}>Today</span>
+          <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold" style={{ background: 'rgba(255,255,255,0.12)', color: allGood ? '#7ef0b0' : '#ffd76b' }}>
+            <Sparkles size={12} strokeWidth={2.6} /> {allGood ? 'All caught up' : 'Needs you'}
+          </span>
         </div>
-      )}
+
+        <div className="pv-label mt-4" style={{ color: 'rgba(255,255,255,0.55)' }}>In their pockets</div>
+        <div className="pv-amount text-[2.7rem] leading-none" style={{ color: 'var(--pv-on-dark)' }}>{fmt(totalPocket)}</div>
+
+        <div className="mt-3 flex items-center gap-2.5">
+          <AvatarStack kids={kids} />
+          <span className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.72)' }}>
+            across {kidsCount} {kidsCount === 1 ? 'kid' : 'kids'}
+          </span>
+        </div>
+
+        {allGood ? (
+          <p className="mt-4 text-sm font-semibold leading-snug" style={{ color: 'rgba(255,255,255,0.72)' }}>
+            Nothing needs you right now. 🎉
+          </p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {recs.map((r, i) => (
+              <div key={i} className="flex items-center gap-2.5 rounded-2xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: '#7ef0b0' }} />
+                <span className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.92)' }}>{r}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </Card>
   )
 }
 
-function CircleAction({ Icon, label, tone = 'light', onClick }: { Icon: typeof Send; label: string; tone?: 'light' | 'dark'; onClick: () => void }) {
+/** Overlapping avatar cluster on a dark hero. */
+function AvatarStack({ kids }: { kids: FamilyKidVM[] }) {
+  const shown = kids.slice(0, 4)
+  const extra = kids.length - shown.length
+  return (
+    <div className="flex items-center">
+      {shown.map((k, i) => (
+        <span key={k.id} className="rounded-full" style={{ marginLeft: i === 0 ? 0 : -10, boxShadow: '0 0 0 2px #16181f', zIndex: shown.length - i }}>
+          <Avatar name={k.name} src={k.avatar} tile={k.tile} size={30} />
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="ml-[-10px] flex h-[30px] w-[30px] items-center justify-center rounded-full text-[11px] font-extrabold" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff', boxShadow: '0 0 0 2px #16181f' }}>
+          +{extra}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function CircleAction({ Icon, label, tone = 'light', onClick }: { Icon: typeof Send; label: string; tone?: 'light' | 'dark' | 'accent'; onClick: () => void }) {
+  const isAccent = tone === 'accent'
   const style = tone === 'dark'
     ? { background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-md)' }
-    : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }
+    : isAccent
+      ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }
+      : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }
   return (
-    <button onClick={onClick} className="pv-press flex w-20 flex-col items-center gap-2">
-      <span className="flex h-16 w-16 items-center justify-center rounded-full" style={style}>
-        <Icon size={24} strokeWidth={2.2} />
-      </span>
-      <span className="text-center text-xs font-bold leading-tight" style={{ color: 'var(--pv-ink-2)' }}>{label}</span>
+    <button onClick={onClick} className={`pv-press-lg ${isAccent ? 'pv-sheen' : ''} pv-hairline flex flex-col items-center gap-2.5 rounded-[var(--pv-r-lg)] py-4`} style={style}>
+      <Icon size={23} strokeWidth={2.3} />
+      <span className="text-center text-xs font-bold leading-tight">{label}</span>
     </button>
   )
 }
@@ -491,22 +533,46 @@ function KidListRow({ kid, enabled, onClick }: { kid: FamilyKidVM; enabled: bool
       : wk.spent > 0
         ? `Spent ${fmt(wk.spent)} this week`
         : 'No activity yet'
+  const showTrend = enabled && (wk.earned > 0 || wk.spent > 0)
+  const up = wk.net >= 0
   return (
-    <Card onClick={onClick} className="flex items-center gap-3.5 p-4">
-      <Avatar name={kid.name} src={kid.avatar} tile={kid.tile} size={48} />
-      <div className="min-w-0 flex-1">
-        <div className="pv-title truncate">{kid.name}</div>
-        <div className="truncate text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{sub}</div>
-      </div>
-      <div className="text-right">
-        <div className="pv-amount text-[0.95rem]">{fmt(kid.balance)}</div>
-        {kid.tasksDue > 0 && (
-          <div className="text-[0.625rem] font-extrabold uppercase tracking-wide" style={{ color: 'var(--pv-accent)' }}>
-            {kid.tasksDue} to review
+    <Card onClick={onClick} className="pv-hairline p-4">
+      <div className="flex items-center gap-3.5">
+        <span className="rounded-full" style={{ boxShadow: `0 0 0 2.5px var(--pv-${kid.tile})` }}>
+          <Avatar name={kid.name} src={kid.avatar} tile={kid.tile} size={46} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="pv-title truncate">{kid.name}</span>
+            {kid.tasksDue > 0 && (
+              <span className="rounded-full px-1.5 py-0.5 text-[0.625rem] font-extrabold uppercase tracking-wide" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent-2)' }}>
+                {kid.tasksDue} to review
+              </span>
+            )}
           </div>
-        )}
+          <div className="truncate text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{sub}</div>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <div className="pv-amount text-[0.95rem]">{fmt(kid.balance)}</div>
+          {showTrend && (
+            <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[0.625rem] font-extrabold" style={{ background: up ? 'var(--pv-pos-soft)' : 'var(--pv-neg-soft)', color: up ? 'var(--pv-pos)' : 'var(--pv-neg)' }}>
+              {up ? <TrendingUp size={11} strokeWidth={2.6} /> : <TrendingDown size={11} strokeWidth={2.6} />}
+              {fmt(Math.abs(wk.net), { cents: false })}
+            </span>
+          )}
+        </div>
+        <ChevronRight size={18} style={{ color: 'var(--pv-ink-3)' }} />
       </div>
-      <ChevronRight size={18} style={{ color: 'var(--pv-ink-3)' }} />
+
+      {kid.goal && (
+        <div className="mt-3">
+          <div className="mb-1 flex items-center justify-between text-[11px] font-bold" style={{ color: 'var(--pv-ink-3)' }}>
+            <span className="truncate">🎯 {kid.goal.title}</span>
+            <span className="pv-text-accent">{Math.round((kid.goal.saved / kid.goal.target) * 100)}%</span>
+          </div>
+          <ProgressBar value={kid.goal.saved} max={kid.goal.target} />
+        </div>
+      )}
     </Card>
   )
 }
@@ -535,8 +601,9 @@ function KidDetail({
   return (
     <div className="pt-2">
       {/* Hero */}
-      <Card className="pv-rise p-5" style={{ background: 'var(--pv-grad-ink)' }}>
-        <div className="flex items-center gap-4">
+      <Card className="pv-rise pv-sheen relative overflow-hidden p-5" style={{ background: 'var(--pv-grad-ink)' }}>
+        <span aria-hidden className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full" style={{ background: `var(--pv-${kid.tile})`, opacity: 0.24, filter: 'blur(26px)' }} />
+        <div className="relative flex items-center gap-4">
           <KidAvatar name={kid.name} src={kid.avatar} onPhoto={onPhoto} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">

@@ -592,6 +592,43 @@ study.get('/study/cards/due', async (c) => {
   return c.json({ cards, count: cards.length })
 })
 
+// POST /study/vision-extract — turn photos of a worksheet/textbook/notes into
+// clean study text a deck can be built from. Uses gpt-4o vision. Max 3 images.
+study.post('/study/vision-extract', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  const parsed = z.object({
+    images: z.array(z.string().max(2_000_000).refine((s) => /^(data:image\/|https?:\/\/)/i.test(s), 'invalid image url')).min(1).max(3),
+  }).safeParse(body)
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+
+  try {
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 1200,
+      temperature: 0.2,
+      messages: [
+        {
+          role: 'system',
+          content: `You extract study material from photos (a worksheet, textbook page, or handwritten notes). Transcribe and lightly organise the LEARNABLE content — key terms, definitions, facts, formulas, questions and worked examples — into clean plain text a tutor can turn into flashcards. Ignore page furniture (headers, page numbers, logos). If the image has no study content, reply exactly "NO_CONTENT".`,
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text' as const, text: 'Extract the study material from these image(s):' },
+            ...parsed.data.images.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+          ],
+        },
+      ],
+    })
+    const text = res.choices[0]?.message?.content?.trim() ?? ''
+    if (!text || text === 'NO_CONTENT') return c.json({ text: '' })
+    return c.json({ text: text.slice(0, 16_000) })
+  } catch (err) {
+    logger.warn({ err: String(err).slice(0, 120) }, 'study.vision_extract_failed')
+    return c.json({ error: 'extract_failed' }, 502)
+  }
+})
+
 // POST /study/cards/:id/explain — explain ONE concept a different way on demand
 // (simpler / example / mnemonic). Grounded in the card + topic + grade.
 study.post('/study/cards/:id/explain', async (c) => {

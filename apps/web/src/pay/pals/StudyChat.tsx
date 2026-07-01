@@ -335,16 +335,30 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     }
     topic = topic.replace(/[?!.]+$/, '').trim()
 
-    // Nothing to build from: no document text and no real topic → nudge.
-    if (!docText && topic.length < 3) {
-      say(imgs.length
-        ? 'I build decks from text — type a topic (like “Photosynthesis”) or attach a PDF and I’ll turn it into flashcards.'
-        : 'Tell me a topic — like “World War 1” or “Photosynthesis” — or attach a PDF and I’ll build a deck from it.')
+    // Nothing to build from at all → nudge.
+    if (!docText && imgs.length === 0 && topic.length < 3) {
+      say('Tell me a topic — like “World War 1” or “Photosynthesis” — or attach a PDF or photo and I’ll build a deck from it.')
       return
     }
 
     setSending(true)
     try {
+      // Source material: PDF text + anything we can read from attached photos.
+      let sourceText = docText
+      if (imgs.length > 0) {
+        try {
+          const res = await api<{ text: string }>('/study/vision-extract', { method: 'POST', body: JSON.stringify({ images: imgs }) })
+          if (res.text?.trim()) sourceText = [sourceText, res.text.trim()].filter(Boolean).join('\n\n')
+        } catch { /* fall back to topic / pdf text */ }
+      }
+
+      // Couldn't read the photo and there's no real topic to fall back on.
+      if (!sourceText && topic.length < 3) {
+        say('I couldn’t read any study material in that — try a clearer photo, a PDF, or just tell me the topic.')
+        setSending(false)
+        return
+      }
+
       let topicId = store.activeTopicId
       let topicTitle = store.activeTopicTitle
       const baseLabel = topic.length >= 3 ? topic : (summary || 'My notes')
@@ -356,15 +370,15 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
         topicId = created.id; topicTitle = title
         store.setActive(topicId, title)
       }
-      const content = docText
-        ? `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) from the following source material${topic.length >= 3 ? ` about ${topic}` : ''}. Extract the key ideas, definitions, dates/formulas and likely exam questions. Use Australian curriculum terminology and spelling.\n\nSOURCE MATERIAL:\n"""\n${docText}\n"""`
+      const content = sourceText
+        ? `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) from the following source material${topic.length >= 3 ? ` about ${topic}` : ''}. Extract the key ideas, definitions, dates/formulas and likely exam questions. Use Australian curriculum terminology and spelling.\n\nSOURCE MATERIAL:\n"""\n${sourceText}\n"""`
         : `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) for a student studying: ${topic}. Cover the key ideas, definitions, dates/formulas and common exam questions. Use Australian curriculum terminology and spelling.`
-      await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: chapter, fileUrl: docText ? 'file://pdf' : 'text://inline', fileType: 'text', content, chapter }) })
+      await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: chapter, fileUrl: sourceText ? 'file://scan' : 'text://inline', fileType: 'text', content, chapter }) })
       qc.invalidateQueries({ queryKey: ['study-topics'] })
       qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
       qc.invalidateQueries({ queryKey: ['study-chapters', topicId] })
       const label = topicTitle && topicTitle.toLowerCase() !== chapter.toLowerCase() ? `${chapter} · ${topicTitle}` : chapter
-      say(`On it — building your “${chapter}” deck${docText ? ' from your file' : ''} now. Here's the plan: learn the key cards, take a quick quiz, then a short interview to lock it in. Tap below when you're ready.`, [
+      say(`On it — building your “${chapter}” deck${sourceText ? ' from your material' : ''} now. Here's the plan: learn the key cards, take a quick quiz, then a short interview to lock it in. Tap below when you're ready.`, [
         { label: `Start studying ${chapter}`, emoji: '📖', kind: 'cards', topicId, title: label, chapter },
       ])
     } catch {

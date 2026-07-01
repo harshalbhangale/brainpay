@@ -1,153 +1,124 @@
 /**
- * MapCanvas + TrailMap + OverviewMap — full-bleed animated maps.
+ * TrailMap + OverviewMap — fully interactive maps (drag, pinch/scroll zoom).
  * ───────────────────────────────────────────────────────────────────────────
- * MapCanvas measures its container, fits the given points, requests a static
- * backdrop at the container's aspect ratio (so object-cover never misaligns),
- * and exposes a `project(latlng)→{x,y}` to draw an SVG overlay in the SAME
- * coordinate space. TrailMap draws an animated, candy-crush-style journey;
+ * Built on Leaflet with free, keyless CARTO/OSM raster tiles, so there's no
+ * Google key / referrer dependency and the user can actually pan & zoom
+ * ("dive through") the map. TrailMap draws a journey polyline + stop markers;
  * OverviewMap drops a labelled pin per person. Real points only.
+ *
+ * We use SVG circle/div markers (not Leaflet's default image icons) so there's
+ * no bundler icon-path breakage.
  */
-import { useLayoutEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import { fitView, toPixel } from '../../lib/mapProjection'
-import { staticBackdropUrl, type LatLng } from '../../lib/maps'
-
-type Projector = { project: (p: LatLng) => { x: number; y: number }; W: number; H: number }
+import { useEffect, useRef } from 'react'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 export type TrailStop = { lat: number; lng: number; at?: string; place?: string | null }
+export type OverviewPin = { id: string; lat: number; lng: number; accent: string; label: string; onClick?: () => void }
 
-/* ───────────────────────────────────────────────────────────── MapCanvas */
-function MapCanvas({ points, padding = 72, children }: { points: LatLng[]; padding?: number; children: (p: Projector) => ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null)
+// Clean, light basemap — free for reasonable use, attribution included.
+const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
 
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const update = () => setSize({ w: el.clientWidth, h: el.clientHeight })
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  return (
-    <div ref={ref} className="relative h-full w-full overflow-hidden" style={{ background: 'var(--pv-surface-2)' }}>
-      {size && size.w > 1 && size.h > 1 && (
-        <MapInner W={size.w} H={size.h} points={points} padding={padding}>
-          {children}
-        </MapInner>
-      )}
-    </div>
-  )
+function createMap(el: HTMLElement): L.Map {
+  const map = L.map(el, {
+    zoomControl: false, // avoid overlapping the floating filter chips
+    attributionControl: true,
+    // Gestures for "diving through": drag, scroll/pinch zoom, double-tap zoom.
+    scrollWheelZoom: true,
+    touchZoom: true,
+    dragging: true,
+  })
+  L.tileLayer(TILE_URL, { maxZoom: 20, subdomains: 'abcd', attribution: TILE_ATTR }).addTo(map)
+  return map
 }
 
-function MapInner({ W, H, points, padding, children }: { W: number; H: number; points: LatLng[]; padding: number; children: (p: Projector) => ReactNode }) {
-  const { center, zoom } = fitView(points, W, H, padding)
-  const cap = 640
-  const ar = W / H
-  const bw = W >= H ? cap : Math.round(cap * ar)
-  const bh = W >= H ? Math.round(cap / ar) : cap
-  const backdrop = staticBackdropUrl(center, zoom, { width: bw, height: bh, scale: 2 })
-  const project = (p: LatLng) => toPixel(p, center, zoom, W, H)
+/** Fit the map to the given points (or center on one). */
+function fit(map: L.Map, latlngs: L.LatLngExpression[]) {
+  if (latlngs.length === 0) {
+    map.setView([0, 0], 2)
+  } else if (latlngs.length === 1) {
+    map.setView(latlngs[0], 15)
+  } else {
+    map.fitBounds(L.latLngBounds(latlngs), { padding: [56, 56], maxZoom: 16 })
+  }
+  // The container often finishes sizing after mount; recompute so tiles fill it.
+  setTimeout(() => map.invalidateSize(), 0)
+  setTimeout(() => map.invalidateSize(), 250)
+}
 
-  return (
-    <>
-      <img src={backdrop} alt="Map" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
-      <div className="pointer-events-none absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(11,12,15,0.12) 0%, transparent 22% 60%, rgba(11,12,15,0.18) 100%)' }} />
-      <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${W} ${H}`} fill="none">
-        {children({ project, W, H })}
-      </svg>
-    </>
-  )
+function timeLabel(at?: string): string {
+  if (!at) return ''
+  return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 /* ───────────────────────────────────────────────────────────── TrailMap */
 export function TrailMap({ points, accent = '#0ea5e9' }: { points: TrailStop[]; accent?: string }) {
-  const latlngs: LatLng[] = points.map((p) => ({ lat: p.lat, lng: p.lng }))
-  return (
-    <MapCanvas points={latlngs} padding={84}>
-      {({ project }) => {
-        const px = points.map((p) => project(p))
-        const d = smoothPath(px)
-        const last = px[px.length - 1]
-        return (
-          <>
-            {px.length >= 2 && (
-              <>
-                <path d={d} className="pv-trail-line" stroke={accent} strokeWidth={13} strokeLinecap="round" strokeLinejoin="round" opacity={0.22} pathLength={1} />
-                <path id="pv-trail-path" d={d} className="pv-trail-line" stroke={accent} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" pathLength={1} style={{ filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.3))' }} />
-              </>
-            )}
+  const ref = useRef<HTMLDivElement>(null)
+  const sig = points.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|')
 
-            {px.slice(0, -1).map((p, i) => (
-              <g key={i} className="pv-trail-stop" style={{ animationDelay: `${0.4 + i * 0.13}s` }}>
-                <circle cx={p.x} cy={p.y} r={i === 0 ? 9 : 6.5} fill="#fff" stroke={accent} strokeWidth={3} />
-                {i === 0 && <circle cx={p.x} cy={p.y} r={3.5} fill={accent} />}
-              </g>
-            ))}
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const map = createMap(el)
+    const latlngs = points.map((p) => [p.lat, p.lng] as [number, number])
 
-            {last && (
-              <g>
-                <circle cx={last.x} cy={last.y} r={12} fill={accent} className="pv-trail-pulse" opacity={0.5} />
-                <circle cx={last.x} cy={last.y} r={10} fill={accent} stroke="#fff" strokeWidth={3.5} style={{ filter: 'drop-shadow(0 3px 7px rgba(0,0,0,0.35))' }} />
-              </g>
-            )}
+    if (latlngs.length >= 2) {
+      // soft halo + crisp line
+      L.polyline(latlngs, { color: accent, weight: 12, opacity: 0.2, lineJoin: 'round', lineCap: 'round' }).addTo(map)
+      L.polyline(latlngs, { color: accent, weight: 5, opacity: 0.95, lineJoin: 'round', lineCap: 'round' }).addTo(map)
+    }
 
-            {px.length >= 2 && (
-              <circle r={5.5} fill="#fff" stroke={accent} strokeWidth={2.5}>
-                <animateMotion dur="3.6s" begin="1.7s" repeatCount="indefinite" rotate="auto" calcMode="linear">
-                  <mpath href="#pv-trail-path" />
-                </animateMotion>
-              </circle>
-            )}
-          </>
-        )
-      }}
-    </MapCanvas>
-  )
+    points.forEach((p, i) => {
+      const isLast = i === points.length - 1
+      const m = L.circleMarker([p.lat, p.lng], {
+        radius: isLast ? 9 : 6.5,
+        color: '#fff',
+        weight: 3,
+        fillColor: accent,
+        fillOpacity: 1,
+      }).addTo(map)
+      const when = timeLabel(p.at)
+      m.bindPopup(`<b>${p.place || 'On the move'}</b>${when ? `<br/>${when}` : ''}`)
+    })
+
+    fit(map, latlngs)
+    return () => { map.remove() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, accent])
+
+  return <div ref={ref} className="h-full w-full" style={{ background: 'var(--pv-surface-2)' }} />
 }
 
 /* ───────────────────────────────────────────────────────────── OverviewMap */
-export type OverviewPin = { id: string; lat: number; lng: number; accent: string; label: string; onClick?: () => void }
-
 export function OverviewMap({ pins }: { pins: OverviewPin[] }) {
-  const latlngs: LatLng[] = pins.map((p) => ({ lat: p.lat, lng: p.lng }))
-  return (
-    <MapCanvas points={latlngs} padding={80}>
-      {({ project }) =>
-        pins.map((pin) => {
-          const p = project(pin)
-          return (
-            <g key={pin.id} style={{ cursor: pin.onClick ? 'pointer' : 'default' }} onClick={pin.onClick}>
-              <circle cx={p.x} cy={p.y} r={16} fill={pin.accent} className="pv-trail-pulse" opacity={0.4} />
-              <circle cx={p.x} cy={p.y} r={15} fill={pin.accent} stroke="#fff" strokeWidth={3.5} style={{ filter: 'drop-shadow(0 3px 7px rgba(0,0,0,0.35))' }} />
-              <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={14} fontWeight={800}>
-                {pin.label.slice(0, 1).toUpperCase()}
-              </text>
-            </g>
-          )
-        })
-      }
-    </MapCanvas>
-  )
-}
+  const ref = useRef<HTMLDivElement>(null)
+  const sig = pins.map((p) => `${p.id}:${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|')
+  const pinsRef = useRef(pins)
+  pinsRef.current = pins
 
-/** Catmull-Rom → cubic bezier for a smooth, playful route line. */
-function smoothPath(pts: { x: number; y: number }[]): string {
-  if (pts.length === 0) return ''
-  if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`
-  let d = `M ${pts[0].x} ${pts[0].y}`
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] ?? pts[i]
-    const p1 = pts[i]
-    const p2 = pts[i + 1]
-    const p3 = pts[i + 2] ?? p2
-    const cp1x = p1.x + (p2.x - p0.x) / 6
-    const cp1y = p1.y + (p2.y - p0.y) / 6
-    const cp2x = p2.x - (p3.x - p1.x) / 6
-    const cp2y = p2.y - (p3.y - p1.y) / 6
-    d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`
-  }
-  return d
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const map = createMap(el)
+    const latlngs: L.LatLngExpression[] = pinsRef.current.map((p) => [p.lat, p.lng])
+
+    pinsRef.current.forEach((pin) => {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:30px;height:30px;border-radius:9999px;background:${pin.accent};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,0.35)">${pin.label.slice(0, 1).toUpperCase()}</div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+      })
+      const marker = L.marker([pin.lat, pin.lng], { icon }).addTo(map)
+      marker.bindTooltip(pin.label, { direction: 'top', offset: [0, -16] })
+      if (pin.onClick) marker.on('click', pin.onClick)
+    })
+
+    fit(map, latlngs)
+    return () => { map.remove() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig])
+
+  return <div ref={ref} className="h-full w-full" style={{ background: 'var(--pv-surface-2)' }} />
 }

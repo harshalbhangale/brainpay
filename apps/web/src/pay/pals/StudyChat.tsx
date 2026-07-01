@@ -3,24 +3,19 @@
  * ───────────────────────────────────────────────────────────────────────────
  * The whole StudyPal experience is a conversation with Matilda (the reused
  * companion). She sits in the BACKGROUND; the chat floats in front. She greets,
- * onboards in-chat (tap chips), and drives learning ONE step at a time — the
- * next action button appears only when it's relevant (cards → quiz → interview),
- * never all at once.
+ * onboards in-chat, and drives learning ONE step at a time — the next action
+ * button appears only when it's relevant (cards → quiz → interview).
  *
- * Talking to her about a topic MAKES A DECK, it doesn't dump card text into the
- * chat: free text runs through the real study pipeline (/study/topics +
- * /documents, same path as the demo) and Matilda replies with an "Open the
- * cards" button. Tapping any button launches the existing cards/quiz/interview
- * screen (unchanged); on return she posts a follow-up — including the interview
- * score pulled from /study/interviews straight into the chat.
- *
- * The conversation lives in a module store so it survives while a screen is open
- * and resumes when we come back.
+ * Onboarding copy is deliberately short, neutral and factual (warmth from tone,
+ * not canned sentiment); a progress bar tracks it question-by-question, and a
+ * clear "Start studying" button gates the finish. Talking about a topic MAKES A
+ * DECK (real pipeline) and offers a button — it never dumps card text into chat.
+ * Mic / camera launch the existing live avatar session as Matilda.
  */
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { create } from 'zustand'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookOpen, Sparkles, Mic, Camera, Send as SendIcon, Check, Plus, GraduationCap, ChevronDown, Trophy } from 'lucide-react'
+import { BookOpen, Sparkles, Mic, Camera, Send as SendIcon, Check, Plus, GraduationCap, ChevronDown, ArrowRight, Trophy } from 'lucide-react'
 import { Companion } from '../../components/Companion'
 import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
@@ -32,7 +27,7 @@ const LiveSession = lazy(() => import('../screens/LiveSession').then((m) => ({ d
 type Topic = { id: string; title: string; emoji: string; cardsDue: number; totalCards: number }
 type InterviewRow = { id: string; score: number | null; summary: string | null; brainsEarned: number | null }
 
-type ActionKind = 'cards' | 'quiz' | 'interview' | 'pick' | 'demo' | 'setup'
+type ActionKind = 'cards' | 'quiz' | 'interview' | 'pick' | 'demo' | 'proceed' | 'setup'
 type Action = { label: string; emoji?: string; kind: ActionKind; topicId?: string; title?: string; chapter?: string }
 type CMsg = {
   id: string
@@ -45,7 +40,6 @@ type CMsg = {
 let mid = 1
 const uid = () => `sc${mid++}`
 
-// ── Conversation store — survives while a study screen is open, resumes after.
 type StudyChatState = {
   messages: CMsg[]
   pending: 'cards' | 'quiz' | 'interview' | null
@@ -92,21 +86,28 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   const [grade, setGrade] = useState(savedGrade)
   const [auState, setAuState] = useState((account?.persona?.state as string) || '')
   const [subjects, setSubjects] = useState<string[]>([])
+  const [building, setBuilding] = useState(false)
 
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [live, setLive] = useState<{ camera: boolean } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bootRef = useRef(false)
+  const postBuildRef = useRef<Topic[] | null>(null)
 
   const say = (text: string, actions?: Action[], result?: CMsg['result']) => store.push({ id: uid(), who: 'matilda', text, actions, result })
   const me = (text: string) => store.push({ id: uid(), who: 'you', text })
 
+  // Onboarding step tracking → progress bar (advances per answered question).
+  const stepsList: ReadonlyArray<'grade' | 'state' | 'subjects'> = savedGrade ? ['subjects'] : ['grade', 'state', 'subjects']
+  const totalSteps = stepsList.length
+  const currentStep = ask ? Math.max(1, stepsList.indexOf(ask) + 1) : totalSteps
+  const showProgress = !!ask || building
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, ask, sending])
+  }, [messages, ask, sending, building])
 
-  // Boot: resume after a screen, or start a fresh conversation.
   useEffect(() => {
     if (isLoading || bootRef.current) return
     bootRef.current = true
@@ -119,9 +120,13 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   }, [isLoading])
 
   function beginOnboarding() {
-    say(`Hi${name ? ` ${name}` : ''}! I'm Matilda 💜 Let's get you set up — it's quick.`)
-    if (savedGrade) { setAsk('subjects'); say('Which subjects do you want to study with me?') }
-    else { setAsk('grade'); say('First up — what year are you in?') }
+    if (savedGrade) {
+      say(`Hi${name ? ` ${name}` : ''}. I'm Matilda. Let's add your subjects.`)
+      setAsk('subjects'); say('Which subjects do you want to study?')
+    } else {
+      say(`Hi${name ? ` ${name}` : ''}. I'm Matilda. I'll set up your study space — three quick questions.`)
+      setAsk('grade'); say('What year are you in?')
+    }
   }
 
   function beginHome(topics: Topic[]) {
@@ -129,10 +134,9 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     const masteryPct = (t: Topic) => (t.totalCards > 0 ? (t.totalCards - t.cardsDue) / t.totalCards : 1)
     const target = ready.length ? [...ready].sort((a, b) => masteryPct(a) - masteryPct(b))[0] : topics[0]
     store.setActive(target.id, target.title)
-    // One clear next step + the option to pick another subject or type a topic.
     const line = ready.length && target.cardsDue > 0
-      ? `${name ? `Hey ${name}! ` : ''}You're a little rusty on ${target.title} — ${target.cardsDue} card${target.cardsDue !== 1 ? 's' : ''} to review. Shall we?`
-      : `${name ? `Hey ${name}! ` : ''}Want to study ${target.title}? Or tell me any topic and I'll build you a deck.`
+      ? `${name ? `${name}, ` : ''}you have ${target.cardsDue} card${target.cardsDue !== 1 ? 's' : ''} to review in ${target.title}.`
+      : `Ready to study ${target.title}? Or type any topic and I'll build a deck.`
     say(line, [{ label: `Review ${target.title}`, emoji: '📖', kind: 'cards', topicId: target.id, title: target.title }])
     const others = topics.filter((t) => t.id !== target.id)
     if (others.length > 0) {
@@ -144,35 +148,35 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   }
 
   async function build() {
+    setBuilding(true)
     try {
       const persona = { ...(account?.persona ?? {}), grade, ...(auState ? { state: auState, curriculum: curriculumForState(auState) } : {}) }
       try {
         const res = await api<{ account: Account }>('/me', { method: 'PATCH', body: JSON.stringify({ persona }) })
         updateAccount(res.account)
       } catch { /* keep going — decks still build */ }
-      const created: { id: string; title: string; emoji: string }[] = []
+      const created: Topic[] = []
       for (const subject of subjects) {
         const emoji = subjectEmoji(subject)
         const { topic } = await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title: subject, emoji }) })
         const content = `Generate key concepts, important definitions and study material for:\nSubject: ${subject}\nGrade: ${grade} (Australia)\nCurriculum: ${auState ? curriculumForState(auState) : 'ACARA'}${auState ? ` — ${auState}` : ''}\n\nUse Australian curriculum terminology, spelling and examples. Create comprehensive study material covering the most important topics for this grade level.`
         await api(`/study/topics/${topic.id}/documents`, { method: 'POST', body: JSON.stringify({ title: `${subject} concepts`, fileUrl: 'text://inline', fileType: 'text', content }) })
-        created.push({ id: topic.id, title: subject, emoji })
+        created.push({ id: topic.id, title: subject, emoji, cardsDue: 0, totalCards: 0 })
       }
       qc.invalidateQueries({ queryKey: ['study-topics'] })
       qc.invalidateQueries({ queryKey: ['study-stats'] })
-      const first = created[0]
-      if (first) {
-        store.setActive(first.id, first.title)
-        say(`All set! Your decks are generating now. Let's start with ${first.title}.`, [
-          { label: `Open ${first.title} cards`, emoji: '📖', kind: 'cards', topicId: first.id, title: first.title },
-          ...(created.length > 1 ? created.slice(1).map((c) => ({ label: c.title, emoji: c.emoji, kind: 'pick' as const, topicId: c.id, title: c.title })) : []),
-        ])
+      setBuilding(false)
+      if (created.length > 0) {
+        postBuildRef.current = created
+        store.setActive(created[0].id, created[0].title)
+        say(`You're all set — ${created.length} deck${created.length > 1 ? 's' : ''} on the way.`, [{ label: 'Start studying', kind: 'proceed' }])
       } else {
-        say('All set! Tell me a topic and I’ll build you a deck, or add a subject with the + button.')
+        say('Set up. Tell me a topic and I’ll build a deck, or add a subject with the + button.')
       }
     } catch {
+      setBuilding(false)
       setAsk('subjects')
-      say("I couldn't build your decks just now — check your connection and tap Build again.")
+      say('That didn’t go through. Check your connection and tap Build again.')
     }
   }
 
@@ -180,21 +184,17 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     const id = store.activeTopicId
     const title = store.activeTopicTitle ?? 'this'
     if (kind === 'cards') {
-      say(`Nice work on the ${title} cards! 📚 Ready for a quick quiz?`, id ? [
-        { label: 'Quiz me', emoji: '🧠', kind: 'quiz', topicId: id, title },
-      ] : [])
+      say(`Cards done. Want a quick quiz on ${title}?`, id ? [{ label: 'Quiz me', emoji: '🧠', kind: 'quiz', topicId: id, title }] : [])
     } else if (kind === 'quiz') {
-      say(`Good effort! An interview is the best way to really master ${title}. Ready?`, id ? [
-        { label: 'Start interview', emoji: '🎙️', kind: 'interview', topicId: id, title },
-      ] : [])
+      say(`Quiz done. Ready for an interview on ${title}?`, id ? [{ label: 'Start interview', emoji: '🎙️', kind: 'interview', topicId: id, title }] : [])
     } else {
-      say('Great interview! 🎉 Here’s how it went:')
+      say('Interview complete. Here’s your result:')
       if (id) {
         try {
           const res = await api<{ interviews: InterviewRow[] }>(`/study/interviews?topicId=${id}`)
           const latest = res.interviews?.[0]
           if (latest) say('', undefined, { score: latest.score, summary: latest.summary })
-        } catch { /* the encouragement still stands */ }
+        } catch { /* result card optional */ }
       }
       const others = topics.filter((t) => t.id !== id)
       say('What next?', [
@@ -206,13 +206,12 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
 
   function runAction(a: Action) {
     if (a.kind === 'setup') { onSetup(); return }
-    if (a.kind === 'demo') { me('Try the World War I demo'); store.setPending('cards'); onDemo(); return }
+    if (a.kind === 'proceed') { beginHome(postBuildRef.current ?? topicsData?.topics ?? []); return }
+    if (a.kind === 'demo') { me('World War I demo'); store.setPending('cards'); onDemo(); return }
     if (a.kind === 'pick' && a.topicId) {
       store.setActive(a.topicId, a.title ?? null)
       me(a.title ?? 'this subject')
-      say(`${a.title ?? 'Great'} it is! Ready to review the cards?`, [
-        { label: 'Open the cards', emoji: '📖', kind: 'cards', topicId: a.topicId, title: a.title },
-      ])
+      say(`${a.title ?? 'Subject'}. Ready to review the cards?`, [{ label: 'Open the cards', emoji: '📖', kind: 'cards', topicId: a.topicId, title: a.title }])
       return
     }
     if (!a.topicId) return
@@ -222,30 +221,30 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     else if (a.kind === 'interview') { me('Start interview'); store.setPending('interview'); onInterview(a.topicId) }
   }
 
-  // Onboarding answers.
-  const onGrade = (g: string) => { me(g); setGrade(g); setAsk('state'); say(`${g} — love it. Which state are you studying in? (or tap Skip)`) }
+  // Onboarding answers — short, one question at a time.
+  const onGrade = (g: string) => { me(g); setGrade(g); setAsk('state'); say('Which state are you in?') }
   const onStatePick = (s: string | null) => {
     me(s ?? 'Skip'); if (s) setAuState(s)
-    setAsk('subjects'); say(`Great — I'll follow the ${curriculumForState(s ?? undefined)} curriculum. Now pick the subjects you want to study 📚`)
+    setAsk('subjects'); say(`I'll use the ${curriculumForState(s ?? undefined)} curriculum. Which subjects do you want to study?`)
   }
   const toggleSubject = (s: string) => setSubjects((p) => (p.includes(s) ? p.filter((x) => x !== s) : [...p, s]))
   const onBuild = () => {
     if (subjects.length === 0) return
-    me(`Let's do: ${subjects.join(', ')}`)
+    me(subjects.join(', '))
     setAsk(null)
-    say(`Awesome — building your ${subjects.length} deck${subjects.length > 1 ? 's' : ''}… give me a few seconds ✨`)
+    say(`Setting up your ${subjects.length} subject${subjects.length > 1 ? 's' : ''}. This takes a few seconds.`)
     void build()
   }
 
   // Free text → BUILD A DECK (real pipeline) and offer a button. Never dumps
-  // card text into the chat. Trivial greetings get a nudge instead.
+  // card text into the chat.
   async function send() {
     const text = input.trim()
-    if (!text || sending || ask) return
+    if (!text || sending || ask || building) return
     setInput('')
     me(text)
     if (/^(hi|hey|hello|yo|sup|ok|okay|thanks|thank you|cool|nice|great)\b/i.test(text) || text.length < 4) {
-      say('What would you like to study? Tell me a topic — like “World War 1”, “Photosynthesis” or “Algebra” — and I’ll build you a deck.')
+      say('Tell me a topic — like “World War 1” or “Photosynthesis” — and I’ll build a deck.')
       return
     }
     setSending(true)
@@ -265,11 +264,11 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
       qc.invalidateQueries({ queryKey: ['study-topics'] })
       qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
       qc.invalidateQueries({ queryKey: ['study-chapters', topicId] })
-      say(`Love it — I'm putting together a deck on “${chapter}”${topicTitle && topicTitle !== chapter ? ` under ${topicTitle}` : ''}. Tap when you're ready 📖`, [
+      say(`Building a deck on “${chapter}”${topicTitle && topicTitle !== chapter ? ` under ${topicTitle}` : ''}. Tap when it's ready.`, [
         { label: 'Open the cards', emoji: '📖', kind: 'cards', topicId, title: chapter, chapter },
       ])
     } catch {
-      say("I couldn't build that deck just now — mind trying again?")
+      say('That didn’t build just now — mind trying again?')
     } finally {
       setSending(false)
     }
@@ -282,106 +281,115 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
           <LiveSession withCamera={live.camera} avatar={ch.avatar} speaker={ch.characterName} onClose={() => setLive(null)} />
         </Suspense>
       )}
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="pv-mesh" aria-hidden />
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="pv-mesh" aria-hidden />
 
-      {/* Matilda — in the BACKGROUND. */}
-      <div className="pointer-events-none absolute inset-0 z-0 flex items-start justify-center pt-10" aria-hidden>
-        <div className="absolute left-1/2 top-[34%] h-2/3 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]" style={{ background: ch.gradient, opacity: 0.26 }} />
-        <Companion avatar={ch.avatar} mood="happy" className="h-full w-full max-w-sm" />
-      </div>
-      {/* Legibility scrim — clear at the top (avatar face), fading to canvas at the bottom (chat). */}
-      <div
-        className="pointer-events-none absolute inset-0 z-0"
-        style={{ background: 'linear-gradient(180deg, transparent 0%, transparent 34%, color-mix(in srgb, var(--pv-bg) 62%, transparent) 60%, var(--pv-bg) 88%)' }}
-        aria-hidden
-      />
-
-      {/* Chat — in the FRONT. */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-        {/* Identity / switcher */}
-        <div className="flex flex-none items-center gap-2 px-4 pb-1 pt-2">
-          <button type="button" onClick={onSwitchPal} disabled={!onSwitchPal} aria-label={onSwitchPal ? 'Switch Pal' : undefined} className="pv-press pv-glass flex min-w-0 flex-1 items-center gap-2.5 rounded-full py-1 pl-1 pr-3 text-left disabled:cursor-default">
-            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ backgroundImage: ch.gradient, color: ch.onAccent }}>
-              <GraduationCap size={16} strokeWidth={2.4} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1"><span className="pv-title pv-tight truncate text-sm leading-tight">{ch.palName}</span>{onSwitchPal && <ChevronDown size={14} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />}</span>
-            </span>
-          </button>
-          <button onClick={onSetup} aria-label="Add subjects" className="pv-press pv-glass flex h-10 w-10 flex-none items-center justify-center rounded-full">
-            <Plus size={18} strokeWidth={2.6} style={{ color: 'var(--pv-ink-2)' }} />
-          </button>
+        {/* Matilda — in the BACKGROUND. */}
+        <div className="pointer-events-none absolute inset-0 z-0 flex items-start justify-center pt-10" aria-hidden>
+          <div className="absolute left-1/2 top-[34%] h-2/3 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]" style={{ background: ch.gradient, opacity: 0.26 }} />
+          <Companion avatar={ch.avatar} mood="happy" className="h-full w-full max-w-sm" />
         </div>
+        <div className="pointer-events-none absolute inset-0 z-0" style={{ background: 'linear-gradient(180deg, transparent 0%, transparent 34%, color-mix(in srgb, var(--pv-bg) 62%, transparent) 60%, var(--pv-bg) 88%)' }} aria-hidden />
 
-        {/* Conversation — pinned to the bottom so Matilda shows through up top. */}
-        <div ref={scrollRef} className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <div className="mx-auto flex min-h-full w-full max-w-xl flex-col justify-end gap-3">
-            {messages.map((m) => <Bubble key={m.id} m={m} onAction={runAction} demoBusy={demoBusy} />)}
-            {sending && (
-              <div className="flex w-fit items-center gap-1.5 rounded-2xl px-3.5 py-2.5 pv-glass">
-                <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '0ms' }} />
-                <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '160ms' }} />
-                <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '320ms' }} />
-              </div>
-            )}
-
-            {/* In-chat onboarding controls */}
-            {ask === 'grade' && (
-              <div className="pv-rise grid grid-cols-2 gap-2.5 pt-1">
-                {GRADES.map((g) => <ChipBtn key={g} onClick={() => onGrade(g)}>{g}</ChipBtn>)}
-              </div>
-            )}
-            {ask === 'state' && (
-              <div className="pv-rise pt-1">
-                <div className="flex flex-wrap gap-2">{AU_STATES.map((s) => <ChipBtn key={s} pill onClick={() => onStatePick(s)}>{s}</ChipBtn>)}</div>
-                <button onClick={() => onStatePick(null)} className="pv-press mt-3 block text-sm font-bold" style={{ color: 'var(--pv-ink-3)' }}>Skip</button>
-              </div>
-            )}
-            {ask === 'subjects' && (
-              <div className="pv-rise flex flex-col gap-2 pt-1">
-                {subjectsForGrade(grade).map((s) => {
-                  const on = subjects.includes(s)
-                  return (
-                    <button key={s} onClick={() => toggleSubject(s)} className="pv-press flex items-center gap-3 rounded-2xl px-4 py-3 font-bold" style={on ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }}>
-                      <span className="text-xl">{subjectEmoji(s)}</span>
-                      <span className="flex-1 text-left">{s}</span>
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ border: on ? '2px solid currentColor' : '2px solid var(--pv-line-strong)' }}>{on && <Check size={14} />}</span>
-                    </button>
-                  )
-                })}
-                <button onClick={onBuild} disabled={subjects.length === 0} className="pv-press-lg pv-sheen mt-1 flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-extrabold disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: subjects.length ? 'var(--pv-shadow-pop)' : undefined }}>
-                  <Sparkles size={16} /> Build my decks{subjects.length > 0 ? ` · ${subjects.length}` : ''}
-                </button>
-              </div>
-            )}
+        {/* Chat — in the FRONT. */}
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          {/* Identity / switcher */}
+          <div className="flex flex-none items-center gap-2 px-4 pb-1 pt-2">
+            <button type="button" onClick={onSwitchPal} disabled={!onSwitchPal} aria-label={onSwitchPal ? 'Switch Pal' : undefined} className="pv-press pv-glass flex min-w-0 flex-1 items-center gap-2.5 rounded-full py-1 pl-1 pr-3 text-left disabled:cursor-default">
+              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ backgroundImage: ch.gradient, color: ch.onAccent }}>
+                <GraduationCap size={16} strokeWidth={2.4} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1"><span className="pv-title pv-tight truncate text-sm leading-tight">{ch.palName}</span>{onSwitchPal && <ChevronDown size={14} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />}</span>
+              </span>
+            </button>
+            <button onClick={onSetup} aria-label="Add subjects" className="pv-press pv-glass flex h-10 w-10 flex-none items-center justify-center rounded-full">
+              <Plus size={18} strokeWidth={2.6} style={{ color: 'var(--pv-ink-2)' }} />
+            </button>
           </div>
-        </div>
 
-        {/* Composer — free chat with Matilda (hidden while she's asking setup questions) */}
-        {!ask && (
-          <div className="mx-auto w-full max-w-xl px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
-            <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
-              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Tell Matilda what to study…" className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
-              {input.trim() ? (
-                <button type="submit" disabled={sending} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
-                  <SendIcon size={17} />
-                </button>
-              ) : (
-                <>
-                  <button type="button" onClick={() => setLive({ camera: false })} aria-label="Talk to Matilda" className="pv-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
-                    <Mic size={18} />
-                  </button>
-                  <button type="button" onClick={() => setLive({ camera: true })} aria-label="Live camera with Matilda" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
-                    <Camera size={18} />
-                  </button>
-                </>
+          {/* Onboarding progress — advances per answered question. */}
+          {showProgress && (
+            <div className="flex-none px-4 pt-1">
+              <div className="mx-auto w-full max-w-xl">
+                <div className="mb-1 flex items-center justify-between text-[11px] font-bold" style={{ color: 'var(--pv-ink-3)' }}>
+                  <span>Setup</span>
+                  <span>Step {currentStep} of {totalSteps}</span>
+                </div>
+                <div className="pv-progress" role="progressbar" aria-valuenow={currentStep} aria-valuemin={0} aria-valuemax={totalSteps}>
+                  <span style={{ width: `${(currentStep / totalSteps) * 100}%` }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Conversation — pinned to the bottom so Matilda shows through up top. */}
+          <div ref={scrollRef} className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <div className="mx-auto flex min-h-full w-full max-w-xl flex-col justify-end gap-3">
+              {messages.map((m) => <Bubble key={m.id} m={m} onAction={runAction} demoBusy={demoBusy} />)}
+              {(sending || building) && (
+                <div className="flex w-fit items-center gap-1.5 rounded-2xl px-3.5 py-2.5 pv-glass">
+                  <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '0ms' }} />
+                  <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '160ms' }} />
+                  <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '320ms' }} />
+                </div>
               )}
-            </form>
+
+              {ask === 'grade' && (
+                <div className="pv-rise grid grid-cols-2 gap-2.5 pt-1">
+                  {GRADES.map((g) => <ChipBtn key={g} onClick={() => onGrade(g)}>{g}</ChipBtn>)}
+                </div>
+              )}
+              {ask === 'state' && (
+                <div className="pv-rise pt-1">
+                  <div className="flex flex-wrap gap-2">{AU_STATES.map((s) => <ChipBtn key={s} pill onClick={() => onStatePick(s)}>{s}</ChipBtn>)}</div>
+                  <button onClick={() => onStatePick(null)} className="pv-press mt-3 block text-sm font-bold" style={{ color: 'var(--pv-ink-3)' }}>Skip</button>
+                </div>
+              )}
+              {ask === 'subjects' && (
+                <div className="pv-rise flex flex-col gap-2 pt-1">
+                  {subjectsForGrade(grade).map((s) => {
+                    const on = subjects.includes(s)
+                    return (
+                      <button key={s} onClick={() => toggleSubject(s)} className="pv-press flex items-center gap-3 rounded-2xl px-4 py-3 font-bold" style={on ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                        <span className="text-xl">{subjectEmoji(s)}</span>
+                        <span className="flex-1 text-left">{s}</span>
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ border: on ? '2px solid currentColor' : '2px solid var(--pv-line-strong)' }}>{on && <Check size={14} />}</span>
+                      </button>
+                    )
+                  })}
+                  <button onClick={onBuild} disabled={subjects.length === 0} className="pv-press-lg pv-sheen mt-1 flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-extrabold disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: subjects.length ? 'var(--pv-shadow-pop)' : undefined }}>
+                    <Sparkles size={16} /> Build{subjects.length > 0 ? ` · ${subjects.length}` : ''}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        )}
+
+          {/* Composer — free chat + mic/camera (hidden during setup questions). */}
+          {!ask && !building && (
+            <div className="mx-auto w-full max-w-xl px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
+              <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
+                <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Tell Matilda what to study…" className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
+                {input.trim() ? (
+                  <button type="submit" disabled={sending} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                    <SendIcon size={17} />
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => setLive({ camera: false })} aria-label="Talk to Matilda" className="pv-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
+                      <Mic size={18} />
+                    </button>
+                    <button type="button" onClick={() => setLive({ camera: true })} aria-label="Live camera with Matilda" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                      <Camera size={18} />
+                    </button>
+                  </>
+                )}
+              </form>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
     </>
   )
 }
@@ -413,7 +421,7 @@ function Bubble({ m, onAction, demoBusy }: { m: CMsg; onAction: (a: Action) => v
         {m.actions && m.actions.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {m.actions.map((a, i) => {
-              const primary = a.kind === 'cards' || a.kind === 'interview' || a.kind === 'quiz'
+              const primary = a.kind === 'cards' || a.kind === 'interview' || a.kind === 'quiz' || a.kind === 'proceed'
               const isDemo = a.kind === 'demo'
               return (
                 <button
@@ -425,7 +433,7 @@ function Bubble({ m, onAction, demoBusy }: { m: CMsg; onAction: (a: Action) => v
                     ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }
                     : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }}
                 >
-                  {a.kind === 'cards' ? <BookOpen size={15} /> : a.kind === 'quiz' ? <Sparkles size={15} /> : a.kind === 'interview' ? <Mic size={15} /> : a.emoji ? <span>{a.emoji}</span> : null}
+                  {a.kind === 'cards' ? <BookOpen size={15} /> : a.kind === 'quiz' ? <Sparkles size={15} /> : a.kind === 'interview' ? <Mic size={15} /> : a.kind === 'proceed' ? <ArrowRight size={15} /> : a.emoji ? <span>{a.emoji}</span> : null}
                   {isDemo && demoBusy ? 'Building…' : a.label}
                 </button>
               )

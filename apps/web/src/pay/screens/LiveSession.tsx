@@ -70,6 +70,9 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist', embed
   // so a single getUserMedia powers both — a second call kills the camera on iOS.
   const mediaRef = useRef<MediaStream | null>(null)
   const playerRef = useRef<PcmPlayer | null>(null)
+  // Rough mic input loudness (0..1) for the "listening" meter — updated per PCM
+  // chunk, read by an rAF loop in <MicMeter> so it never re-renders this tree.
+  const micLevelRef = useRef(0)
   const micOnRef = useRef(true)
   const speakerOnRef = useRef(true)
   const replyBufRef = useRef('')
@@ -89,6 +92,10 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist', embed
       await player.resume()
 
       const onPcm = (pcm: Int16Array) => {
+        // Rough input loudness for the listening meter (RMS of the chunk).
+        let sum = 0
+        for (let i = 0; i < pcm.length; i++) { const v = pcm[i] / 0x8000; sum += v * v }
+        micLevelRef.current = pcm.length ? Math.sqrt(sum / pcm.length) : 0
         if (micOnRef.current && sockRef.current?.isOpen()) sockRef.current.sendMicPcm(pcm)
       }
 
@@ -409,6 +416,13 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist', embed
 
       {sheet === 'cart' && <CartSheet cart={cart} total={cartTotal} onRemove={toggleCart} onClose={() => setSheet('none')} />}
 
+      {/* Live "listening" meter — reassures the user their voice is heard. */}
+      {phase === 'live' && micOn && (
+        <div className="relative z-30 flex justify-center pb-1">
+          <MicMeter getLevel={() => micLevelRef.current} dark={showCamera} />
+        </div>
+      )}
+
       {/* Controls */}
       <div className="relative z-30 flex items-center justify-center gap-4 px-6 pt-3" style={{ paddingBottom: embedded ? '0.75rem' : 'max(1.75rem, env(safe-area-inset-bottom))' }}>
         {embedded ? (
@@ -434,6 +448,38 @@ export function LiveSession({ withCamera, onClose, initialMode = 'assist', embed
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function MicMeter({ getLevel, dark }: { getLevel: () => number; dark?: boolean }) {
+  const barsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      const bars = barsRef.current?.children
+      if (bars) {
+        const lvl = Math.min(1, getLevel() * 6)
+        const t = performance.now() / 180
+        for (let i = 0; i < bars.length; i++) {
+          const el = bars[i] as HTMLElement
+          const idle = 0.18 + 0.08 * (Math.sin(t + i * 0.9) * 0.5 + 0.5)
+          const h = Math.max(idle, lvl * (0.55 + 0.45 * Math.abs(Math.sin(t * 1.6 + i))))
+          el.style.transform = `scaleY(${Math.max(0.14, Math.min(1, h))})`
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [getLevel])
+  const barColor = dark ? 'rgba(255,255,255,0.92)' : 'var(--pv-accent)'
+  return (
+    <div className="flex items-center gap-2 rounded-full px-3 py-1.5" style={dark ? { background: 'rgba(0,0,0,0.5)' } : { background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+      <div ref={barsRef} className="flex h-4 items-center gap-[3px]">
+        {[0, 1, 2, 3, 4].map((i) => <span key={i} className="block w-[3px] rounded-full" style={{ height: '100%', background: barColor, transformOrigin: 'center' }} />)}
+      </div>
+      <span className="text-[11px] font-bold" style={{ color: dark ? 'rgba(255,255,255,0.85)' : 'var(--pv-ink-2)' }}>Listening…</span>
     </div>
   )
 }

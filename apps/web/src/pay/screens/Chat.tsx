@@ -18,7 +18,7 @@ import { useFamilyKids, useWallet } from '../useMoneyPal'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../lib/agents'
 import { PalHero } from '../pals/PalHero'
 import { PAL_MAP, type PalKey } from '../pals/config'
-import { palCharacter } from '../pals/palCharacters'
+import { usePalCharacter } from '../pals/palCharacters'
 
 const LiveSession = lazy(() => import('./LiveSession').then((m) => ({ default: m.LiveSession })))
 
@@ -199,7 +199,7 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
   const empty = !loadingHistory && messages.length === 0
 
   // The character fronting this surface (reused Companion avatar + accent).
-  const ch = palCharacter(pal)
+  const ch = usePalCharacter(pal)
   const PalIcon = PAL_MAP[pal].Icon
 
   // Pal selection: derived label + toggles.
@@ -220,14 +220,14 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
     <>
       {live && (
         <Suspense fallback={<div className="fixed inset-0 z-50 bg-black" />}>
-          <LiveSession withCamera={live.camera} onClose={() => setLive(null)} />
+          <LiveSession withCamera={live.camera} avatar={ch.avatar} speaker={ch.characterName} onClose={() => setLive(null)} />
         </Suspense>
       )}
       {pickChore && <ChorePickerSheet onClose={() => setPickChore(false)} />}
 
       {mode === 'talk' && !live ? (
         <Suspense fallback={<div className="flex min-h-0 flex-1 items-center justify-center"><span className="h-8 w-8 animate-spin rounded-full" style={{ border: '3px solid var(--pv-surface-3)', borderTopColor: 'var(--pv-accent)' }} /></div>}>
-          <LiveSession embedded withCamera={false} speaker={ch.characterName} onClose={() => setMode('type')} onSwitchPal={onSwitchPal} onCamera={() => setLive({ camera: true })} />
+          <LiveSession embedded withCamera={false} avatar={ch.avatar} speaker={ch.characterName} onClose={() => setMode('type')} onSwitchPal={onSwitchPal} onCamera={() => setLive({ camera: true })} />
         </Suspense>
       ) : (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">

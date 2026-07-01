@@ -15,6 +15,7 @@
  */
 import type { AvatarId } from '../../lib/avatar'
 import { avatarDef } from '../../lib/avatar'
+import { usePalAvatars, palAvatarFor } from './usePalAvatars'
 import { PAL_MAP, type PalDef, type PalKey } from './config'
 
 export type PalCharacter = {
@@ -35,15 +36,9 @@ export type PalCharacter = {
   onAccent: string
 }
 
-/** PalKey → existing AvatarId. These ids must exist in `lib/avatar.ts`. */
-const PAL_AVATAR: Record<PalKey, AvatarId> = {
-  ai: 'kirra',
-  moneypal: 'banjo',
-  studypal: 'matilda',
-}
+/** PalKey → default AvatarId lives in usePalAvatars (DEFAULT_PAL_AVATARS). */
 
-function buildCharacter(pal: PalDef): PalCharacter {
-  const avatar = PAL_AVATAR[pal.key]
+function buildCharacterWith(pal: PalDef, avatar: AvatarId): PalCharacter {
   // avatarDef falls back to a valid avatar if an id is ever removed, so the
   // surface can never render a broken character.
   const def = avatarDef(avatar)
@@ -60,17 +55,17 @@ function buildCharacter(pal: PalDef): PalCharacter {
   }
 }
 
-export const PAL_CHARACTERS: Record<PalKey, PalCharacter> = {
-  ai: buildCharacter(PAL_MAP.ai),
-  moneypal: buildCharacter(PAL_MAP.moneypal),
-  studypal: buildCharacter(PAL_MAP.studypal),
+export function palCharacter(pal: PalKey): PalCharacter {
+  return buildCharacterWith(PAL_MAP[pal] ?? PAL_MAP.ai, palAvatarFor(pal))
 }
 
-export function palCharacter(pal: PalKey): PalCharacter {
-  return PAL_CHARACTERS[pal] ?? PAL_CHARACTERS.ai
+/** Reactive: re-renders when the user re-assigns this Pal's avatar in Settings. */
+export function usePalCharacter(pal: PalKey): PalCharacter {
+  const avatar = usePalAvatars((s) => s.avatars[pal])
+  return buildCharacterWith(PAL_MAP[pal] ?? PAL_MAP.ai, avatar ?? palAvatarFor(pal))
 }
 
 /** The avatar a Pal wears — convenience for the surface + live session. */
 export function palAvatar(pal: PalKey): AvatarId {
-  return palCharacter(pal).avatar
+  return palAvatarFor(pal)
 }

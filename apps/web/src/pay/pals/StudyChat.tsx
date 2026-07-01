@@ -19,7 +19,7 @@ import { BookOpen, Sparkles, Mic, Camera, Send as SendIcon, Check, Plus, Graduat
 import { Companion } from '../../components/Companion'
 import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
-import { palCharacter } from './palCharacters'
+import { usePalCharacter } from './palCharacters'
 import { GRADES, AU_STATES, subjectsForGrade, subjectEmoji, curriculumForState } from './subjects'
 
 const LiveSession = lazy(() => import('../screens/LiveSession').then((m) => ({ default: m.LiveSession })))
@@ -82,7 +82,7 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   const name = ((account?.persona?.name as string) || '').trim().split(' ')[0] || ''
   const savedGrade = (account?.persona?.grade as string) || ''
 
-  const ch = palCharacter('studypal')
+  const ch = usePalCharacter('studypal')
   const { data: topicsData, isLoading } = useQuery({ queryKey: ['study-topics'], queryFn: () => api<{ topics: Topic[] }>('/study/topics') })
   const { data: savedData } = useQuery({ queryKey: ['study-saved-count'], queryFn: () => api<{ cards: unknown[]; dueCount: number }>('/study/cards/saved') })
   const savedCount = savedData?.cards?.length ?? 0

@@ -13,7 +13,7 @@
  */
 import { Sparkles } from 'lucide-react'
 import { Companion, type CompanionMood } from '../../components/Companion'
-import { palCharacter } from './palCharacters'
+import { usePalCharacter } from './palCharacters'
 import type { PalKey } from './config'
 
 export function PalHero({
@@ -34,7 +34,7 @@ export function PalHero({
   getLevel?: () => number
   className?: string
 }) {
-  const ch = palCharacter(pal)
+  const ch = usePalCharacter(pal)
 
   const stage =
     size === 'lg'

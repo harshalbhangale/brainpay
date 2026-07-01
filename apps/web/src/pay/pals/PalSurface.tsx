@@ -18,6 +18,7 @@ import { StudyPal } from './StudyPal'
 import { MoneyChat } from './MoneyChat'
 import { PalPicker } from './PalPicker'
 import { palAvatar } from './palCharacters'
+import { usePalAvatars } from './usePalAvatars'
 import { usePalSelection } from './usePalSelection'
 
 export function PalSurface() {
@@ -28,8 +29,9 @@ export function PalSurface() {
   const [pickerOpen, setPickerOpen] = useState(false)
 
   // Keep the live voice/camera session's companion in sync with the chosen
-  // character, so "talk to your Pal" shows the same face as the surface.
-  useEffect(() => { setAvatar(palAvatar(pal)) }, [pal, setAvatar])
+  // character (and re-sync when the user re-assigns it in Settings).
+  const palAvatarId = usePalAvatars((s) => s.avatars[pal])
+  useEffect(() => { setAvatar(palAvatarId ?? palAvatar(pal)) }, [pal, palAvatarId, setAvatar])
 
   // One-time onboarding: greet with the picker until a Pal is chosen.
   useEffect(() => {

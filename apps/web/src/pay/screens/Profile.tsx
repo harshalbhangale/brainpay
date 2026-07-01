@@ -15,6 +15,8 @@ import { api } from '../../lib/api'
 import { useAuthStore } from '../../stores/auth'
 import { AVATARS, useAvatar } from '../../lib/avatar'
 import { VOICE_OPTIONS, useVoicePrefs } from '../../lib/voicePrefs'
+import { PALS, type PalDef } from '../pals/config'
+import { usePalAvatars } from '../pals/usePalAvatars'
 import { Avatar, Button } from '../components/primitives'
 import { PersonaDetails } from './PersonaDetails'
 
@@ -160,10 +162,19 @@ export function Profile({ onClose }: { onClose: () => void }) {
         {/* About you / your family — editable persona */}
         <PersonaDetails />
 
-        {/* Companion */}
-        <Section title="Companion">
+        {/* Pal companions — assign an avatar to each Pal (name follows the pick) */}
+        <section className="mt-6">
+          <h3 className="pv-label mb-2.5">Pal companions</h3>
+          <div className="flex flex-col gap-3">
+            {PALS.map((p) => <PalAvatarRow key={p.key} pal={p} />)}
+          </div>
+          <p className="mt-2.5 px-1 text-xs" style={{ color: 'var(--pv-ink-3)' }}>Choose which avatar fronts each Pal. VRM avatars (Shizuka, Nova) are higher-detail and load a little slower.</p>
+        </section>
+
+        {/* Your companion (used outside the Pals, e.g. onboarding) */}
+        <Section title="Your companion">
           {AVATARS.map((a) => (
-            <SelectRow key={a.id} label={a.name} selected={avatar === a.id} onClick={() => setAvatar(a.id)} />
+            <SelectRow key={a.id} label={a.name} sub={a.blurb} selected={avatar === a.id} onClick={() => setAvatar(a.id)} />
           ))}
         </Section>
 
@@ -221,6 +232,39 @@ export function Profile({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="h-[env(safe-area-inset-bottom)]" />
+      </div>
+    </div>
+  )
+}
+
+function PalAvatarRow({ pal }: { pal: PalDef }) {
+  const current = usePalAvatars((s) => s.avatars[pal.key])
+  const setPalAvatar = usePalAvatars((s) => s.setPalAvatar)
+  return (
+    <div className="overflow-hidden rounded-[var(--pv-r-lg)] p-3" style={{ background: 'var(--pv-surface)', border: '1px solid var(--pv-line)' }}>
+      <div className="mb-2.5 flex items-center gap-2 px-1">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full" style={{ backgroundImage: pal.gradient, color: pal.onAccent }}>
+          <pal.Icon size={15} strokeWidth={2.4} />
+        </span>
+        <span className="pv-title text-sm">{pal.name}</span>
+      </div>
+      <div className="pv-no-scrollbar flex gap-2 overflow-x-auto pb-1">
+        {AVATARS.map((a) => {
+          const on = a.id === current
+          return (
+            <button
+              key={a.id}
+              onClick={() => setPalAvatar(pal.key, a.id)}
+              className="pv-press flex shrink-0 flex-col items-center gap-1.5 rounded-2xl px-3 py-2.5"
+              style={on ? { backgroundImage: pal.gradient, color: pal.onAccent, boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-extrabold" style={{ background: on ? 'rgba(255,255,255,0.28)' : a.accent, color: '#fff' }}>
+                {a.name.slice(0, 1)}
+              </span>
+              <span className="text-xs font-bold">{a.name}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )

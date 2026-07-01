@@ -22,7 +22,7 @@ import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
 import { useFamilyKids } from '../useMoneyPal'
-import { palCharacter } from './palCharacters'
+import { usePalCharacter } from './palCharacters'
 
 const LiveSession = lazy(() => import('../screens/LiveSession').then((m) => ({ default: m.LiveSession })))
 
@@ -89,7 +89,7 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   const isKid = account?.accountType === 'kid'
   const name = ((account?.persona?.name as string) || '').trim().split(' ')[0] || ''
   const { kids } = useFamilyKids()
-  const ch = palCharacter('moneypal')
+  const ch = usePalCharacter('moneypal')
 
   const [messages, setMessages] = useState<CMsg[]>([])
   const [flow, setFlow] = useState<Flow | null>(null)

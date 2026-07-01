@@ -13,7 +13,7 @@ import { persist } from 'zustand/middleware'
  *
  * <Companion> picks the right renderer from `kind`, so call sites never care.
  */
-export type AvatarId = 'archie' | 'matilda' | 'kirra' | 'banjo' | 'mika' | 'shizuka'
+export type AvatarId = 'archie' | 'matilda' | 'kirra' | 'banjo' | 'mika' | 'shizuka' | 'nova'
 export type AvatarKind = 'glb' | 'vrm'
 
 export type AvatarDef = {
@@ -34,6 +34,7 @@ export const AVATARS: AvatarDef[] = [
   { id: 'banjo', name: 'Banjo', src: '/avatars/banjo.glb', kind: 'glb', blurb: 'Cheeky & full of fun', accent: '#ff8a5b' },
   { id: 'mika', name: 'Mika', src: '/avatars/moneypal.glb', kind: 'glb', blurb: 'Friendly & bright', accent: '#34d399' },
   { id: 'shizuka', name: 'Shizuka', src: '/shizuka.vrm', kind: 'vrm', blurb: 'Gentle & wise', accent: '#a78bfa' },
+  { id: 'nova', name: 'Nova', src: '/nova.vrm', kind: 'vrm', blurb: 'Cool & collected', accent: '#6366f1' },
 ]
 
 const DEFAULT_AVATAR: AvatarId = 'archie'

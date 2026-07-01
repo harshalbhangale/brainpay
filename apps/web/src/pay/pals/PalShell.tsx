@@ -131,10 +131,10 @@ export function PalShell() {
         </main>
       </div>
 
-      {/* Mobile drawer — account + history only (bottom bar owns section switching) */}
+      {/* Mobile drawer — full nav (2-up tiles) + account + history */}
       <div className="lg:hidden">
         <SwipeDrawer open={drawerOpen} onOpenChange={setDrawerOpen} ariaLabel="BrainPal menu">
-          <SidebarBody items={items} active={section} onSelect={select} role={role} onNewChat={onNewChat} onOpenHistory={onOpenHistory} onProfile={onProfile} onClose={() => setDrawerOpen(false)} showNav={false} />
+          <SidebarBody items={items} active={section} onSelect={select} role={role} onNewChat={onNewChat} onOpenHistory={onOpenHistory} onProfile={onProfile} onClose={() => setDrawerOpen(false)} />
         </SwipeDrawer>
       </div>
 

@@ -15,7 +15,6 @@ import { aud } from '../../lib/format'
 import { Avatar, Button, Card, PressButton } from '../components/primitives'
 import { BottomSheet } from '../components/BottomSheet'
 import { cardSkin, CARD_SKINS } from '../lib/cardSkins'
-import { familyFace } from '../lib/cartoonAvatar'
 import { useWallet, useFamilyKids } from '../useMoneyPal'
 
 type Holder = { id: string; name: string; balance: number; you: boolean; avatar?: string; initials?: string }
@@ -30,7 +29,7 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
   const { kids } = useFamilyKids()
 
   const holders: Holder[] = [
-    { id: myId, name: myName, balance: wallet.balance, you: true, avatar: familyFace(myId, myPhoto) },
+    { id: myId, name: myName, balance: wallet.balance, you: true, avatar: myPhoto },
     ...(isKid ? [] : kids.map((k) => ({ id: k.id, name: k.name, balance: k.balance, you: false, avatar: k.avatar, initials: k.initials }))),
   ]
 

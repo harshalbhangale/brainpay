@@ -15,7 +15,7 @@ import { useAuthStore } from '../../stores/auth'
 import { connectLiveRt, type LiveRtSocket, type LiveDetection } from '../../lib/liveRt'
 import { startCamera, captureJpeg, type CameraHandle } from '../../lib/camera'
 import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../../lib/liveAudio'
-import { useAvatar } from '../../lib/avatar'
+import { useAvatar, type AvatarId } from '../../lib/avatar'
 import { getVoiceKey } from '../../lib/voicePrefs'
 import { appendVoiceLines } from '../../lib/voiceHistory'
 import { useSessionStore } from '../lib/sessions'
@@ -29,10 +29,11 @@ type Phase = 'connecting' | 'live' | 'error' | 'no_permission'
 type Line = { id: number; role: 'you' | 'mika'; text: string }
 let lineId = 1
 
-export function LiveSession({ withCamera, onClose, initialMode = 'assist', embedded = false, onSwitchPal, onCamera, speaker }: { withCamera: boolean; onClose: () => void; initialMode?: 'assist' | 'shop'; embedded?: boolean; onSwitchPal?: () => void; onCamera?: () => void; speaker?: string }) {
+export function LiveSession({ withCamera, onClose, initialMode = 'assist', embedded = false, onSwitchPal, onCamera, speaker, avatar: avatarOverride }: { withCamera: boolean; onClose: () => void; initialMode?: 'assist' | 'shop'; embedded?: boolean; onSwitchPal?: () => void; onCamera?: () => void; speaker?: string; avatar?: AvatarId }) {
   const account = useAuthStore((s) => s.account)
   const role: 'parent' | 'kid' = account?.accountType === 'kid' ? 'kid' : 'parent'
-  const avatar = useAvatar((s) => s.avatar)
+  const avatarPref = useAvatar((s) => s.avatar)
+  const avatar = avatarOverride ?? avatarPref
   // The character fronting this session (e.g. the chosen Pal). Used for copy
   // and the History session title so voice mode reads in the Pal's voice.
   const who = speaker || 'Mika'

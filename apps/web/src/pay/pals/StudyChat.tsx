@@ -17,15 +17,17 @@
  * The conversation lives in a module store so it survives while a screen is open
  * and resumes when we come back.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { create } from 'zustand'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookOpen, Sparkles, Mic, Send as SendIcon, Check, Plus, GraduationCap, ChevronDown, Trophy } from 'lucide-react'
+import { BookOpen, Sparkles, Mic, Camera, Send as SendIcon, Check, Plus, GraduationCap, ChevronDown, Trophy } from 'lucide-react'
 import { Companion } from '../../components/Companion'
 import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
 import { palCharacter } from './palCharacters'
 import { GRADES, AU_STATES, subjectsForGrade, subjectEmoji, curriculumForState } from './subjects'
+
+const LiveSession = lazy(() => import('../screens/LiveSession').then((m) => ({ default: m.LiveSession })))
 
 type Topic = { id: string; title: string; emoji: string; cardsDue: number; totalCards: number }
 type InterviewRow = { id: string; score: number | null; summary: string | null; brainsEarned: number | null }
@@ -93,6 +95,7 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
 
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [live, setLive] = useState<{ camera: boolean } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bootRef = useRef(false)
 
@@ -273,6 +276,12 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   }
 
   return (
+    <>
+      {live && (
+        <Suspense fallback={<div className="fixed inset-0 z-50 bg-black" />}>
+          <LiveSession withCamera={live.camera} avatar={ch.avatar} speaker={ch.characterName} onClose={() => setLive(null)} />
+        </Suspense>
+      )}
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="pv-mesh" aria-hidden />
 
@@ -354,14 +363,26 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
           <div className="mx-auto w-full max-w-xl px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
             <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
               <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Tell Matilda what to study…" className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
-              <button type="submit" disabled={sending || !input.trim()} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: input.trim() ? 'var(--pv-shadow-pop)' : undefined }}>
-                <SendIcon size={17} />
-              </button>
+              {input.trim() ? (
+                <button type="submit" disabled={sending} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                  <SendIcon size={17} />
+                </button>
+              ) : (
+                <>
+                  <button type="button" onClick={() => setLive({ camera: false })} aria-label="Talk to Matilda" className="pv-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
+                    <Mic size={18} />
+                  </button>
+                  <button type="button" onClick={() => setLive({ camera: true })} aria-label="Live camera with Matilda" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                    <Camera size={18} />
+                  </button>
+                </>
+              )}
             </form>
           </div>
         )}
       </div>
     </div>
+    </>
   )
 }
 

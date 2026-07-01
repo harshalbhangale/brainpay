@@ -2,21 +2,20 @@
  * StudyChat — StudyPal as a live avatar chat (camera off), hosted by Matilda.
  * ───────────────────────────────────────────────────────────────────────────
  * The whole StudyPal experience is a conversation with Matilda (the reused
- * companion avatar). She greets, onboards, and drives learning — and whenever
- * it's time to actually study, an ACTION BUTTON appears inline in the chat:
+ * companion). She sits in the BACKGROUND; the chat floats in front. She greets,
+ * onboards in-chat (tap chips), and drives learning ONE step at a time — the
+ * next action button appears only when it's relevant (cards → quiz → interview),
+ * never all at once.
  *
- *   • "Open the cards"   → launches the existing flashcards screen
- *   • "Quiz me"          → launches the existing quiz screen
- *   • "Start interview"  → launches the existing Runway interview screen
+ * Talking to her about a topic MAKES A DECK, it doesn't dump card text into the
+ * chat: free text runs through the real study pipeline (/study/topics +
+ * /documents, same path as the demo) and Matilda replies with an "Open the
+ * cards" button. Tapping any button launches the existing cards/quiz/interview
+ * screen (unchanged); on return she posts a follow-up — including the interview
+ * score pulled from /study/interviews straight into the chat.
  *
- * Those screens are reused unchanged; StudyChat just launches them (via the
- * parent's view machine) and, on return, posts a follow-up message — including
- * the interview score, pulled from /study/interviews, straight into the chat.
- *
- * The conversation lives in a module store so it survives while a screen is
- * open, then resumes when we come back. Onboarding answers are tap chips inside
- * the chat (demo-safe — no live-mic dependency); everything else is free chat
- * routed through the existing /study/topics/:id/chat tutor endpoint.
+ * The conversation lives in a module store so it survives while a screen is open
+ * and resumes when we come back.
  */
 import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
@@ -29,11 +28,10 @@ import { palCharacter } from './palCharacters'
 import { GRADES, AU_STATES, subjectsForGrade, subjectEmoji, curriculumForState } from './subjects'
 
 type Topic = { id: string; title: string; emoji: string; cardsDue: number; totalCards: number }
-type Stats = { streak: number; cardsMastered: number; cardsDue: number; topicsActive: number }
 type InterviewRow = { id: string; score: number | null; summary: string | null; brainsEarned: number | null }
 
 type ActionKind = 'cards' | 'quiz' | 'interview' | 'pick' | 'demo' | 'setup'
-type Action = { label: string; emoji?: string; kind: ActionKind; topicId?: string; title?: string }
+type Action = { label: string; emoji?: string; kind: ActionKind; topicId?: string; title?: string; chapter?: string }
 type CMsg = {
   id: string
   who: 'matilda' | 'you'
@@ -69,7 +67,7 @@ const useStudyChatStore = create<StudyChatState>((set) => ({
 
 export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDemo, demoBusy, onSetup }: {
   onSwitchPal?: () => void
-  onOpenCards: (topicId: string) => void
+  onOpenCards: (topicId: string, chapter?: string) => void
   onQuiz: (topicId: string) => void
   onInterview: (topicId: string) => void
   onDemo: () => void
@@ -88,12 +86,10 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   const store = useStudyChatStore()
   const messages = store.messages
 
-  // Onboarding (in-chat) local state.
   const [ask, setAsk] = useState<null | 'grade' | 'state' | 'subjects'>(null)
   const [grade, setGrade] = useState(savedGrade)
   const [auState, setAuState] = useState((account?.persona?.state as string) || '')
   const [subjects, setSubjects] = useState<string[]>([])
-  const [building, setBuilding] = useState(false)
 
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -119,14 +115,6 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading])
 
-  function homeActions(t: Topic): Action[] {
-    return [
-      { label: 'Open the cards', emoji: '📖', kind: 'cards', topicId: t.id, title: t.title },
-      { label: 'Quiz me', emoji: '🧠', kind: 'quiz', topicId: t.id, title: t.title },
-      { label: 'Start interview', emoji: '🎙️', kind: 'interview', topicId: t.id, title: t.title },
-    ]
-  }
-
   function beginOnboarding() {
     say(`Hi${name ? ` ${name}` : ''}! I'm Matilda 💜 Let's get you set up — it's quick.`)
     if (savedGrade) { setAsk('subjects'); say('Which subjects do you want to study with me?') }
@@ -138,17 +126,21 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     const masteryPct = (t: Topic) => (t.totalCards > 0 ? (t.totalCards - t.cardsDue) / t.totalCards : 1)
     const target = ready.length ? [...ready].sort((a, b) => masteryPct(a) - masteryPct(b))[0] : topics[0]
     store.setActive(target.id, target.title)
+    // One clear next step + the option to pick another subject or type a topic.
     const line = ready.length && target.cardsDue > 0
-      ? `${name ? `Hey ${name}! ` : ''}You're a little rusty on ${target.title} — ${target.cardsDue} card${target.cardsDue !== 1 ? 's' : ''} to review. Want to jump in?`
-      : `${name ? `Hey ${name}! ` : ''}Ready to study ${target.title}? Pick how you'd like to start.`
-    say(line, [...homeActions(target), { label: 'Try WWI demo', emoji: '🏛️', kind: 'demo' }])
-    if (topics.length > 1) {
-      say('Or pick another subject:', topics.map((t) => ({ label: t.title, emoji: t.emoji, kind: 'pick' as const, topicId: t.id, title: t.title })))
+      ? `${name ? `Hey ${name}! ` : ''}You're a little rusty on ${target.title} — ${target.cardsDue} card${target.cardsDue !== 1 ? 's' : ''} to review. Shall we?`
+      : `${name ? `Hey ${name}! ` : ''}Want to study ${target.title}? Or tell me any topic and I'll build you a deck.`
+    say(line, [{ label: `Review ${target.title}`, emoji: '📖', kind: 'cards', topicId: target.id, title: target.title }])
+    const others = topics.filter((t) => t.id !== target.id)
+    if (others.length > 0) {
+      say('Or pick another subject:', [
+        ...others.slice(0, 5).map((t) => ({ label: t.title, emoji: t.emoji, kind: 'pick' as const, topicId: t.id, title: t.title })),
+        { label: 'Try WWI demo', emoji: '🏛️', kind: 'demo' },
+      ])
     }
   }
 
   async function build() {
-    setBuilding(true)
     try {
       const persona = { ...(account?.persona ?? {}), grade, ...(auState ? { state: auState, curriculum: curriculumForState(auState) } : {}) }
       try {
@@ -165,21 +157,17 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
       }
       qc.invalidateQueries({ queryKey: ['study-topics'] })
       qc.invalidateQueries({ queryKey: ['study-stats'] })
-      setBuilding(false)
       const first = created[0]
       if (first) {
         store.setActive(first.id, first.title)
-        say(`All set! Your decks are generating now. Let's start with ${first.title} — what would you like to do?`, [
-          { label: 'Open the cards', emoji: '📖', kind: 'cards', topicId: first.id, title: first.title },
-          { label: 'Quiz me', emoji: '🧠', kind: 'quiz', topicId: first.id, title: first.title },
-          { label: 'Start interview', emoji: '🎙️', kind: 'interview', topicId: first.id, title: first.title },
+        say(`All set! Your decks are generating now. Let's start with ${first.title}.`, [
+          { label: `Open ${first.title} cards`, emoji: '📖', kind: 'cards', topicId: first.id, title: first.title },
           ...(created.length > 1 ? created.slice(1).map((c) => ({ label: c.title, emoji: c.emoji, kind: 'pick' as const, topicId: c.id, title: c.title })) : []),
         ])
       } else {
-        say('All set! Add a subject whenever you like with the + button up top.')
+        say('All set! Tell me a topic and I’ll build you a deck, or add a subject with the + button.')
       }
     } catch {
-      setBuilding(false)
       setAsk('subjects')
       say("I couldn't build your decks just now — check your connection and tap Build again.")
     }
@@ -187,33 +175,26 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
 
   async function followUp(kind: 'cards' | 'quiz' | 'interview', topics: Topic[]) {
     const id = store.activeTopicId
-    const title = store.activeTopicTitle ?? 'this subject'
-    const actionsFor = (): Action[] => id
-      ? [
-        { label: 'Quiz me', emoji: '🧠', kind: 'quiz', topicId: id, title },
-        { label: 'Start interview', emoji: '🎙️', kind: 'interview', topicId: id, title },
-        { label: 'More cards', emoji: '📖', kind: 'cards', topicId: id, title },
-      ]
-      : []
+    const title = store.activeTopicTitle ?? 'this'
     if (kind === 'cards') {
-      say(`Nice work on the ${title} cards! 📚 Want to lock it in with a quick quiz, or go deeper with an interview?`, actionsFor())
+      say(`Nice work on the ${title} cards! 📚 Ready for a quick quiz?`, id ? [
+        { label: 'Quiz me', emoji: '🧠', kind: 'quiz', topicId: id, title },
+      ] : [])
     } else if (kind === 'quiz') {
-      say(`Good effort on the quiz! An interview is the best way to really master ${title}. Ready?`, id ? [
+      say(`Good effort! An interview is the best way to really master ${title}. Ready?`, id ? [
         { label: 'Start interview', emoji: '🎙️', kind: 'interview', topicId: id, title },
-        { label: 'More cards', emoji: '📖', kind: 'cards', topicId: id, title },
       ] : [])
     } else {
-      // Pull the freshest interview result straight into the chat.
       say('Great interview! 🎉 Here’s how it went:')
       if (id) {
         try {
           const res = await api<{ interviews: InterviewRow[] }>(`/study/interviews?topicId=${id}`)
           const latest = res.interviews?.[0]
           if (latest) say('', undefined, { score: latest.score, summary: latest.summary })
-        } catch { /* no result card — the encouragement still stands */ }
+        } catch { /* the encouragement still stands */ }
       }
       const others = topics.filter((t) => t.id !== id)
-      say('Want to keep going?', [
+      say('What next?', [
         ...(id ? [{ label: 'Review cards', emoji: '📖', kind: 'cards' as const, topicId: id, title }] : []),
         ...others.slice(0, 4).map((t) => ({ label: t.title, emoji: t.emoji, kind: 'pick' as const, topicId: t.id, title: t.title })),
       ])
@@ -226,16 +207,14 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     if (a.kind === 'pick' && a.topicId) {
       store.setActive(a.topicId, a.title ?? null)
       me(a.title ?? 'this subject')
-      say(`${a.title ?? 'Great'} it is! What would you like to do?`, [
+      say(`${a.title ?? 'Great'} it is! Ready to review the cards?`, [
         { label: 'Open the cards', emoji: '📖', kind: 'cards', topicId: a.topicId, title: a.title },
-        { label: 'Quiz me', emoji: '🧠', kind: 'quiz', topicId: a.topicId, title: a.title },
-        { label: 'Start interview', emoji: '🎙️', kind: 'interview', topicId: a.topicId, title: a.title },
       ])
       return
     }
     if (!a.topicId) return
     store.setActive(a.topicId, a.title ?? null)
-    if (a.kind === 'cards') { me('Open the cards'); store.setPending('cards'); onOpenCards(a.topicId) }
+    if (a.kind === 'cards') { me('Open the cards'); store.setPending('cards'); onOpenCards(a.topicId, a.chapter) }
     else if (a.kind === 'quiz') { me('Quiz me'); store.setPending('quiz'); onQuiz(a.topicId) }
     else if (a.kind === 'interview') { me('Start interview'); store.setPending('interview'); onInterview(a.topicId) }
   }
@@ -248,28 +227,46 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   }
   const toggleSubject = (s: string) => setSubjects((p) => (p.includes(s) ? p.filter((x) => x !== s) : [...p, s]))
   const onBuild = () => {
-    if (subjects.length === 0 || building) return
+    if (subjects.length === 0) return
     me(`Let's do: ${subjects.join(', ')}`)
     setAsk(null)
     say(`Awesome — building your ${subjects.length} deck${subjects.length > 1 ? 's' : ''}… give me a few seconds ✨`)
     void build()
   }
 
-  // Free-form chat → the existing per-topic tutor endpoint.
+  // Free text → BUILD A DECK (real pipeline) and offer a button. Never dumps
+  // card text into the chat. Trivial greetings get a nudge instead.
   async function send() {
     const text = input.trim()
     if (!text || sending || ask) return
     setInput('')
     me(text)
-    const id = store.activeTopicId
-    if (!id) { say('Pick a subject and I’ll dive right in! Which one would you like?'); return }
+    if (/^(hi|hey|hello|yo|sup|ok|okay|thanks|thank you|cool|nice|great)\b/i.test(text) || text.length < 4) {
+      say('What would you like to study? Tell me a topic — like “World War 1”, “Photosynthesis” or “Algebra” — and I’ll build you a deck.')
+      return
+    }
     setSending(true)
     try {
-      const history = messages.slice(-8).map((m) => ({ role: m.who === 'you' ? 'user' : 'assistant', content: m.text })).filter((h) => h.content)
-      const res = await api<{ reply: string }>(`/study/topics/${id}/chat`, { method: 'POST', body: JSON.stringify({ message: text, history }) })
-      say(res.reply)
+      let topicId = store.activeTopicId
+      let topicTitle = store.activeTopicTitle
+      const chapter = text.length > 64 ? text.slice(0, 64) : text
+      if (!topicId) {
+        const title = chapter.replace(/^(study|learn|teach me about|teach me|revise|help me with|about)\s+/i, '').slice(0, 40) || 'My topic'
+        const emoji = subjectEmoji(title)
+        const { topic } = await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title, emoji }) })
+        topicId = topic.id; topicTitle = title
+        store.setActive(topicId, title)
+      }
+      const content = `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) for a student studying: ${text}. Cover the key ideas, definitions, dates/formulas and common exam questions. Use Australian curriculum terminology and spelling.`
+      await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: chapter, fileUrl: 'text://inline', fileType: 'text', content, chapter }) })
+      qc.invalidateQueries({ queryKey: ['study-topics'] })
+      qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
+      qc.invalidateQueries({ queryKey: ['study-chapters', topicId] })
+      say(`Love it — I'm putting together a deck on “${chapter}”${topicTitle && topicTitle !== chapter ? ` under ${topicTitle}` : ''}. Tap when you're ready 📖`, [
+        { label: 'Open the cards', emoji: '📖', kind: 'cards', topicId, title: chapter, chapter },
+      ])
     } catch {
-      say("Hmm, I couldn't think just now — try again, or tap one of the buttons above.")
+      say("I couldn't build that deck just now — mind trying again?")
     } finally {
       setSending(false)
     }
@@ -278,35 +275,42 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="pv-mesh" aria-hidden />
+
+      {/* Matilda — in the BACKGROUND. */}
+      <div className="pointer-events-none absolute inset-0 z-0 flex items-start justify-center pt-10" aria-hidden>
+        <div className="absolute left-1/2 top-[34%] h-2/3 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]" style={{ background: ch.gradient, opacity: 0.26 }} />
+        <Companion avatar={ch.avatar} mood="happy" className="h-full w-full max-w-sm" />
+      </div>
+      {/* Legibility scrim — clear at the top (avatar face), fading to canvas at the bottom (chat). */}
+      <div
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{ background: 'linear-gradient(180deg, transparent 0%, transparent 34%, color-mix(in srgb, var(--pv-bg) 62%, transparent) 60%, var(--pv-bg) 88%)' }}
+        aria-hidden
+      />
+
+      {/* Chat — in the FRONT. */}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         {/* Identity / switcher */}
         <div className="flex flex-none items-center gap-2 px-4 pb-1 pt-2">
-          <button type="button" onClick={onSwitchPal} disabled={!onSwitchPal} aria-label={onSwitchPal ? 'Switch Pal' : undefined} className="pv-press flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl py-0.5 pl-0.5 pr-2 text-left disabled:cursor-default">
-            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ backgroundImage: ch.gradient, color: ch.onAccent, boxShadow: 'var(--pv-shadow-sm)' }}>
-              <GraduationCap size={17} strokeWidth={2.4} />
+          <button type="button" onClick={onSwitchPal} disabled={!onSwitchPal} aria-label={onSwitchPal ? 'Switch Pal' : undefined} className="pv-press pv-glass flex min-w-0 flex-1 items-center gap-2.5 rounded-full py-1 pl-1 pr-3 text-left disabled:cursor-default">
+            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ backgroundImage: ch.gradient, color: ch.onAccent }}>
+              <GraduationCap size={16} strokeWidth={2.4} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1"><span className="pv-title pv-tight truncate leading-tight">{ch.palName}</span>{onSwitchPal && <ChevronDown size={15} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />}</span>
-              <span className="block truncate pt-0.5 text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Talking to {ch.characterName}</span>
+              <span className="flex items-center gap-1"><span className="pv-title pv-tight truncate text-sm leading-tight">{ch.palName}</span>{onSwitchPal && <ChevronDown size={14} className="flex-none" style={{ color: 'var(--pv-ink-3)' }} />}</span>
             </span>
           </button>
-          <button onClick={onSetup} aria-label="Add subjects" className="pv-press flex h-10 w-10 flex-none items-center justify-center rounded-full" style={{ background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-md)' }}>
-            <Plus size={18} strokeWidth={2.6} />
+          <button onClick={onSetup} aria-label="Add subjects" className="pv-press pv-glass flex h-10 w-10 flex-none items-center justify-center rounded-full">
+            <Plus size={18} strokeWidth={2.6} style={{ color: 'var(--pv-ink-2)' }} />
           </button>
         </div>
 
-        {/* Pinned avatar — the live face (camera off). */}
-        <div className="relative flex flex-none items-end justify-center px-4" style={{ height: 'min(24vh, 180px)' }}>
-          <div className="pointer-events-none absolute left-1/2 top-1/2 h-3/4 w-3/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[64px]" style={{ background: ch.gradient, opacity: 0.28 }} aria-hidden />
-          <Companion avatar={ch.avatar} mood="happy" className="pv-rise relative h-full w-full" />
-        </div>
-
-        {/* Conversation */}
+        {/* Conversation — pinned to the bottom so Matilda shows through up top. */}
         <div ref={scrollRef} className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <div className="mx-auto w-full max-w-xl space-y-3">
+          <div className="mx-auto flex min-h-full w-full max-w-xl flex-col justify-end gap-3">
             {messages.map((m) => <Bubble key={m.id} m={m} onAction={runAction} demoBusy={demoBusy} />)}
             {sending && (
-              <div className="flex items-center gap-1.5 rounded-2xl px-3.5 py-2.5 pv-glass w-fit">
+              <div className="flex w-fit items-center gap-1.5 rounded-2xl px-3.5 py-2.5 pv-glass">
                 <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '0ms' }} />
                 <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '160ms' }} />
                 <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '320ms' }} />
@@ -349,7 +353,7 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
         {!ask && (
           <div className="mx-auto w-full max-w-xl px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
             <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
-              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Message Matilda…" className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
+              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Tell Matilda what to study…" className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
               <button type="submit" disabled={sending || !input.trim()} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: input.trim() ? 'var(--pv-shadow-pop)' : undefined }}>
                 <SendIcon size={17} />
               </button>

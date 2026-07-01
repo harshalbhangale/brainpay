@@ -133,7 +133,7 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
       ) : (
         <StudyChat
           onSwitchPal={onSwitchPal}
-          onOpenCards={(id) => { setSelectedTopic(id); setSelectedLesson(null); setView('concepts') }}
+          onOpenCards={(id, chapter) => { setSelectedTopic(id); setSelectedLesson(chapter ?? null); setView('concepts') }}
           onQuiz={(id) => { setSelectedTopic(id); setView('quiz') }}
           onInterview={(id) => { setSelectedTopic(id); setSelectedLesson(null); setView('interview') }}
           onDemo={startDemo}

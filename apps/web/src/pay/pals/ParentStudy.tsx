@@ -12,7 +12,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ChevronLeft, ChevronRight, Flame, BookOpen, History, Clock, Eye, Trophy, GraduationCap, ShieldCheck, Target,
+  ChevronLeft, ChevronRight, Flame, BookOpen, History, Clock, Eye, Trophy, GraduationCap, ShieldCheck, Target, CalendarDays, Sparkles,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Card, ProgressBar } from '../components/primitives'
@@ -193,6 +193,9 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
         <Centered><Spinner /></Centered>
       ) : (
         <>
+          {/* Weekly digest — an at-a-glance summary of the last 7 days. */}
+          <WeeklyDigest kid={kid} subjects={subjects} interviews={interviews} />
+
           {/* Subjects */}
           <p className="pv-label mb-3">Subjects</p>
           {subjects.length === 0 ? (
@@ -264,6 +267,66 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
           )}
         </>
       )}
+    </div>
+  )
+}
+
+/** Weekly digest — a friendly 7-day summary card for the parent. */
+function WeeklyDigest({ kid, subjects, interviews }: { kid: Child; subjects: Subject[]; interviews: IvRow[] }) {
+  const WEEK = 7 * 864e5
+  const now = Date.now()
+  const recent = interviews.filter((iv) => now - new Date(iv.completedAt ?? iv.createdAt).getTime() <= WEEK)
+  const scored = recent.filter((i) => typeof i.score === 'number')
+  const weekAvg = scored.length ? Math.round((scored.reduce((a, b) => a + (b.score ?? 0), 0) / scored.length) * 10) / 10 : null
+  const focusDips = recent.filter((iv) => (iv.focus?.flags?.length ?? 0) > 0).length
+  const activeSubjects = subjects.filter((s) => s.totalCards > 0).length
+  const bestSubject = [...subjects].filter((s) => s.totalCards > 0).sort((a, b) => ((b.totalCards - b.cardsDue) / Math.max(1, b.totalCards)) - ((a.totalCards - a.cardsDue) / Math.max(1, a.totalCards)))[0]
+
+  const parts: string[] = []
+  if (recent.length > 0) parts.push(`${kid.name} did ${recent.length} interview${recent.length !== 1 ? 's' : ''}${weekAvg != null ? `, averaging ${weekAvg}/10` : ''}`)
+  else parts.push(`${kid.name} hasn't done an interview this week`)
+  if (kid.streak > 0) parts.push(`${kid.streak}-day streak`)
+  if (bestSubject) parts.push(`strongest in ${bestSubject.title}`)
+  const narrative = parts.join(' · ') + '.'
+
+  const tone = weekAvg != null ? scoreTone(Math.round(weekAvg)) : { bg: 'var(--pv-surface-2)', fg: 'var(--pv-ink-3)' }
+
+  return (
+    <Card className="pv-rise pv-hairline mb-5 p-4" style={{ ['--i' as string]: 0 }}>
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}><CalendarDays size={16} /></span>
+        <p className="pv-title text-sm">This week</p>
+        {weekAvg != null && <span className="ml-auto rounded-full px-2.5 py-1 text-[11px] font-extrabold" style={{ background: tone.bg, color: tone.fg }}>avg {weekAvg}/10</span>}
+      </div>
+      <p className="text-sm font-medium leading-snug" style={{ color: 'var(--pv-ink-2)' }}>{narrative}</p>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <DigestStat icon={<History size={13} />} value={String(recent.length)} label="interviews" />
+        <DigestStat icon={<Flame size={13} style={{ color: '#ffb24a' }} />} value={String(kid.streak)} label="day streak" />
+        <DigestStat icon={<BookOpen size={13} />} value={String(activeSubjects)} label="subjects" />
+      </div>
+
+      {focusDips > 0 && (
+        <div className="mt-3 flex items-start gap-2 rounded-2xl px-3 py-2.5" style={{ background: 'var(--pv-neg-soft)' }}>
+          <Eye size={14} className="mt-0.5 flex-none" style={{ color: 'var(--pv-neg)' }} />
+          <p className="text-xs font-semibold leading-snug" style={{ color: 'var(--pv-neg)' }}>Focus dipped in {focusDips} session{focusDips !== 1 ? 's' : ''} this week — might be worth a gentle chat.</p>
+        </div>
+      )}
+      {recent.length === 0 && (
+        <div className="mt-3 flex items-start gap-2 rounded-2xl px-3 py-2.5" style={{ background: 'var(--pv-surface-2)' }}>
+          <Sparkles size={14} className="mt-0.5 flex-none" style={{ color: 'var(--pv-accent)' }} />
+          <p className="text-xs font-semibold leading-snug" style={{ color: 'var(--pv-ink-2)' }}>Encourage {kid.name} to take a quick interview — it’s the best signal of what they’ve really learned.</p>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function DigestStat({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 rounded-2xl py-2.5" style={{ background: 'var(--pv-surface-2)' }}>
+      <span className="flex items-center gap-1 pv-amount text-base" style={{ color: 'var(--pv-ink)' }}>{icon}{value}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--pv-ink-3)' }}>{label}</span>
     </div>
   )
 }

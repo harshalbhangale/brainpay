@@ -50,9 +50,12 @@ export function SidebarBody({
   const recent = sessions.slice(0, shown)
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-3 pb-3" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))' }}>
+    <div className="relative flex h-full min-h-0 flex-col px-3 pb-3" style={{ paddingTop: 'max(14px, env(safe-area-inset-top))' }}>
+      {/* decorative section-tinted glow */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-48" style={{ background: `radial-gradient(72% 60% at 28% 0%, ${(NAV_STYLE[active]?.c ?? '#19c37d')}33, transparent 72%)` }} />
+
       {/* Brand */}
-      <div className="flex items-center gap-2.5 px-1.5 pb-3">
+      <div className="relative flex items-center gap-2.5 px-1.5 pb-3">
         <span className="flex h-9 w-9 items-center justify-center rounded-2xl" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
           <PAL_MAP.ai.Icon size={19} strokeWidth={2.4} />
         </span>
@@ -67,37 +70,53 @@ export function SidebarBody({
         )}
       </div>
 
-      {/* Primary nav — 2-up grid of accent tiles */}
+      {/* Primary nav — 2-up grid of premium accent tiles */}
       {showNav && (
-        <nav className="grid grid-cols-2 gap-2">
+        <nav className="relative grid grid-cols-2 gap-2.5">
           {items.map((it, i) => {
             const on = it.key === active
             const s = NAV_STYLE[it.key] ?? { c: 'var(--pv-primary)', on: '#fff' }
-            // A trailing odd tile spans the full width so the grid always reads clean.
             const wide = i === items.length - 1 && items.length % 2 === 1
             return (
               <button
                 key={it.key}
                 onClick={() => onSelect(it.key)}
                 aria-current={on ? 'page' : undefined}
-                className={`pv-press pv-pop relative flex overflow-hidden rounded-[20px] p-3 text-left ${wide ? 'col-span-2 flex-row items-center gap-3' : 'flex-col justify-between'}`}
+                className={`pv-press pv-pop group relative flex overflow-hidden rounded-[22px] p-3.5 text-left ${wide ? 'col-span-2 flex-row items-center gap-3' : 'flex-col justify-between'}`}
                 style={{
-                  minHeight: wide ? 60 : 88,
-                  animationDelay: `${i * 45}ms`,
+                  minHeight: wide ? 64 : 96,
+                  animationDelay: `${i * 55}ms`,
                   ...(on
-                    ? { background: s.c, color: s.on, boxShadow: `0 10px 24px -10px ${s.c}` }
-                    : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-xs)' }),
+                    ? {
+                        backgroundImage: `linear-gradient(150deg, ${s.c} 0%, color-mix(in srgb, ${s.c} 66%, #0b0c0f) 100%)`,
+                        color: s.on,
+                        boxShadow: `0 14px 30px -12px ${s.c}, inset 0 1px 0 rgba(255,255,255,0.25)`,
+                      }
+                    : {
+                        background: 'var(--pv-surface)',
+                        color: 'var(--pv-ink)',
+                        border: '1px solid var(--pv-line)',
+                        boxShadow: 'var(--pv-shadow-xs)',
+                      }),
                 }}
               >
+                {/* oversized watermark icon */}
+                <it.Icon
+                  aria-hidden
+                  size={wide ? 56 : 84}
+                  strokeWidth={1.6}
+                  className="pointer-events-none absolute -bottom-3 -right-2"
+                  style={{ color: on ? 'rgba(255,255,255,0.16)' : `color-mix(in srgb, ${s.c} 12%, transparent)` }}
+                />
                 <span
-                  className="flex h-9 w-9 flex-none items-center justify-center rounded-xl"
+                  className="relative flex h-9 w-9 flex-none items-center justify-center rounded-xl transition-transform duration-300 group-active:scale-95"
                   style={on
-                    ? { background: 'rgba(255,255,255,0.22)', color: s.on }
-                    : { background: `color-mix(in srgb, ${s.c} 16%, transparent)`, color: s.c }}
+                    ? { background: 'rgba(255,255,255,0.24)', color: s.on }
+                    : { background: `color-mix(in srgb, ${s.c} 15%, transparent)`, color: s.c }}
                 >
                   <it.Icon size={19} strokeWidth={2.5} />
                 </span>
-                <span className={`text-[0.95rem] font-bold tracking-tight ${wide ? '' : 'mt-2'}`}>{it.label}</span>
+                <span className={`relative text-[0.95rem] font-bold tracking-tight ${wide ? '' : 'mt-2'}`}>{it.label}</span>
               </button>
             )
           })}

@@ -32,9 +32,8 @@ import { KidChores } from '../screens/KidChores'
 
 const PARENT_NAV: NavItem[] = [
   { key: 'chat', label: 'Chat', Icon: MessageSquareText },
-  { key: 'money', label: 'Money', Icon: Wallet },
-  { key: 'study', label: 'Study', Icon: GraduationCap },
   { key: 'family', label: 'Family', Icon: Users },
+  { key: 'study', label: 'Study', Icon: GraduationCap },
   { key: 'map', label: 'Map', Icon: MapPin },
 ]
 const KID_NAV: NavItem[] = [
@@ -133,7 +132,7 @@ export function PalShell() {
 
       {/* Mobile drawer — full nav (2-up tiles) + account + history */}
       <div className="lg:hidden">
-        <SwipeDrawer open={drawerOpen} onOpenChange={setDrawerOpen} ariaLabel="BrainPal menu">
+        <SwipeDrawer open={drawerOpen} onOpenChange={setDrawerOpen} ariaLabel="BrainPal menu" width={460}>
           <SidebarBody items={items} active={section} onSelect={select} role={role} onNewChat={onNewChat} onOpenHistory={onOpenHistory} onProfile={onProfile} onClose={() => setDrawerOpen(false)} />
         </SwipeDrawer>
       </div>

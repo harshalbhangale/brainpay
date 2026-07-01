@@ -115,8 +115,8 @@ export function SwipeDrawer({
   // Derived transform / opacity. Inline (transition off) while dragging; the
   // CSS spring takes over when idle.
   const panelStyle = dragging
-    ? { maxWidth: '86vw', width, transform: `translateX(${(dragRatio - 1) * width}px)`, transition: 'none' as const }
-    : { maxWidth: '86vw', width, transform: open ? 'translateX(0)' : 'translateX(-100%)' }
+    ? { maxWidth: '92vw', width, transform: `translateX(${(dragRatio - 1) * width}px)`, transition: 'none' as const }
+    : { maxWidth: '92vw', width, transform: open ? 'translateX(0)' : 'translateX(-100%)' }
 
   const scrimVisible = open || dragging
   const scrimStyle = dragging
@@ -164,7 +164,7 @@ export function SwipeDrawer({
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         />
-        <div key={openSeq} className="pv-no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div key={openSeq} className="pv-drawer-content pv-no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
           {children}
         </div>
       </aside>

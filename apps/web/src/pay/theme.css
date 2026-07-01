@@ -551,6 +551,14 @@
 }
 .pv .pv-drawer-row:active { transform: scale(0.97); transition: transform 0.08s ease-out; }
 
+/* "Magic" content reveal — the whole drawer body eases up out of a soft blur
+   as it opens (replays each open via the keyed wrapper). */
+@keyframes pv-drawer-content {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); filter: blur(7px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+.pv .pv-drawer-content { animation: pv-drawer-content 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
 /* ════════════════════════════════════════════════════════════════════════════
    AI INTERVIEW — full-screen video call + a delightful "connecting" loader.
    The loader is a living illustration: a breathing tutor orb, radiating sonar

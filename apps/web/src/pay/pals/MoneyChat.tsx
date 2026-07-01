@@ -16,15 +16,17 @@
  */
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
-import { Wallet, Sparkles, Mic, Camera, Send as SendIcon, Check, ChevronDown, ChevronRight, Minus, Plus, ListChecks, PiggyBank, CreditCard, Target, ArrowRight } from 'lucide-react'
+import { Wallet, Sparkles, Mic, Camera, Send as SendIcon, Check, ChevronDown, ChevronRight, Minus, Plus, ListChecks, PiggyBank, CreditCard, Target, ArrowRight, ShieldCheck } from 'lucide-react'
 import { Companion } from '../../components/Companion'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { LiveLoading } from '../components/LiveLoading'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
-import { useFamilyKids } from '../useMoneyPal'
+import { useFamilyKids, useWallet } from '../useMoneyPal'
 import { usePalCharacter } from './palCharacters'
+import { useCanvas } from '../lib/canvasStore'
+import { CardFace } from '../components/CardFace'
 import { AttachButton, AttachTray } from '../components/AttachControls'
 import { useAttachments, visionImages, chatDocuments, attachmentSummary } from '../lib/attachments'
 
@@ -55,9 +57,9 @@ type Flow = {
   limit?: number
 }
 
-type ActionKind = 'chore' | 'allowance' | 'goal' | 'card' | 'pending'
+type ActionKind = 'chore' | 'allowance' | 'goal' | 'card' | 'pending' | 'showcard'
 type Action = { label: string; kind: ActionKind }
-type CMsg = { id: string; who: 'mika' | 'you'; text: string; actions?: Action[]; success?: string; images?: string[] }
+type CMsg = { id: string; who: 'mika' | 'you'; text: string; actions?: Action[]; success?: string; images?: string[]; card?: boolean }
 
 type Chore = { id: string; title: string; rewardBrains: number; status: string; assignedTo: string }
 
@@ -66,6 +68,13 @@ const uid = () => `mc${mid++}`
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const CHORE_SUGGESTIONS = ['Empty the dishwasher', 'Make the bed', 'Tidy room', 'Take out the bins', 'Walk the dog', 'Homework']
+
+// "show me my card" style requests → surface the card inline (not the issue flow).
+function isCardViewRequest(text: string): boolean {
+  return /\bcard\b/i.test(text)
+    && /\b(show|see|view|open|my|where|display|pull up|check)\b/i.test(text)
+    && !/\b(issue|give|create|new|gift|report|score|credit|add|order|kid|kids|their|his|her)\b/i.test(text)
+}
 
 // Fixed slot order per flow → drives the progress bar (answered slot count).
 function flowSteps(kind: FlowKind): string[] {
@@ -95,6 +104,11 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   const { kids } = useFamilyKids()
   const ch = usePalCharacter('moneypal')
 
+  // The logged-in holder's own card details for the inline card preview.
+  const wallet = useWallet()
+  const myId = account?.id ?? 'preview'
+  const myName = (((account?.persona?.name as string) || 'You').trim()) || 'You'
+
   // Live chores so MoneyPal can show what's on the go (both roles).
   const choresQ = useQuery({ queryKey: ['chores'], queryFn: () => api<{ chores: Chore[] }>('/chores'), enabled: !!account, staleTime: 10_000 })
   const allChores = choresQ.data?.chores ?? []
@@ -123,13 +137,16 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
     if (bootRef.current) return
     bootRef.current = true
     if (isKid) {
-      say(`Hi${name ? ` ${name}` : ''}. I'm Mika. Ask me about your money, or check what jobs you have.`)
+      say(`Hi${name ? ` ${name}` : ''}. I'm Mika. Ask me about your money, see your card, or check your jobs.`, [
+        { label: 'Show my card', kind: 'showcard' },
+      ])
     } else {
       say(`Hi${name ? ` ${name}` : ''}. I'm Mika, your family bank. What would you like to set up?`, [
         { label: 'Create a job', kind: 'chore' },
         { label: 'Pocket money', kind: 'allowance' },
         { label: 'Savings goal', kind: 'goal' },
         { label: 'Kid card', kind: 'card' },
+        { label: 'My card', kind: 'showcard' },
         { label: 'Pending jobs', kind: 'pending' },
       ])
     }
@@ -260,8 +277,14 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   }
 
   function runAction(a: Action) {
+    if (a.kind === 'showcard') { me('Show my card'); showMyCard(); return }
     if (a.kind === 'pending') { void showJobs(); return }
     startFlow(a.kind)
+  }
+
+  // Surface the holder's card directly in the conversation (no dead-end button).
+  function showMyCard() {
+    setMessages((m) => [...m, { id: uid(), who: 'mika', text: 'Here’s your card 👇', card: true }])
   }
 
   // ── Mic dictation ─────────────────────────────────────────────────────────
@@ -286,6 +309,13 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
     const imgs = visionImages(att.items)
     const docs = chatDocuments(att.items)
     if ((!text && imgs.length === 0 && docs.length === 0) || sending || flow || att.busy) return
+    // "Show me my card" → bring the card up right here, no round-trip.
+    if (text && imgs.length === 0 && docs.length === 0 && isCardViewRequest(text)) {
+      setInput('')
+      me(text)
+      showMyCard()
+      return
+    }
     const summary = attachmentSummary(att.items)
     const shown = text || (summary ? `Sent ${summary}` : 'Take a look at this')
     setInput('')
@@ -372,7 +402,7 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
           {/* Conversation */}
           <div ref={scrollRef} className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-3">
             <div className="mx-auto flex min-h-full w-full max-w-xl flex-col justify-end gap-3">
-              {messages.map((m) => <Bubble key={m.id} m={m} onAction={runAction} />)}
+              {messages.map((m) => <Bubble key={m.id} m={m} onAction={runAction} self={{ accountId: myId, name: myName, balance: wallet.balance }} onManageCard={() => useCanvas.getState().open('card')} />)}
               {sending && (
                 <div className="flex w-fit items-center gap-1.5 rounded-2xl px-3.5 py-2.5 pv-glass">
                   <span className="dot h-1.5 w-1.5 rounded-full" style={{ background: 'var(--pv-ink-3)', animationDelay: '0ms' }} />
@@ -622,7 +652,7 @@ function ConfirmCard({ flow, onEdit, onCreate, onCancel }: { flow: Flow; onEdit:
   )
 }
 
-function Bubble({ m, onAction }: { m: CMsg; onAction: (a: Action) => void }) {
+function Bubble({ m, onAction, self, onManageCard }: { m: CMsg; onAction: (a: Action) => void; self: { accountId: string; name: string; balance: number }; onManageCard: () => void }) {
   if (m.who === 'you') {
     return (
       <div className="flex flex-col items-end gap-1.5">
@@ -647,10 +677,27 @@ function Bubble({ m, onAction }: { m: CMsg; onAction: (a: Action) => void }) {
         ) : m.text ? (
           <div className="pv-glass whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{m.text}</div>
         ) : null}
+
+        {/* Inline card — the real card comes up right here. */}
+        {m.card && (
+          <div className="pv-pop mt-2 w-full max-w-[300px]">
+            <CardFace accountId={self.accountId} name={self.name} balance={self.balance} />
+            <div className="mt-2.5 flex items-start gap-2 rounded-2xl px-3 py-2.5" style={{ background: 'var(--pv-surface-2)' }}>
+              <ShieldCheck size={15} className="mt-0.5 flex-none" style={{ color: 'var(--pv-pos)' }} />
+              <p className="text-[11px] font-semibold leading-snug" style={{ color: 'var(--pv-ink-2)' }}>
+                I never see your full card number, CVV or PIN — they stay encrypted with your bank. You’re fully privacy-protected.
+              </p>
+            </div>
+            <button onClick={onManageCard} className="pv-press mt-2 flex w-full items-center justify-center gap-1.5 rounded-full py-2.5 text-sm font-bold" style={{ background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }}>
+              <CreditCard size={15} /> Manage &amp; customize
+            </button>
+          </div>
+        )}
+
         {m.actions && m.actions.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {m.actions.map((a) => {
-              const Icon = a.kind === 'chore' ? ListChecks : a.kind === 'allowance' ? Wallet : a.kind === 'goal' ? Target : a.kind === 'card' ? CreditCard : Sparkles
+              const Icon = a.kind === 'chore' ? ListChecks : a.kind === 'allowance' ? Wallet : a.kind === 'goal' ? Target : a.kind === 'card' || a.kind === 'showcard' ? CreditCard : Sparkles
               const primary = a.kind === 'chore'
               return (
                 <button key={a.kind} onClick={() => onAction(a)} className={`pv-press ${primary ? 'pv-press-lg pv-sheen' : ''} inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-bold`} style={primary ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' }}>

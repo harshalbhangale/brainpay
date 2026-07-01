@@ -15,15 +15,13 @@ import { adventurer, bigSmile, funEmoji, micah, notionists, openPeeps } from '@d
 
 export type CartoonStyleId = 'bigSmile' | 'adventurer' | 'funEmoji' | 'micah' | 'openPeeps' | 'notionists'
 
-// The styles we offer in the picker. Kept to a curated, kid-friendly set so the
-// family always feels like one cohesive, cute cast.
+// The styles we offer in the picker — a curated set of HAPPY, HUMAN-like faces
+// so the family always feels like one cohesive, cheerful cast.
 export const CARTOON_STYLES: { id: CartoonStyleId; label: string }[] = [
   { id: 'bigSmile', label: 'Big Smile' },
   { id: 'adventurer', label: 'Adventurer' },
-  { id: 'funEmoji', label: 'Fun Emoji' },
-  { id: 'micah', label: 'Micah' },
   { id: 'openPeeps', label: 'Peeps' },
-  { id: 'notionists', label: 'Doodle' },
+  { id: 'micah', label: 'Micah' },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,6 +32,14 @@ const STYLE_MAP: Record<CartoonStyleId, Style<any>> = {
   micah,
   openPeeps,
   notionists,
+}
+
+// Per-style options that bias the face toward a happy, smiling expression.
+// Unknown/invalid options are guarded by a try/catch in cartoonAvatarUri.
+const HAPPY_OPTS: Partial<Record<CartoonStyleId, Record<string, unknown>>> = {
+  micah: { mouth: ['smile', 'laughing'] },
+  openPeeps: { face: ['smile', 'smileBig', 'cheeky'] },
+  bigSmile: { mouth: ['openedSmile', 'unimpressed', 'gapSmile'] },
 }
 
 // Soft pastel circle backgrounds (hex without the leading '#', as DiceBear wants)
@@ -47,9 +53,10 @@ function hash(seed: string): number {
   return h
 }
 
-/** A stable, unique-feeling default style for a given seed. */
-export function defaultStyleFor(seed: string): CartoonStyleId {
-  return CARTOON_STYLES[hash(seed) % CARTOON_STYLES.length].id
+/** A happy, human default face for a given seed (users can still pick others). */
+export function defaultStyleFor(_seed: string): CartoonStyleId {
+  // bigSmile is always a smiling, human-like face — the safest "happy" default.
+  return 'bigSmile'
 }
 
 /**
@@ -75,13 +82,15 @@ export function cartoonAvatarUri(seed: string, style?: CartoonStyleId): string {
   if (hit) return hit
 
   const bg = PASTEL_BGS[hash(seed) % PASTEL_BGS.length]
-  const uri = createAvatar(STYLE_MAP[styleId], {
-    seed,
-    radius: 50, // circular crop to match the round Avatar frame
-    scale: 88,
-    backgroundColor: [bg],
-    backgroundType: ['solid'],
-  }).toDataUri()
+  const base = { seed, radius: 50, scale: 88, backgroundColor: [bg], backgroundType: ['solid'] as const }
+  let uri: string
+  try {
+    // Prefer a smiling, happy expression where the style supports it.
+    uri = createAvatar(STYLE_MAP[styleId], { ...base, ...(HAPPY_OPTS[styleId] ?? {}) }).toDataUri()
+  } catch {
+    // Invalid option for this style → fall back to the style's defaults.
+    uri = createAvatar(STYLE_MAP[styleId], base).toDataUri()
+  }
 
   cache.set(key, uri)
   return uri

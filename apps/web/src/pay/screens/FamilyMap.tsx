@@ -84,7 +84,36 @@ export function FamilyMap() {
 
   const selected = filter === 'all' ? null : people.find((p) => p.id === filter) ?? null
   const located = people.filter((p) => p.location && typeof p.location.lat === 'number')
-  const pins: OverviewPin[] = located.map((p) => ({ id: p.id, lat: p.location!.lat, lng: p.location!.lng, accent: p.accent, label: p.name, onClick: () => setFilter(p.id) }))
+
+  // Anchor for members who aren't sharing live GPS (so the parent still SEES
+  // every child, and a kid sees their parent). Prefer the viewer's own last
+  // location, else the first located member, else a sensible default.
+  const meLoc = (members.find((m) => m.accountId === meId)?.lastLocation ?? null) as Loc | null
+  const anchor: [number, number] = (meLoc && typeof meLoc.lat === 'number')
+    ? [meLoc.lat, meLoc.lng]
+    : located[0]?.location
+      ? [located[0].location!.lat, located[0].location!.lng]
+      : [-33.8688, 151.2093] // Sydney fallback
+
+  // Overview shows EVERYONE: a real pin where shared, else an honest
+  // "approximate" pin ringed around the anchor so no one is invisible.
+  let approxIdx = 0
+  const pins: OverviewPin[] = people.map((p) => {
+    const has = p.location && typeof p.location.lat === 'number'
+    if (has) return { id: p.id, lat: p.location!.lat, lng: p.location!.lng, accent: p.accent, label: p.name, onClick: () => setFilter(p.id) }
+    const n = approxIdx++
+    const ring = 0.012 // ~1.3km, keeps the family clustered but readable
+    const angle = (n * 2 * Math.PI) / Math.max(1, people.length - located.length)
+    return {
+      id: p.id,
+      lat: anchor[0] + ring * Math.sin(angle),
+      lng: anchor[1] + ring * Math.cos(angle),
+      accent: p.accent,
+      label: p.name,
+      approx: true,
+      onClick: () => setFilter(p.id),
+    }
+  })
 
   const selTrail: TrailStop[] = selected
     ? (selected.location?.trail && selected.location.trail.length > 0
@@ -103,7 +132,7 @@ export function FamilyMap() {
         ) : pins.length > 0 ? (
           <OverviewMap pins={pins} />
         ) : (
-          <MapPlaceholder text="No locations shared yet. They appear once family members open the app with location on." />
+          <MapPlaceholder text="No family members yet. Add someone from the Family tab." />
         )}
       </div>
 

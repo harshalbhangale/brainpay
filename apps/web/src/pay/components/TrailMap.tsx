@@ -14,7 +14,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 export type TrailStop = { lat: number; lng: number; at?: string; place?: string | null }
-export type OverviewPin = { id: string; lat: number; lng: number; accent: string; label: string; onClick?: () => void }
+export type OverviewPin = { id: string; lat: number; lng: number; accent: string; label: string; approx?: boolean; onClick?: () => void }
 
 // Clean, light basemap — free for reasonable use, attribution included.
 const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
@@ -106,14 +106,16 @@ export function OverviewMap({ pins }: { pins: OverviewPin[] }) {
     const latlngs: L.LatLngExpression[] = pinsRef.current.map((p) => [p.lat, p.lng])
 
     pinsRef.current.forEach((pin) => {
+      const border = pin.approx ? '3px dashed rgba(255,255,255,0.9)' : '3px solid #fff'
+      const opacity = pin.approx ? 0.72 : 1
       const icon = L.divIcon({
         className: '',
-        html: `<div style="width:30px;height:30px;border-radius:9999px;background:${pin.accent};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,0.35)">${pin.label.slice(0, 1).toUpperCase()}</div>`,
+        html: `<div style="width:30px;height:30px;border-radius:9999px;background:${pin.accent};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;border:${border};box-shadow:0 3px 8px rgba(0,0,0,0.35);opacity:${opacity}">${pin.label.slice(0, 1).toUpperCase()}</div>`,
         iconSize: [30, 30],
         iconAnchor: [15, 15],
       })
       const marker = L.marker([pin.lat, pin.lng], { icon }).addTo(map)
-      marker.bindTooltip(pin.label, { direction: 'top', offset: [0, -16] })
+      marker.bindTooltip(pin.approx ? `${pin.label} · location off` : pin.label, { direction: 'top', offset: [0, -16] })
       if (pin.onClick) marker.on('click', pin.onClick)
     })
 

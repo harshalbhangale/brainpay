@@ -21,6 +21,7 @@ import { sendAiCommand } from './aiBus'
 import { useNav, type Section } from '../lib/useNav'
 import { useHistoryView } from '../lib/historyStore'
 import { useSessionStore, type ChatSession } from '../lib/sessions'
+import { usePalSelection } from './usePalSelection'
 import { AIPal } from './AIPal'
 import { StudyPal } from './StudyPal'
 import { MoneyHome } from '../screens/MoneyHome'
@@ -63,7 +64,14 @@ export function PalShell() {
   const items = isKid ? KID_NAV : PARENT_NAV
 
   const select = useCallback((s: Section) => { setSection(s); setDrawerOpen(false) }, [setSection])
-  const onNewChat = useCallback(() => { setSection('chat'); setDrawerOpen(false); sendAiCommand({ type: 'new-chat' }) }, [setSection])
+  const onNewChat = useCallback(() => {
+    // "New chat" is an AI conversation. The chat section renders the pal-driven
+    // PalSurface, which shows StudyPal (not a chat) when that Pal is selected —
+    // so flip to the conversational AI Pal first, else new-chat has nothing to
+    // mount onto and the user just sees StudyPal.
+    if (usePalSelection.getState().pal === 'studypal') usePalSelection.getState().setPal('ai')
+    setSection('chat'); setDrawerOpen(false); sendAiCommand({ type: 'new-chat' })
+  }, [setSection])
   const onOpenHistory = useCallback((sessionId?: string) => { setDrawerOpen(false); openHistory(sessionId) }, [openHistory])
   const onProfile = useCallback(() => { setDrawerOpen(false); setProfileOpen(true) }, [])
 
@@ -71,6 +79,9 @@ export function PalShell() {
   const continueSession = useCallback((s: ChatSession) => {
     useHistoryView.getState().close()
     if (s.kind === 'avatar') { setSection('study'); return }
+    // text/voice/camera sessions live in the AI chat — make sure a chat Pal is
+    // active so the surface mounts <Chat> rather than StudyPal.
+    if (usePalSelection.getState().pal === 'studypal') usePalSelection.getState().setPal('ai')
     setSection('chat')
     if (s.kind === 'text') sendAiCommand({ type: 'resume', sessionId: s.id })
     else if (s.kind === 'voice') sendAiCommand({ type: 'live', camera: false })

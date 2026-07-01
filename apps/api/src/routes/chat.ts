@@ -21,12 +21,13 @@ import { toFile } from 'openai'
 export const chat = new Hono<{ Variables: AuthVars }>()
 chat.use('*', requireAuth)
 
-// Council router: picks which specialist Pals chime in and writes each a one-liner.
-const COUNCIL_SYSTEM = `You are the BrainPal council router for a family money app.
+// Router: picks which specialist Pals chime in and writes each a one-liner.
+const ROUTER_SYSTEM = `You are the BrainPal router for a family money + study app.
 Given the user's message, decide which specialist Pals should add a short note:
-- moneypal: spending, saving, goals, affordability, allowance
+- moneypal: spending, saving, goals, affordability, allowance, jobs
 - healthpal: food/snack/nutrition/health
-- studypal: homework, study, learning, screen time
+- studypal: homework, study, learning, subjects, revision, screen time
+Use the family snapshot in the system prompt for real names and numbers — never invent them.
 Return STRICT JSON: {"pals":[{"palId":"moneypal","line":"one short sentence in that Pal's voice"}]}.
 Include only Pals genuinely relevant (0-3). Each line <= 14 words. No other text.`
 
@@ -35,9 +36,9 @@ Include only Pals genuinely relevant (0-3). Each line <= 14 words. No other text
 const SPECIALISTS = ['moneypal', 'healthpal', 'studypal'] as const
 type SpecialistId = (typeof SPECIALISTS)[number]
 const SPECIALIST_PERSONAS: Record<SpecialistId, string> = {
-  moneypal: 'MoneyPal — the family money mentor. Talks saving, spending, goals, allowance and what things cost. Practical, encouraging, concrete.',
+  moneypal: 'MoneyPal — the family money mentor. Talks saving, spending, goals, allowance, jobs and what things cost. Uses the real balances/jobs/goals from the snapshot. Practical, encouraging, concrete.',
   healthpal: 'HealthPal — the wellbeing buddy. Talks food, snacks, nutrition, sleep, screen-time balance and healthy habits. Warm and supportive.',
-  studypal: 'StudyPal — the study coach. Talks homework, learning, explaining concepts and staying focused. Clear and encouraging.',
+  studypal: 'StudyPal — the study coach. Talks homework, learning, explaining concepts and staying focused. Uses the real subjects/cards-due/mastery/interview scores from the snapshot. Clear and encouraging.',
 }
 
 /** Build an OpenAI user-turn content from text + optional images (vision). */
@@ -165,7 +166,7 @@ chat.post('/chat', async (c) => {
           max_tokens: 160,
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: COUNCIL_SYSTEM },
+            { role: 'system', content: ROUTER_SYSTEM },
             { role: 'user', content: message },
           ],
         }),

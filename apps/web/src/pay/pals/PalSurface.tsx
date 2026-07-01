@@ -13,7 +13,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useAvatar } from '../../lib/avatar'
-import { Chat } from '../screens/Chat'
+import { BrainChat } from './BrainChat'
 import { StudyPal } from './StudyPal'
 import { MoneyChat } from './MoneyChat'
 import { PalPicker } from './PalPicker'
@@ -46,7 +46,7 @@ export function PalSurface() {
         ? <StudyPal onSwitchPal={openPicker} />
         : pal === 'moneypal'
           ? <MoneyChat onSwitchPal={openPicker} />
-          : <Chat pal={pal} onSwitchPal={openPicker} />}
+          : <BrainChat onSwitchPal={openPicker} />}
       {pickerOpen && (
         <PalPicker
           current={pal}

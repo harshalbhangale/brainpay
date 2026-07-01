@@ -1,6 +1,7 @@
-import { and, desc, eq, gte, inArray } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '../db'
 import { accounts, chores, families, goals, ledger, memberships } from '../db/schema'
+import { studyTopics, studyInterviews, studyStreaks } from '../db/study-schema'
 
 /**
  * PAL Context Loader — builds a rich family snapshot for the LLM.
@@ -25,6 +26,8 @@ export type KidSummary = {
   activeGoal?: { name: string; targetBrains: number; currentBrains: number }
   interests?: string[]
   savingGoal?: string
+  /** StudyPal snapshot so BrainPal can speak to learning, not just money. */
+  study?: { subjects: number; totalCards: number; cardsDue: number; masteryPct: number; lastInterviewScore: number | null; streak: number }
 }
 
 export type PalContext = {
@@ -138,6 +141,33 @@ export async function loadPalContext(accountId: string): Promise<PalContext> {
         .where(and(eq(goals.accountId, kid.accountId), eq(goals.status, 'active')))
         .limit(1)
 
+      // StudyPal snapshot — subjects, cards due, mastery, last viva, streak.
+      const topicRows = await db
+        .select({ total: studyTopics.totalCards, due: studyTopics.cardsDue })
+        .from(studyTopics)
+        .where(and(eq(studyTopics.accountId, kid.accountId), eq(studyTopics.status, 'active')))
+      const totalCards = topicRows.reduce((a, r) => a + (r.total ?? 0), 0)
+      const cardsDue = topicRows.reduce((a, r) => a + (r.due ?? 0), 0)
+      const [iv] = await db
+        .select({ score: studyInterviews.score })
+        .from(studyInterviews)
+        .where(and(eq(studyInterviews.accountId, kid.accountId), isNotNull(studyInterviews.score)))
+        .orderBy(desc(studyInterviews.createdAt))
+        .limit(1)
+      const [streakRow] = await db
+        .select({ s: studyStreaks.currentStreak })
+        .from(studyStreaks)
+        .where(eq(studyStreaks.accountId, kid.accountId))
+        .limit(1)
+      const study = {
+        subjects: topicRows.length,
+        totalCards,
+        cardsDue,
+        masteryPct: totalCards > 0 ? Math.round(((totalCards - cardsDue) / totalCards) * 100) : 0,
+        lastInterviewScore: iv?.score ?? null,
+        streak: streakRow?.s ?? 0,
+      }
+
       return {
         accountId: kid.accountId,
         name: persona.name ?? 'Kid',
@@ -149,6 +179,7 @@ export async function loadPalContext(accountId: string): Promise<PalContext> {
         activeGoal: activeGoal ?? undefined,
         interests: persona.interests ?? [],
         savingGoal: persona.savingGoal ?? undefined,
+        study,
       }
     }),
   )
@@ -185,13 +216,18 @@ export function contextToSystemPrompt(ctx: PalContext, style: 'parent' | 'kid' =
       ? `They love: ${kid.interests.join(', ')} — weave these in when you give examples.`
       : ''
     const savingLine = kid?.savingGoal ? `They're saving up for: ${kid.savingGoal} — connect money tips to this.` : ''
+    const st = kid?.study
+    const studyLine = st && st.subjects > 0
+      ? `Study: ${st.subjects} subject(s), ${st.cardsDue} card(s) to review, ${st.masteryPct}% mastered${st.lastInterviewScore != null ? `, last interview ${st.lastInterviewScore}/10` : ''}, study streak ${st.streak} day(s).`
+      : 'Study: nothing set up yet.'
 
-    return `You are PAL — a sarcastic, dry-witted money buddy for kids aged 10-14.
+    return `You are PAL — a warm, encouraging money & study buddy for kids aged 10-14.
 You are talking to ${ctx.callerName}.
 Their balance: $${ctx.callerBalance} AUD.
 ${goalLine}
 Streak: ${kid?.streak ?? 0} days.
-Pending chores: ${kid?.pendingChores ?? 0}.
+Pending jobs: ${kid?.pendingChores ?? 0}.
+${studyLine}
 ${spendLine}
 ${interestsLine}
 ${savingLine}
@@ -202,11 +238,10 @@ ${ctx.kids.find(k => k.accountId === ctx.callerId)?.recentActivity.slice(0, 5).m
 ).join('\n') || '- No recent activity.'}
 
 Rules:
-- Be concise. Max 2 sentences unless explaining something complex.
-- Never lecture. Never say "you should" or "remember".
-- Be helpful and a little sarcastic. The kid is the friend.
-- When asked about balance, goals, or chores — give exact numbers.
-- When asked "should I buy X?" — give a quick verdict with a reason.`
+- Be concise and warm. Max 2 sentences unless explaining something.
+- Encouraging and clear. Never lecture, never sarcastic.
+- For money, goals, jobs or study — give the exact numbers above.
+- When asked "should I buy X?" give a quick, kind verdict with a reason.`
   }
 
   // Parent style — use onboarding persona fields to personalise
@@ -222,23 +257,27 @@ Rules:
     const goalLine = k.activeGoal
       ? `goal: ${k.activeGoal.name} $${k.activeGoal.currentBrains}/$${k.activeGoal.targetBrains}`
       : 'no goal'
-    return `- ${k.name}${k.age ? ` (${k.age}yo)` : ''}: $${k.balance} AUD, streak ${k.streak}d, ${k.pendingChores} pending chores, ${goalLine}`
+    const st = k.study
+    const studyLine = st && st.subjects > 0
+      ? `; study: ${st.subjects} subj, ${st.cardsDue} cards due, ${st.masteryPct}% mastered${st.lastInterviewScore != null ? `, last viva ${st.lastInterviewScore}/10` : ''}`
+      : ''
+    return `- ${k.name}${k.age ? ` (${k.age}yo)` : ''}: $${k.balance} AUD, streak ${k.streak}d, ${k.pendingChores} pending jobs, ${goalLine}${studyLine}`
   }).join('\n')
 
   const familyBlock = ctx.kids.length === 0
-    ? `${ctx.callerName} hasn't added any kids yet. If they ask about kids, balances, chores, allowance or goals, tell them they can add a child in the Family tab (the "Add child" button) — then you'll be able to help. Do NOT invent kids or numbers.`
+    ? `${ctx.callerName} hasn't added any kids yet. If they ask about kids, balances, jobs, allowance, goals or study, tell them they can add a child in the Family tab (the "Add child" button) — then you'll be able to help. Do NOT invent kids or numbers.`
     : `${ctx.callerName}'s family — ${ctx.kids.length} kid${ctx.kids.length === 1 ? '' : 's'}:\n${kidLines}`
 
-  return `You are PAL — a smart, warm, lightly witty family money assistant for BrainPal.
+  return `You are PAL — a smart, warm, clear family assistant for BrainPal. You help with both money AND study.
 You are talking to ${ctx.callerName}, a parent. Total in their own wallet: $${ctx.callerBalance} AUD.
 
 ${familyBlock}
 
-The snapshot above is current and real — it's your source of truth. When asked about a kid, balance, chores, allowance, or goals, answer DIRECTLY using these exact names and numbers. Never claim you don't have access; if a specific value isn't in the snapshot, say it isn't set up yet.
+The snapshot above is current and real — it's your source of truth for money AND study. When asked about a kid — balance, jobs, allowance, goals, subjects, cards due, mastery or interview scores — answer DIRECTLY using these exact names and numbers. Never claim you don't have access; if a specific value isn't in the snapshot, say it isn't set up yet.
 
 Rules:
-- Be concise and direct. Parents are busy. Money is AUD ($).
+- Be concise, warm and direct. Parents are busy. Money is AUD ($).
 - Use the kids' real names. If they have no kids yet, guide them to add one.
-- You can create chores, top up a kid, and set goals — show a preview first.
-- Warm but efficient. Not sycophantic.`
+- You can create jobs, top up a kid, and set goals — show a preview first.
+- Warm but efficient. Not sycophantic, no filler.`
 }

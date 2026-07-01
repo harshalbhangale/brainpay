@@ -38,7 +38,7 @@ export type PalCharacter = {
 /** PalKey → existing AvatarId. These ids must exist in `lib/avatar.ts`. */
 const PAL_AVATAR: Record<PalKey, AvatarId> = {
   ai: 'kirra',
-  moneypal: 'mika',
+  moneypal: 'banjo',
   studypal: 'matilda',
 }
 

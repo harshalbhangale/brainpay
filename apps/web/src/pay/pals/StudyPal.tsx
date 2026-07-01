@@ -24,6 +24,7 @@ import { GRADES, AU_STATES, subjectsForGrade, subjectEmoji, curriculumForState }
 import { ParentStudyView } from './ParentStudy'
 import { BrainCoin, Brains, BrainsPill, RewardsHelp } from '../components/Brains'
 import { InterviewInsights, type InterviewAnalysis } from './InterviewInsights'
+import { StudyOnboarding, StudyAvatarHome } from './StudyAvatar'
 
 type Topic = { id: string; title: string; emoji: string; cardsDue: number; totalCards: number }
 type Stats = { streak: number; cardsDue: number; cardsMastered: number; topicsActive: number }
@@ -111,7 +112,7 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
       ) : view === 'setup' ? (
         setupMode === 'form'
           ? <GradeSetup onDone={() => { setSetupMode('chat'); setView('home') }} canCancel={hasTopics} onCancel={() => setView('home')} />
-          : <StudyIntake onDone={() => setView('home')} canCancel={hasTopics} onCancel={() => setView('home')} onManual={() => setSetupMode('form')} />
+          : <StudyOnboarding onDone={() => setView('home')} onManual={() => setSetupMode('form')} onSwitchPal={onSwitchPal} />
       ) : view === 'subject' && selectedTopic ? (
         <SubjectHub topicId={selectedTopic} onBack={() => setView('home')} onConcepts={() => { setSelectedLesson(null); setView('concepts') }} onQuiz={() => setView('quiz')} onInterview={() => { setSelectedLesson(null); setView('interview') }} onChat={() => setView('chat')} onSaved={() => setView('saved')} onHistory={() => { setSelectedLesson(null); setView('history') }} onLesson={(ch) => { setSelectedLesson(ch); setView('lesson') }} />
       ) : view === 'lesson' && selectedTopic && selectedLesson ? (
@@ -133,7 +134,7 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
       ) : view === 'interviewDetail' && selectedInterview ? (
         <InterviewDetailView interviewId={selectedInterview} onBack={() => setView('history')} />
       ) : (
-        <HomeView stats={stats} topics={topicsData?.topics ?? []} onSelect={(id) => { setSelectedTopic(id); setView('subject') }} onSetup={() => setView('setup')} onRewards={() => setHelpOpen(true)} onSwitchPal={onSwitchPal} onDemo={startDemo} demoBusy={demoBusy} />
+        <StudyAvatarHome onSelect={(id) => { setSelectedTopic(id); setView('subject') }} onSetup={() => setView('setup')} onDemo={startDemo} demoBusy={demoBusy} onSwitchPal={onSwitchPal} />
       )}
       {helpOpen && <RewardsHelp onClose={() => setHelpOpen(false)} />}
     </div>

@@ -113,6 +113,12 @@ chat.post('/chat', async (c) => {
         .array(z.string().max(2_000_000).refine((s) => /^(data:image\/|https?:\/\/)/i.test(s), 'invalid image url'))
         .max(4)
         .optional(),
+      // Optional: attached documents (e.g. extracted PDF text). Kept out of the
+      // capped `message` field so long files don't blow the length limit.
+      documents: z
+        .array(z.object({ name: z.string().max(200).trim(), text: z.string().max(20_000) }))
+        .max(3)
+        .optional(),
     })
     .safeParse(body)
 
@@ -122,6 +128,12 @@ chat.post('/chat', async (c) => {
 
   const { message } = parsed.data
   const images = parsed.data.images ?? []
+  const documents = parsed.data.documents ?? []
+  // The message the model sees may carry attached document text; the ORIGINAL
+  // `message` is what we persist, route, and parse intents from.
+  const effectiveMessage = documents.length
+    ? `${message}\n\n${documents.map((d) => `[Attached document: ${d.name || 'file'}]\n"""\n${d.text}\n"""`).join('\n\n')}`
+    : message
   // De-dupe the selection while preserving order.
   const selected = [...new Set(parsed.data.pals ?? [])] as SpecialistId[]
   const focused = selected.length > 0
@@ -148,7 +160,7 @@ chat.post('/chat', async (c) => {
   // "main" work depends on mode: Auto = PAL reply + council router; Focused =
   // the chosen specialists each answer directly (no separate PAL reply).
   const mainWork = focused
-    ? answerAsSpecialists(selected, message, systemPrompt, historyMessages, images).then((answers) => ({ reply: '', pals: answers }))
+    ? answerAsSpecialists(selected, effectiveMessage, systemPrompt, historyMessages, images).then((answers) => ({ reply: '', pals: answers }))
     : Promise.all([
         llm.chat.completions.create({
           model: 'gpt-4o-mini',
@@ -157,7 +169,7 @@ chat.post('/chat', async (c) => {
           messages: [
             { role: 'system', content: systemPrompt },
             ...historyMessages,
-            { role: 'user', content: userTurn(message, images) },
+            { role: 'user', content: userTurn(effectiveMessage, images) },
           ],
         }),
         llm.chat.completions.create({

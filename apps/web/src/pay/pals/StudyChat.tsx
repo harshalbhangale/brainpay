@@ -21,6 +21,8 @@ import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
 import { usePalCharacter } from './palCharacters'
 import { GRADES, AU_STATES, subjectsForGrade, subjectEmoji, curriculumForState } from './subjects'
+import { AttachButton, AttachTray } from '../components/AttachControls'
+import { useAttachments, documentText, attachmentSummary, visionImages } from '../lib/attachments'
 
 const LiveSession = lazy(() => import('../screens/LiveSession').then((m) => ({ default: m.LiveSession })))
 
@@ -35,6 +37,7 @@ type CMsg = {
   text: string
   actions?: Action[]
   result?: { score: number | null; summary?: string | null }
+  images?: string[]
 }
 
 let mid = 1
@@ -105,6 +108,7 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   const scrollRef = useRef<HTMLDivElement>(null)
   const bootRef = useRef(false)
   const postBuildRef = useRef<Topic[] | null>(null)
+  const att = useAttachments()
 
   useEffect(() => () => { try { recRef.current?.stop() } catch { /* ignore */ } }, [])
 
@@ -132,7 +136,7 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   }
 
   const say = (text: string, actions?: Action[], result?: CMsg['result']) => store.push({ id: uid(), who: 'matilda', text, actions, result })
-  const me = (text: string) => store.push({ id: uid(), who: 'you', text })
+  const me = (text: string, images?: string[]) => store.push({ id: uid(), who: 'you', text, images })
 
   // Onboarding step tracking → progress bar (advances per answered question).
   const stepsList: ReadonlyArray<'grade' | 'state' | 'subjects'> = savedGrade ? ['subjects'] : ['grade', 'state', 'subjects']
@@ -277,9 +281,13 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   // never mistaken for a greeting, and frames it as studying — not "see cards".
   async function send() {
     const raw = input.trim()
-    if (!raw || sending || ask || building) return
+    const docText = documentText(att.items)
+    const imgs = visionImages(att.items)
+    const summary = attachmentSummary(att.items)
+    if ((!raw && !docText && imgs.length === 0) || sending || ask || building) return
     setInput('')
-    me(raw)
+    me(raw || `Study from ${summary || 'my file'}`, imgs.length ? imgs : undefined)
+    att.clear()
 
     // Peel off conversational filler + study-intent phrases to find the topic.
     let topic = raw
@@ -291,9 +299,11 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     }
     topic = topic.replace(/[?!.]+$/, '').trim()
 
-    // Nothing left (pure greeting / too vague) → nudge for a topic.
-    if (topic.length < 3) {
-      say('Tell me a topic — like “World War 1” or “Photosynthesis” — and I’ll build you a deck and start studying.')
+    // Nothing to build from: no document text and no real topic → nudge.
+    if (!docText && topic.length < 3) {
+      say(imgs.length
+        ? 'I build decks from text — type a topic (like “Photosynthesis”) or attach a PDF and I’ll turn it into flashcards.'
+        : 'Tell me a topic — like “World War 1” or “Photosynthesis” — or attach a PDF and I’ll build a deck from it.')
       return
     }
 
@@ -301,7 +311,8 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     try {
       let topicId = store.activeTopicId
       let topicTitle = store.activeTopicTitle
-      const chapter = topic.length > 64 ? topic.slice(0, 64) : topic
+      const baseLabel = topic.length >= 3 ? topic : (summary || 'My notes')
+      const chapter = baseLabel.length > 64 ? baseLabel.slice(0, 64) : baseLabel
       if (!topicId) {
         const title = chapter.slice(0, 40) || 'My topic'
         const emoji = subjectEmoji(title)
@@ -309,13 +320,15 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
         topicId = created.id; topicTitle = title
         store.setActive(topicId, title)
       }
-      const content = `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) for a student studying: ${topic}. Cover the key ideas, definitions, dates/formulas and common exam questions. Use Australian curriculum terminology and spelling.`
-      await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: chapter, fileUrl: 'text://inline', fileType: 'text', content, chapter }) })
+      const content = docText
+        ? `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) from the following source material${topic.length >= 3 ? ` about ${topic}` : ''}. Extract the key ideas, definitions, dates/formulas and likely exam questions. Use Australian curriculum terminology and spelling.\n\nSOURCE MATERIAL:\n"""\n${docText}\n"""`
+        : `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) for a student studying: ${topic}. Cover the key ideas, definitions, dates/formulas and common exam questions. Use Australian curriculum terminology and spelling.`
+      await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: chapter, fileUrl: docText ? 'file://pdf' : 'text://inline', fileType: 'text', content, chapter }) })
       qc.invalidateQueries({ queryKey: ['study-topics'] })
       qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
       qc.invalidateQueries({ queryKey: ['study-chapters', topicId] })
       const label = topicTitle && topicTitle.toLowerCase() !== chapter.toLowerCase() ? `${chapter} · ${topicTitle}` : chapter
-      say(`On it — building your “${chapter}” deck now. Here's the plan: learn the key cards, take a quick quiz, then a short interview to lock it in. Tap below when you're ready.`, [
+      say(`On it — building your “${chapter}” deck${docText ? ' from your file' : ''} now. Here's the plan: learn the key cards, take a quick quiz, then a short interview to lock it in. Tap below when you're ready.`, [
         { label: `Start studying ${chapter}`, emoji: '📖', kind: 'cards', topicId, title: label, chapter },
       ])
     } catch {
@@ -444,14 +457,16 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
           {/* Composer — free chat + mic/camera (hidden during setup questions). */}
           {!ask && !building && (
             <div className="mx-auto w-full max-w-xl px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
-              <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
+              <AttachTray items={att.items} onRemove={att.remove} />
+              <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-1.5">
+                <AttachButton onFiles={att.add} disabled={sending} label="Attach a PDF or photo to study" />
                 <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={listening ? 'Listening…' : 'Tell Matilda what to study…'} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
                 {listening ? (
                   <button type="button" onClick={toggleDictation} aria-label="Stop dictation" className="pv-press-lg pv-live-pulse flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-neg)', color: '#fff', boxShadow: 'var(--pv-shadow-md)' }}>
                     <Mic size={18} />
                   </button>
-                ) : input.trim() ? (
-                  <button type="submit" disabled={sending} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                ) : (input.trim() || att.hasReady) ? (
+                  <button type="submit" disabled={sending || att.busy} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
                     <SendIcon size={17} />
                   </button>
                 ) : (
@@ -484,8 +499,13 @@ function ChipBtn({ children, onClick, pill }: { children: React.ReactNode; onCli
 function Bubble({ m, onAction, demoBusy }: { m: CMsg; onAction: (a: Action) => void; demoBusy: boolean }) {
   if (m.who === 'you') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm font-medium leading-relaxed" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', borderBottomRightRadius: 6 }}>{m.text}</div>
+      <div className="flex flex-col items-end gap-1.5">
+        {m.images && m.images.length > 0 && (
+          <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
+            {m.images.map((src, i) => <img key={i} src={src} alt="" className="h-24 w-24 rounded-2xl object-cover" style={{ boxShadow: 'var(--pv-shadow-sm)' }} />)}
+          </div>
+        )}
+        {m.text && <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm font-medium leading-relaxed" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', borderBottomRightRadius: 6 }}>{m.text}</div>}
       </div>
     )
   }

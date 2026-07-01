@@ -10,11 +10,15 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Sparkles, Mic, Camera, Send as SendIcon, ChevronDown, Wallet, GraduationCap, MessageSquareText } from 'lucide-react'
 import { Companion } from '../../components/Companion'
+import { ErrorBoundary } from '../components/ErrorBoundary'
+import { LiveLoading } from '../components/LiveLoading'
 import { api } from '../../lib/api'
 import { useAuthStore } from '../../stores/auth'
 import { registerAiHandler } from './aiBus'
 import { usePalCharacter } from './palCharacters'
 import { usePalSelection } from './usePalSelection'
+import { AttachButton, AttachTray } from '../components/AttachControls'
+import { useAttachments, visionImages, chatDocuments, attachmentSummary } from '../lib/attachments'
 
 const LiveSession = lazy(() => import('../screens/LiveSession').then((m) => ({ default: m.LiveSession })))
 
@@ -24,7 +28,7 @@ type SpeechRecCtor = new () => SpeechRec
 
 type ActionKind = 'ask' | 'money' | 'study'
 type Action = { label: string; kind: ActionKind; text?: string }
-type CMsg = { id: string; who: 'pal' | 'you'; text: string; actions?: Action[] }
+type CMsg = { id: string; who: 'pal' | 'you'; text: string; actions?: Action[]; images?: string[] }
 
 let mid = 1
 const uid = () => `bc${mid++}`
@@ -44,9 +48,10 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   const recRef = useRef<SpeechRec | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bootRef = useRef(false)
+  const att = useAttachments()
 
   const say = (text: string, actions?: Action[]) => setMessages((m) => [...m, { id: uid(), who: 'pal', text, actions }])
-  const me = (text: string) => setMessages((m) => [...m, { id: uid(), who: 'you', text }])
+  const me = (text: string, images?: string[]) => setMessages((m) => [...m, { id: uid(), who: 'you', text, images }])
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, sending])
   useEffect(() => () => { try { recRef.current?.stop() } catch { /* ignore */ } }, [])
@@ -104,12 +109,17 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
 
   async function send(raw?: string) {
     const text = (raw ?? input).trim()
-    if (!text || sending) return
+    const imgs = visionImages(att.items)
+    const docs = chatDocuments(att.items)
+    if ((!text && imgs.length === 0 && docs.length === 0) || sending || att.busy) return
+    const summary = attachmentSummary(att.items)
+    const shown = text || (summary ? `Sent ${summary}` : 'Take a look at this')
     setInput('')
-    me(text)
+    me(shown, imgs.length ? imgs : undefined)
+    att.clear()
     setSending(true)
     try {
-      const res = await api<{ reply?: string; pals?: { palId: string; line: string }[] }>('/chat', { method: 'POST', body: JSON.stringify({ message: text }) })
+      const res = await api<{ reply?: string; pals?: { palId: string; line: string }[] }>('/chat', { method: 'POST', body: JSON.stringify({ message: text || 'Take a look at the attached file.', images: imgs, documents: docs }) })
       const parts = [res.reply, ...(res.pals?.map((p) => p.line) ?? [])].map((s) => (s ?? '').trim()).filter(Boolean)
       say(parts.join('\n\n') || "I couldn't think of an answer — try rephrasing?")
     } catch {
@@ -165,14 +175,16 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
 
           {/* Composer */}
           <div className="mx-auto w-full max-w-xl px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
-            <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
+            <AttachTray items={att.items} onRemove={att.remove} />
+            <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-1.5">
+              <AttachButton onFiles={att.add} disabled={sending} />
               <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={listening ? 'Listening…' : `Ask ${ch.characterName}…`} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
               {listening ? (
                 <button type="button" onClick={toggleDictation} aria-label="Stop dictation" className="pv-press-lg pv-live-pulse flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-neg)', color: '#fff', boxShadow: 'var(--pv-shadow-md)' }}>
                   <Mic size={18} />
                 </button>
-              ) : input.trim() ? (
-                <button type="submit" disabled={sending} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+              ) : (input.trim() || att.hasReady) ? (
+                <button type="submit" disabled={sending || att.busy} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
                   <SendIcon size={17} />
                 </button>
               ) : (
@@ -196,8 +208,13 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
 function Bubble({ m, onAction }: { m: CMsg; onAction: (a: Action) => void }) {
   if (m.who === 'you') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm font-medium leading-relaxed" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', borderBottomRightRadius: 6 }}>{m.text}</div>
+      <div className="flex flex-col items-end gap-1.5">
+        {m.images && m.images.length > 0 && (
+          <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
+            {m.images.map((src, i) => <img key={i} src={src} alt="" className="h-24 w-24 rounded-2xl object-cover" style={{ boxShadow: 'var(--pv-shadow-sm)' }} />)}
+          </div>
+        )}
+        {m.text && <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm font-medium leading-relaxed" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', borderBottomRightRadius: 6 }}>{m.text}</div>}
       </div>
     )
   }

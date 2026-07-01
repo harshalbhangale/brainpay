@@ -18,11 +18,15 @@ import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Wallet, Sparkles, Mic, Camera, Send as SendIcon, Check, ChevronDown, ChevronRight, Minus, Plus, ListChecks, PiggyBank, CreditCard, Target, ArrowRight } from 'lucide-react'
 import { Companion } from '../../components/Companion'
+import { ErrorBoundary } from '../components/ErrorBoundary'
+import { LiveLoading } from '../components/LiveLoading'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
 import { useFamilyKids } from '../useMoneyPal'
 import { usePalCharacter } from './palCharacters'
+import { AttachButton, AttachTray } from '../components/AttachControls'
+import { useAttachments, visionImages, chatDocuments, attachmentSummary } from '../lib/attachments'
 
 const LiveSession = lazy(() => import('../screens/LiveSession').then((m) => ({ default: m.LiveSession })))
 
@@ -53,7 +57,7 @@ type Flow = {
 
 type ActionKind = 'chore' | 'allowance' | 'goal' | 'card' | 'pending'
 type Action = { label: string; kind: ActionKind }
-type CMsg = { id: string; who: 'mika' | 'you'; text: string; actions?: Action[]; success?: string }
+type CMsg = { id: string; who: 'mika' | 'you'; text: string; actions?: Action[]; success?: string; images?: string[] }
 
 type Chore = { id: string; title: string; rewardBrains: number; status: string; assignedTo: string }
 
@@ -100,9 +104,10 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   const recRef = useRef<SpeechRec | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bootRef = useRef(false)
+  const att = useAttachments()
 
   const say = (text: string, actions?: Action[], success?: string) => setMessages((m) => [...m, { id: uid(), who: 'mika', text, actions, success }])
-  const me = (text: string) => setMessages((m) => [...m, { id: uid(), who: 'you', text }])
+  const me = (text: string, images?: string[]) => setMessages((m) => [...m, { id: uid(), who: 'you', text, images }])
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, flow, sending])
   useEffect(() => () => { try { recRef.current?.stop() } catch { /* ignore */ } }, [])
@@ -262,12 +267,17 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   // ── Free chat → the money council ───────────────────────────────────────
   async function send() {
     const text = input.trim()
-    if (!text || sending || flow) return
+    const imgs = visionImages(att.items)
+    const docs = chatDocuments(att.items)
+    if ((!text && imgs.length === 0 && docs.length === 0) || sending || flow || att.busy) return
+    const summary = attachmentSummary(att.items)
+    const shown = text || (summary ? `Sent ${summary}` : 'Take a look at this')
     setInput('')
-    me(text)
+    me(shown, imgs.length ? imgs : undefined)
+    att.clear()
     setSending(true)
     try {
-      const res = await api<{ reply?: string; pals?: { palId: string; line: string }[] }>('/chat', { method: 'POST', body: JSON.stringify({ message: text, pals: ['moneypal'] }) })
+      const res = await api<{ reply?: string; pals?: { palId: string; line: string }[] }>('/chat', { method: 'POST', body: JSON.stringify({ message: text || 'Take a look at the attached file.', pals: ['moneypal'], images: imgs, documents: docs }) })
       const parts = [res.reply, ...(res.pals?.map((p) => p.line) ?? [])].map((s) => (s ?? '').trim()).filter(Boolean)
       say(parts.join('\n\n') || "I couldn't think of an answer — try rephrasing?")
     } catch {
@@ -280,9 +290,11 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   return (
     <>
       {live && (
-        <Suspense fallback={<div className="fixed inset-0 z-50 bg-black" />}>
-          <LiveSession withCamera={live.camera} avatar={ch.avatar} speaker={ch.characterName} onClose={() => setLive(null)} />
-        </Suspense>
+        <ErrorBoundary resetKey={live.camera ? 'cam' : 'voice'} label="the live session">
+          <Suspense fallback={<LiveLoading />}>
+            <LiveSession withCamera={live.camera} avatar={ch.avatar} speaker={ch.characterName} onClose={() => setLive(null)} />
+          </Suspense>
+        </ErrorBoundary>
       )}
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="pv-mesh" aria-hidden />
@@ -362,14 +374,16 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
           {/* Composer — free chat + mic (dictation) + camera (live). Hidden during a flow. */}
           {!flow && (
             <div className="mx-auto w-full max-w-xl px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
-              <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
+              <AttachTray items={att.items} onRemove={att.remove} />
+              <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-1.5">
+                <AttachButton onFiles={att.add} disabled={sending} />
                 <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={listening ? 'Listening…' : 'Message Mika…'} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
                 {listening ? (
                   <button type="button" onClick={toggleDictation} aria-label="Stop dictation" className="pv-press-lg pv-live-pulse flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-neg)', color: '#fff', boxShadow: 'var(--pv-shadow-md)' }}>
                     <Mic size={18} />
                   </button>
-                ) : input.trim() ? (
-                  <button type="submit" disabled={sending} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                ) : (input.trim() || att.hasReady) ? (
+                  <button type="submit" disabled={sending || att.busy} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
                     <SendIcon size={17} />
                   </button>
                 ) : (
@@ -575,8 +589,13 @@ function ConfirmCard({ flow, onEdit, onCreate, onCancel }: { flow: Flow; onEdit:
 function Bubble({ m, onAction }: { m: CMsg; onAction: (a: Action) => void }) {
   if (m.who === 'you') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm font-medium leading-relaxed" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', borderBottomRightRadius: 6 }}>{m.text}</div>
+      <div className="flex flex-col items-end gap-1.5">
+        {m.images && m.images.length > 0 && (
+          <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
+            {m.images.map((src, i) => <img key={i} src={src} alt="" className="h-24 w-24 rounded-2xl object-cover" style={{ boxShadow: 'var(--pv-shadow-sm)' }} />)}
+          </div>
+        )}
+        {m.text && <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm font-medium leading-relaxed" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', borderBottomRightRadius: 6 }}>{m.text}</div>}
       </div>
     )
   }
@@ -609,3 +628,5 @@ function Bubble({ m, onAction }: { m: CMsg; onAction: (a: Action) => void }) {
     </div>
   )
 }
+
+

@@ -2,7 +2,6 @@ import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
-  Users,
   Send,
   ListChecks,
   ChevronRight,
@@ -183,7 +182,7 @@ export function Family() {
 
       {/* Avatar rail — Family overview + each kid + Add */}
       {!loading && kids.length > 0 && (
-        <AvatarRail kids={kids} selectedKidId={selectedKidId} onSelect={setSelectedKidId} onAdd={() => setAddOpen(true)} />
+        <AvatarRail kids={kids} parentName={parentName} parentPhoto={typeof account?.persona?.avatar === 'string' ? (account.persona.avatar as string) : undefined} selectedKidId={selectedKidId} onSelect={setSelectedKidId} onAdd={() => setAddOpen(true)} />
       )}
 
       <div className="pv-no-scrollbar flex-1 overflow-y-auto px-5 pb-40">
@@ -268,19 +267,23 @@ export function Family() {
 /* ───────────────────────────────────────────────────────────── Avatar rail */
 function AvatarRail({
   kids,
+  parentName,
+  parentPhoto,
   selectedKidId,
   onSelect,
   onAdd,
 }: {
   kids: FamilyKidVM[]
+  parentName: string
+  parentPhoto?: string
   selectedKidId: string | null
   onSelect: (id: string | null) => void
   onAdd: () => void
 }) {
   return (
     <div className="pv-no-scrollbar flex items-start gap-5 overflow-x-auto px-5 pb-1 pt-1">
-      <RailItem label="Family" active={selectedKidId === null} onClick={() => onSelect(null)}>
-        <FamilyGlyph kids={kids} />
+      <RailItem label="You" active={selectedKidId === null} onClick={() => onSelect(null)}>
+        <Avatar name={parentName} src={parentPhoto} size={56} fun />
       </RailItem>
       {kids.map((k) => (
         <RailItem key={k.id} label={k.name} active={selectedKidId === k.id} onClick={() => onSelect(k.id)}>
@@ -307,32 +310,6 @@ function RailItem({ label, active, onClick, children }: { label: string; active?
       </span>
       <span className="h-0.5 w-6 rounded-full" style={{ background: active ? 'var(--pv-primary)' : 'transparent' }} />
     </button>
-  )
-}
-
-function FamilyGlyph({ kids }: { kids: FamilyKidVM[] }) {
-  if (kids.length === 0) {
-    return (
-      <span className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>
-        <Users size={22} strokeWidth={2.2} />
-      </span>
-    )
-  }
-  return (
-    <span className="relative block h-14 w-14">
-      <span className="absolute left-0 top-0" style={{ boxShadow: '0 0 0 2px var(--pv-bg)', borderRadius: 9999 }}>
-        <Avatar name={kids[0].name} src={kids[0].avatar} tile={kids[0].tile} size={38} fun />
-      </span>
-      {kids[1] ? (
-        <span className="absolute bottom-0 right-0" style={{ boxShadow: '0 0 0 2px var(--pv-bg)', borderRadius: 9999 }}>
-          <Avatar name={kids[1].name} src={kids[1].avatar} tile={kids[1].tile} size={38} fun />
-        </span>
-      ) : (
-        <span className="absolute bottom-0 right-0 flex h-[38px] w-[38px] items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-3)', boxShadow: '0 0 0 2px var(--pv-bg)' }}>
-          <Users size={16} strokeWidth={2.4} />
-        </span>
-      )}
-    </span>
   )
 }
 

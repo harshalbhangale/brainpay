@@ -15,6 +15,8 @@ import { useAuthStore } from '../../stores/auth'
 import { useActiveChild } from '../lib/activeChild'
 import { useCanvas } from '../lib/canvasStore'
 import { useWallet, useFamilyKids } from '../useMoneyPal'
+import { useCardSettings, cardLast4, maskedNumber } from '../../lib/card'
+import { cardSkin } from '../lib/cardSkins'
 
 export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => void; onAfterSwitch?: () => void }) {
   const account = useAuthStore((s) => s.account)
@@ -32,6 +34,13 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
   const subjectName = isKid ? myName : activeKid ? activeKid.name : 'Whole family'
   const subjectBalance = isKid ? wallet.balance : activeKid ? activeKid.balance : wallet.balance
   const balanceLabel = isKid ? 'Your money' : activeKid ? `${activeKid.name}'s balance` : 'Family wallet'
+
+  // Masked card of the current subject (kid when one's focused, else your own).
+  const myId = account?.id ?? 'preview'
+  const cardId = activeKid ? activeKid.id : myId
+  const [cardSettings] = useCardSettings(cardId)
+  const cardDesign = cardSkin(cardSettings.design)
+  const maskedPan = maskedNumber(cardLast4(cardId))
 
   function pick(id: string | null) {
     setChild(id)
@@ -96,6 +105,26 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
           </button>
         </>
       )}
+
+      {/* Card — masked; tap to open, freeze & customize */}
+      <button
+        onClick={() => { openCanvas('card'); onAfterSwitch?.() }}
+        aria-label="Open card"
+        className="pv-press pv-hairline relative mt-3 block w-full overflow-hidden rounded-2xl p-3.5 text-left"
+        style={{ backgroundImage: cardDesign.gradient, color: cardDesign.fg, textShadow: cardDesign.image ? '0 1px 6px rgba(0,0,0,0.55)' : undefined }}
+      >
+        {cardDesign.image && (
+          <>
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: `url(${cardDesign.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(8,9,12,0.42), rgba(8,9,12,0.66))' }} />
+          </>
+        )}
+        <span className="relative flex items-center justify-between">
+          <span className="text-[11px] font-extrabold tracking-tight">BrainPal</span>
+          <span className="text-[11px] font-black italic leading-none tracking-tight" style={{ color: cardDesign.visa }}>VISA</span>
+        </span>
+        <span className="pv-amount relative mt-2 block text-[15px] tracking-[0.16em]">{maskedPan}</span>
+      </button>
     </div>
   )
 }

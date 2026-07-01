@@ -125,8 +125,11 @@ export function FamilyMap() {
 
   return (
     <div className="relative flex-1 overflow-hidden">
-      {/* MAP LAYER (full-bleed) */}
-      <div className="absolute inset-0">
+      {/* MAP LAYER (full-bleed). `isolation` traps Leaflet's internal panes
+          (z-index up to ~700) inside their own stacking context so they can't
+          paint over the panels above — the bug that made the panel flicker in
+          and out on zoom. */}
+      <div className="absolute inset-0" style={{ isolation: 'isolate', zIndex: 0 }}>
         {selected ? (
           selTrail.length > 0 ? <TrailMap points={selTrail} accent={selected.accent} /> : <MapPlaceholder text={`${selected.name} hasn't shared a location yet.`} />
         ) : pins.length > 0 ? (
@@ -137,7 +140,7 @@ export function FamilyMap() {
       </div>
 
       {/* TOP: floating filter chips + refresh */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))', background: 'linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0))' }}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))', background: 'linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0))' }}>
         <div className="pointer-events-auto flex items-center gap-2">
           <div className="pv-no-scrollbar flex flex-1 gap-2 overflow-x-auto py-1">
             <FilterChip active={filter === 'all'} onClick={() => setFilter('all')} accent="var(--pv-primary)">
@@ -155,11 +158,11 @@ export function FamilyMap() {
         </div>
       </div>
 
-      {/* BOTTOM: glass info panel */}
-      <div className="absolute inset-x-0 bottom-0 z-20 px-3 pb-3">
+      {/* BOTTOM: info panel — children (All) or a person's history (on tap). */}
+      <div className="absolute inset-x-0 bottom-0 z-30 px-3 pb-3">
         <div
           className="pv-rise pv-no-scrollbar overflow-y-auto rounded-[var(--pv-r-2xl)] p-4"
-          style={{ maxHeight: '46vh', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', boxShadow: 'var(--pv-shadow-lg)', border: '1px solid rgba(255,255,255,0.6)' }}
+          style={{ maxHeight: '46vh', background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)', border: '1px solid var(--pv-line)' }}
         >
           <div className="mx-auto mb-3 h-1.5 w-10 rounded-full" style={{ background: 'var(--pv-line-strong)' }} />
           {selected ? <JourneyPanel person={selected} trail={selTrail} /> : <LivePanel people={people} located={located.length} onPick={setFilter} />}

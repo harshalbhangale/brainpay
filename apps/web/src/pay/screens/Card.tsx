@@ -15,6 +15,7 @@ import { aud } from '../../lib/format'
 import { Avatar, Button, Card, PressButton } from '../components/primitives'
 import { BottomSheet } from '../components/BottomSheet'
 import { cardSkin, CARD_SKINS } from '../lib/cardSkins'
+import { familyFace } from '../lib/cartoonAvatar'
 import { useWallet, useFamilyKids } from '../useMoneyPal'
 
 type Holder = { id: string; name: string; balance: number; you: boolean; avatar?: string; initials?: string }
@@ -29,7 +30,7 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
   const { kids } = useFamilyKids()
 
   const holders: Holder[] = [
-    { id: myId, name: myName, balance: wallet.balance, you: true, avatar: myPhoto },
+    { id: myId, name: myName, balance: wallet.balance, you: true, avatar: familyFace(myId, myPhoto) },
     ...(isKid ? [] : kids.map((k) => ({ id: k.id, name: k.name, balance: k.balance, you: false, avatar: k.avatar, initials: k.initials }))),
   ]
 
@@ -95,10 +96,17 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
           onPointerMove={onTilt}
           onPointerLeave={() => setTilt({ x: 0, y: 0 })}
           className="pv-sheen relative overflow-hidden rounded-[var(--pv-r-xl)] p-5"
-          style={{ backgroundImage: skin.gradient, color: skin.fg, boxShadow: 'var(--pv-shadow-lg)', aspectRatio: '1.586', transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`, transition: tilt.x || tilt.y ? 'none' : 'transform 0.45s cubic-bezier(0.22,1,0.36,1)', transformStyle: 'preserve-3d', touchAction: 'none' }}
+          style={{ backgroundImage: skin.gradient, color: skin.fg, boxShadow: 'var(--pv-shadow-lg)', aspectRatio: '1.586', transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`, transition: tilt.x || tilt.y ? 'none' : 'transform 0.45s cubic-bezier(0.22,1,0.36,1)', transformStyle: 'preserve-3d', touchAction: 'none', textShadow: skin.image ? '0 1px 8px rgba(0,0,0,0.55)' : undefined }}
         >
-          {/* mascot watermark */}
-          <span aria-hidden className="pointer-events-none absolute -bottom-6 -right-3 select-none" style={{ fontSize: 128, lineHeight: 1, opacity: 0.16 }}>{skin.mascot}</span>
+          {/* Real card artwork (cover) + legibility scrim, else the mascot watermark. */}
+          {skin.image ? (
+            <>
+              <span aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: `url(${skin.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+              <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(8,9,12,0.44) 0%, rgba(8,9,12,0.05) 30%, rgba(8,9,12,0.10) 56%, rgba(8,9,12,0.68) 100%)' }} />
+            </>
+          ) : (
+            <span aria-hidden className="pointer-events-none absolute -bottom-6 -right-3 select-none" style={{ fontSize: 128, lineHeight: 1, opacity: 0.16 }}>{skin.mascot}</span>
+          )}
 
           <div className="relative flex items-start justify-between">
             <span className="text-sm font-extrabold tracking-tight">BrainPal</span>
@@ -108,7 +116,7 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
           <div className="relative mt-4 flex items-center gap-3">
             <span className="h-8 w-11 rounded-md" style={{ background: skin.chip === 'gold' ? 'linear-gradient(135deg,#f7e08a,#b8860b)' : 'linear-gradient(135deg,#eef2f7,#9aa3af)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.18)' }} />
             <Nfc size={20} style={{ opacity: 0.85, transform: 'rotate(90deg)' }} />
-            {skin.hero && <span className="ml-auto text-2xl leading-none">{skin.mascot}</span>}
+            {skin.hero && !skin.image && <span className="ml-auto text-2xl leading-none">{skin.mascot}</span>}
           </div>
 
           <div className="pv-amount relative mt-3 text-lg tracking-[0.16em]">
@@ -154,9 +162,13 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
             {CARD_SKINS.map((s) => {
               const on = (settings.design || 'ink') === s.id
               return (
-                <button key={s.id} onClick={() => update({ design: s.id })} className="pv-press relative flex aspect-[1.586] items-end overflow-hidden rounded-xl p-1.5" style={{ backgroundImage: s.gradient, color: s.fg, outline: on ? '2.5px solid var(--pv-accent)' : 'none', outlineOffset: 2 }}>
-                  <span className="absolute right-1 top-1 text-sm">{s.mascot}</span>
-                  <span className="text-[9px] font-extrabold">{s.name}</span>
+                <button key={s.id} onClick={() => update({ design: s.id })} className="pv-press relative flex aspect-[1.586] items-end overflow-hidden rounded-xl p-1.5" style={{ backgroundImage: s.image ? `url(${s.image})` : s.gradient, backgroundSize: 'cover', backgroundPosition: 'center', color: s.fg, outline: on ? '2.5px solid var(--pv-accent)' : 'none', outlineOffset: 2 }}>
+                  {s.image ? (
+                    <span aria-hidden className="absolute inset-0" style={{ background: 'linear-gradient(180deg, transparent 38%, rgba(8,9,12,0.66) 100%)' }} />
+                  ) : (
+                    <span className="absolute right-1 top-1 text-sm">{s.mascot}</span>
+                  )}
+                  <span className="relative text-[9px] font-extrabold" style={{ textShadow: s.image ? '0 1px 3px rgba(0,0,0,0.7)' : undefined }}>{s.name}</span>
                   {on && <span className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full" style={{ background: 'var(--pv-accent)', color: 'var(--pv-on-accent)' }}><Check size={10} strokeWidth={3.4} /></span>}
                 </button>
               )

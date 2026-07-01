@@ -39,12 +39,27 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
   }
 
   return (
-    <div className="overflow-hidden rounded-[var(--pv-r-lg)] p-4" style={{ background: 'var(--pv-grad-ink)', boxShadow: 'var(--pv-shadow-md)' }}>
+    <div className="pv-hairline relative overflow-hidden rounded-[var(--pv-r-lg)] p-4" style={{ backgroundImage: 'var(--pv-grad-ink)', color: 'var(--pv-on-dark)', boxShadow: 'var(--pv-shadow-lg)' }}>
+      {/* soft aurora depth in the corner */}
+      <div aria-hidden className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full blur-[46px]" style={{ backgroundImage: 'var(--pv-grad-aurora)', opacity: 0.42 }} />
+
       {/* Identity / subject row */}
-      <div className="flex items-center gap-3">
+      <div className="relative flex items-center gap-3">
         <button onClick={onProfile} aria-label="Profile and settings" className="pv-press shrink-0 rounded-full">
           {isKid || activeKid ? (
             <Avatar name={subjectName} src={isKid ? myPhoto : activeKid?.avatar} tile={activeKid?.tile} size={46} />
+          ) : kids.length > 0 ? (
+            // Whole family → a little stack of the kids, so the card shows *who*.
+            <span className="flex items-center">
+              {kids.slice(0, 3).map((k, i) => (
+                <span key={k.id} className="rounded-full" style={{ marginLeft: i === 0 ? 0 : -12, boxShadow: '0 0 0 2.5px #0b0c0f', zIndex: 3 - i }}>
+                  <Avatar name={k.name} src={k.avatar} initials={k.initials} tile={k.tile} size={40} />
+                </span>
+              ))}
+              {kids.length > 3 && (
+                <span className="flex h-10 w-10 items-center justify-center rounded-full text-xs font-extrabold" style={{ marginLeft: -12, background: 'rgba(255,255,255,0.22)', color: 'var(--pv-on-dark)', boxShadow: '0 0 0 2.5px #0b0c0f' }}>+{kids.length - 3}</span>
+              )}
+            </span>
           ) : (
             <span className="flex h-[46px] w-[46px] items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.16)', color: 'var(--pv-on-dark)' }}>
               <Users size={22} strokeWidth={2.2} />
@@ -64,7 +79,7 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
       {/* Parent: active-child selector + manage */}
       {!isKid && (
         <>
-          <div className="pv-no-scrollbar -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1">
+          <div className="pv-no-scrollbar relative -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1">
             <SelectorChip label="Whole family" active={!childId} onClick={() => pick(null)} />
             {kids.map((k) => (
               <SelectorChip key={k.id} label={k.name} active={childId === k.id} onClick={() => pick(k.id)} />
@@ -72,10 +87,11 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
           </div>
           <button
             onClick={() => { openCanvas('family'); onAfterSwitch?.() }}
-            className="pv-press mt-2.5 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left"
+            className="pv-press relative mt-2.5 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left"
             style={{ background: 'rgba(255,255,255,0.10)' }}
           >
-            <span className="text-sm font-bold" style={{ color: 'var(--pv-on-dark)' }}>Manage family</span>
+            <Users size={15} style={{ color: 'rgba(255,255,255,0.8)' }} />
+            <span className="flex-1 text-sm font-bold" style={{ color: 'var(--pv-on-dark)' }}>Manage family</span>
             <ChevronRight size={16} style={{ color: 'rgba(255,255,255,0.7)' }} />
           </button>
         </>

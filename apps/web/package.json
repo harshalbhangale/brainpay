@@ -13,6 +13,8 @@
   "dependencies": {
     "@brainpal/shared": "workspace:*",
     "@daily-co/daily-js": "^0.91.0",
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.2",
     "@pixiv/three-vrm": "^3.5.4",
     "@runwayml/avatars-react": "^0.16.0",
     "@tanstack/react-query": "^5.62.7",

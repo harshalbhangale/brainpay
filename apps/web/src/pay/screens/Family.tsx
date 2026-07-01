@@ -29,6 +29,8 @@ import { TopBar } from '../components/shell'
 import { fmt } from '../data'
 import { useAuthStore } from '../../stores/auth'
 import { useFamilyKids, useWallet, type FamilyKidVM } from '../useMoneyPal'
+import { CARTOON_STYLES, cartoonAvatarUri, defaultStyleFor, isPhoto, type CartoonStyleId } from '../lib/cartoonAvatar'
+import { useCartoonStyle } from '../lib/useCartoonStyle'
 import type { FeedResponse, ChoresResponse } from '../../components/family/types'
 import { ChoresSection, AddChoreSheet } from './family/Chores'
 import { KidCardSheet, KidMapSheet } from './family/KidSheets'
@@ -124,6 +126,23 @@ export function Family() {
     setAvatars((a) => ({ ...a, [id]: url }))
   }
 
+  const setKidStyle = useCartoonStyle((s) => s.setStyle)
+
+  // Drop any locally-uploaded photo so the cartoon (from the VM) shows again.
+  function clearAvatar(id: string) {
+    setAvatars((a) => {
+      const next = { ...a }
+      delete next[id]
+      return next
+    })
+  }
+
+  // Pick a cartoon look: persist the style and remove any local photo override.
+  function pickStyle(id: string, style: CartoonStyleId) {
+    clearAvatar(id)
+    setKidStyle(id, style)
+  }
+
   function onInvited(childName: string) {
     setAddOpen(false)
     flash(`Invite sent to ${childName} — they'll join when they sign in`)
@@ -146,7 +165,7 @@ export function Family() {
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <TopBar
         leading={
           <div className="flex items-center gap-2.5">
@@ -199,6 +218,8 @@ export function Family() {
               onCard={() => setCardKid(selectedKid)}
               onMap={() => setMapKid(selectedKid)}
               onPhoto={(url) => setAvatar(selectedKid.id, url)}
+              onPickStyle={(style) => pickStyle(selectedKid.id, style)}
+              onRemovePhoto={() => clearAvatar(selectedKid.id)}
             />
           ) : (
             <FamilyOverview
@@ -263,7 +284,7 @@ function AvatarRail({
       </RailItem>
       {kids.map((k) => (
         <RailItem key={k.id} label={k.name} active={selectedKidId === k.id} onClick={() => onSelect(k.id)}>
-          <Avatar name={k.name} src={k.avatar} tile={k.tile} size={56} />
+          <Avatar name={k.name} src={k.avatar} tile={k.tile} size={56} fun />
         </RailItem>
       ))}
       <RailItem label="Add" onClick={onAdd}>
@@ -300,11 +321,11 @@ function FamilyGlyph({ kids }: { kids: FamilyKidVM[] }) {
   return (
     <span className="relative block h-14 w-14">
       <span className="absolute left-0 top-0" style={{ boxShadow: '0 0 0 2px var(--pv-bg)', borderRadius: 9999 }}>
-        <Avatar name={kids[0].name} src={kids[0].avatar} tile={kids[0].tile} size={38} />
+        <Avatar name={kids[0].name} src={kids[0].avatar} tile={kids[0].tile} size={38} fun />
       </span>
       {kids[1] ? (
         <span className="absolute bottom-0 right-0" style={{ boxShadow: '0 0 0 2px var(--pv-bg)', borderRadius: 9999 }}>
-          <Avatar name={kids[1].name} src={kids[1].avatar} tile={kids[1].tile} size={38} />
+          <Avatar name={kids[1].name} src={kids[1].avatar} tile={kids[1].tile} size={38} fun />
         </span>
       ) : (
         <span className="absolute bottom-0 right-0 flex h-[38px] w-[38px] items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-3)', boxShadow: '0 0 0 2px var(--pv-bg)' }}>
@@ -497,7 +518,7 @@ function AvatarStack({ kids }: { kids: FamilyKidVM[] }) {
     <div className="flex items-center">
       {shown.map((k, i) => (
         <span key={k.id} className="rounded-full" style={{ marginLeft: i === 0 ? 0 : -10, boxShadow: '0 0 0 2px #16181f', zIndex: shown.length - i }}>
-          <Avatar name={k.name} src={k.avatar} tile={k.tile} size={30} />
+          <Avatar name={k.name} src={k.avatar} tile={k.tile} size={30} fun />
         </span>
       ))}
       {extra > 0 && (
@@ -539,7 +560,7 @@ function KidListRow({ kid, enabled, onClick }: { kid: FamilyKidVM; enabled: bool
     <Card onClick={onClick} className="pv-hairline p-4">
       <div className="flex items-center gap-3.5">
         <span className="rounded-full" style={{ boxShadow: `0 0 0 2.5px var(--pv-${kid.tile})` }}>
-          <Avatar name={kid.name} src={kid.avatar} tile={kid.tile} size={46} />
+          <Avatar name={kid.name} src={kid.avatar} tile={kid.tile} size={46} fun />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -587,6 +608,8 @@ function KidDetail({
   onCard,
   onMap,
   onPhoto,
+  onPickStyle,
+  onRemovePhoto,
 }: {
   kid: FamilyKidVM
   live: boolean
@@ -596,6 +619,8 @@ function KidDetail({
   onCard: () => void
   onMap: () => void
   onPhoto: (dataUrl: string) => void
+  onPickStyle: (style: CartoonStyleId) => void
+  onRemovePhoto: () => void
 }) {
   const wk = useKidWeek(kid.id, live)
   return (
@@ -604,7 +629,14 @@ function KidDetail({
       <Card className="pv-rise pv-sheen relative overflow-hidden p-5" style={{ background: 'var(--pv-grad-ink)' }}>
         <span aria-hidden className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full" style={{ background: `var(--pv-${kid.tile})`, opacity: 0.24, filter: 'blur(26px)' }} />
         <div className="relative flex items-center gap-4">
-          <KidAvatar name={kid.name} src={kid.avatar} onPhoto={onPhoto} />
+          <KidAvatar
+            name={kid.name}
+            src={kid.avatar}
+            seed={kid.id || kid.name}
+            onPhoto={onPhoto}
+            onPickStyle={onPickStyle}
+            onRemovePhoto={onRemovePhoto}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-lg font-extrabold" style={{ color: 'var(--pv-on-dark)' }}>{kid.name}</span>
@@ -678,25 +710,81 @@ function KidDetail({
   )
 }
 
-/** Kid avatar that shows the photo cleanly, with a small camera badge to change it. */
-function KidAvatar({ name, src, onPhoto }: { name: string; src?: string; onPhoto: (dataUrl: string) => void }) {
+/** Kid avatar with a tap-to-edit badge → choose a cute cartoon look or upload a photo. */
+function KidAvatar({
+  name,
+  src,
+  seed,
+  onPhoto,
+  onPickStyle,
+  onRemovePhoto,
+}: {
+  name: string
+  src?: string
+  seed: string
+  onPhoto: (dataUrl: string) => void
+  onPickStyle: (style: CartoonStyleId) => void
+  onRemovePhoto: () => void
+}) {
   const ref = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState(false)
+  const savedStyle = useCartoonStyle((s) => s.styles[seed])
+  const activeStyle = savedStyle ?? defaultStyleFor(seed)
+  const hasPhoto = isPhoto(src)
+
   function pick(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f || !f.type.startsWith('image/')) return
     const r = new FileReader()
-    r.onload = () => { if (typeof r.result === 'string') onPhoto(r.result) }
+    r.onload = () => {
+      if (typeof r.result === 'string') {
+        onPhoto(r.result)
+        setOpen(false)
+      }
+    }
     r.readAsDataURL(f)
     e.target.value = ''
   }
+
   return (
-    <button onClick={() => ref.current?.click()} aria-label={`Change ${name}'s photo`} className="pv-press relative shrink-0 rounded-full">
-      <Avatar name={name} src={src} size={64} />
-      <span className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-accent)', color: 'var(--pv-on-accent)', boxShadow: '0 0 0 2px var(--pv-surface)' }}>
-        <Camera size={12} strokeWidth={2.6} />
-      </span>
-      <input ref={ref} type="file" accept="image/*" hidden onChange={pick} />
-    </button>
+    <>
+      <button onClick={() => setOpen(true)} aria-label={`Change ${name}'s avatar`} className="pv-press relative shrink-0 rounded-full">
+        <Avatar name={name} src={src} size={64} fun />
+        <span className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full" style={{ background: 'var(--pv-accent)', color: 'var(--pv-on-accent)', boxShadow: '0 0 0 2px var(--pv-surface)' }}>
+          <Camera size={12} strokeWidth={2.6} />
+        </span>
+      </button>
+
+      {open && (
+        <BottomSheet onClose={() => setOpen(false)} title={`${name}'s avatar`}>
+          <p className="pv-label mb-2">Pick a character</p>
+          <div className="grid grid-cols-3 gap-3">
+            {CARTOON_STYLES.map((s) => {
+              const on = !hasPhoto && activeStyle === s.id
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => { onPickStyle(s.id); setOpen(false) }}
+                  className="pv-press flex flex-col items-center gap-1.5 rounded-[var(--pv-r-lg)] p-2"
+                  style={{ background: on ? 'var(--pv-accent-soft)' : 'var(--pv-surface-2)', outline: on ? '2.5px solid var(--pv-accent)' : 'none', outlineOffset: -1 }}
+                >
+                  <img src={cartoonAvatarUri(seed, s.id)} alt={s.label} className="h-14 w-14 rounded-full" />
+                  <span className="text-[11px] font-bold" style={{ color: on ? 'var(--pv-accent-2)' : 'var(--pv-ink-2)' }}>{s.label}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="mt-5 flex gap-3">
+            <Button variant="soft" full leadingIcon={Camera} onClick={() => ref.current?.click()}>Upload photo</Button>
+            {hasPhoto && (
+              <Button variant="ghost" full leadingIcon={X} onClick={() => { onRemovePhoto(); setOpen(false) }}>Remove photo</Button>
+            )}
+          </div>
+          <input ref={ref} type="file" accept="image/*" hidden onChange={pick} />
+        </BottomSheet>
+      )}
+    </>
   )
 }
 

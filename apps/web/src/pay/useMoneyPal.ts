@@ -13,6 +13,8 @@ import { isKid, kidName, type LedgerEntry, type Member } from '../components/fam
 import { payApi } from './api'
 import { ACCOUNT, BALANCE_TREND, KIDS, TRANSACTIONS, type Txn } from './data'
 import type { Pastel } from './tokens'
+import { familyFace } from './lib/cartoonAvatar'
+import { useCartoonStyle } from './lib/useCartoonStyle'
 
 const TILES: Pastel[] = ['sky', 'mint', 'butter', 'lilac', 'peach', 'blush']
 function tileFor(seed: string): Pastel {
@@ -153,6 +155,7 @@ function mockToVM(k: (typeof KIDS)[number]): FamilyKidVM {
 
 export function useFamilyKids() {
   const token = useAuthStore((s) => s.token)
+  const styleMap = useCartoonStyle((s) => s.styles)
   const qc = useQueryClient()
   const fam = useQuery({
     queryKey: ['pay', 'family'],
@@ -173,10 +176,18 @@ export function useFamilyKids() {
 
   const liveKids = token ? (fam.data?.members ?? []).filter(isKid).map(memberToVM) : []
 
+  // Resolve every family face: keep a real uploaded photo, otherwise fall back
+  // to a cute, consistent cartoon seeded by the member (respecting any style the
+  // parent picked). Done here so all family surfaces render faces identically.
+  const withFaces = (vm: FamilyKidVM): FamilyKidVM => {
+    const seed = vm.id || vm.name
+    return { ...vm, avatar: familyFace(seed, vm.avatar, styleMap[seed]) }
+  }
+
   // Signed in → real family data (even when there are no kids yet). The mock
   // showcase only applies to the signed-out public preview.
   if (token) {
-    return { live: true, loading: fam.isLoading, kids: liveKids, give }
+    return { live: true, loading: fam.isLoading, kids: liveKids.map(withFaces), give }
   }
-  return { live: false, loading: false, kids: KIDS.map(mockToVM), give }
+  return { live: false, loading: false, kids: KIDS.map(mockToVM).map(withFaces), give }
 }

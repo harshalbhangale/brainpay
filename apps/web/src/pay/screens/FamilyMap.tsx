@@ -13,6 +13,7 @@ import { Loader2, Users, RefreshCw, MapPin, Navigation, Clock, Route } from 'luc
 import { Avatar, Card } from '../components/primitives'
 import { TrailMap, OverviewMap, type TrailStop, type OverviewPin } from '../components/TrailMap'
 import { timeAgo } from '../data'
+import { familyFace } from '../lib/cartoonAvatar'
 import { payApi } from '../api'
 import { useAuthStore } from '../../stores/auth'
 import { isKid as isKidMember } from '../../components/family/types'
@@ -48,7 +49,10 @@ export function FamilyMap() {
     .map((m, i) => ({
       id: m.accountId,
       name: m.persona?.name?.trim() || (isKidMember(m) ? 'Kid' : 'Parent'),
-      avatar: typeof (m.persona as { avatar?: unknown })?.avatar === 'string' ? ((m.persona as { avatar?: string }).avatar as string) : undefined,
+      avatar: familyFace(
+        m.accountId,
+        typeof (m.persona as { avatar?: unknown })?.avatar === 'string' ? ((m.persona as { avatar?: string }).avatar as string) : undefined,
+      ),
       roleLabel: isKidMember(m) ? 'Kid' : 'Parent',
       accent: ACCENTS[i % ACCENTS.length],
       location: (m.lastLocation ?? null) as Loc | null,

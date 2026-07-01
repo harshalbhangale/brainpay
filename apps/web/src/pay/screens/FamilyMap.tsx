@@ -124,47 +124,50 @@ export function FamilyMap() {
     : []
 
   return (
-    <div className="relative flex-1 overflow-hidden">
-      {/* MAP LAYER (full-bleed). `isolation` traps Leaflet's internal panes
-          (z-index up to ~700) inside their own stacking context so they can't
-          paint over the panels above — the bug that made the panel flicker in
-          and out on zoom. */}
-      <div className="absolute inset-0" style={{ isolation: 'isolate', zIndex: 0 }}>
-        {selected ? (
-          selTrail.length > 0 ? <TrailMap points={selTrail} accent={selected.accent} /> : <MapPlaceholder text={`${selected.name} hasn't shared a location yet.`} />
-        ) : pins.length > 0 ? (
-          <OverviewMap pins={pins} />
-        ) : (
-          <MapPlaceholder text="No family members yet. Add someone from the Family tab." />
-        )}
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* MAP region — a fixed top portion. Always visible; zoom/pan stays here
+          and can never cover the panel below (they're separate flex rows). */}
+      <div className="relative min-h-0" style={{ flex: '3 1 0' }}>
+        {/* `isolation` traps Leaflet's internal panes (z-index up to ~700) so
+            they can't paint over the floating chips. */}
+        <div className="absolute inset-0" style={{ isolation: 'isolate' }}>
+          {selected ? (
+            selTrail.length > 0 ? <TrailMap points={selTrail} accent={selected.accent} /> : <MapPlaceholder text={`${selected.name} hasn't shared a location yet.`} />
+          ) : pins.length > 0 ? (
+            <OverviewMap pins={pins} />
+          ) : (
+            <MapPlaceholder text="No family members yet. Add someone from the Family tab." />
+          )}
+        </div>
 
-      {/* TOP: floating filter chips + refresh */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))', background: 'linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0))' }}>
-        <div className="pointer-events-auto flex items-center gap-2">
-          <div className="pv-no-scrollbar flex flex-1 gap-2 overflow-x-auto py-1">
-            <FilterChip active={filter === 'all'} onClick={() => setFilter('all')} accent="var(--pv-primary)">
-              <Users size={15} strokeWidth={2.6} /> All
-            </FilterChip>
-            {people.map((p) => (
-              <FilterChip key={p.id} active={filter === p.id} onClick={() => setFilter(p.id)} accent={p.accent}>
-                <Avatar name={p.name} src={p.avatar} size={22} /> {p.name.split(' ')[0]}
+        {/* Floating filter chips + refresh over the top of the map. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3" style={{ paddingTop: 'max(10px, env(safe-area-inset-top))', background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0))' }}>
+          <div className="pointer-events-auto flex items-center gap-2">
+            <div className="pv-no-scrollbar flex flex-1 gap-2 overflow-x-auto py-1">
+              <FilterChip active={filter === 'all'} onClick={() => setFilter('all')} accent="var(--pv-primary)">
+                <Users size={15} strokeWidth={2.6} /> All
               </FilterChip>
-            ))}
+              {people.map((p) => (
+                <FilterChip key={p.id} active={filter === p.id} onClick={() => setFilter(p.id)} accent={p.accent}>
+                  <Avatar name={p.name} src={p.avatar} size={22} /> {p.name.split(' ')[0]}
+                </FilterChip>
+              ))}
+            </div>
+            <button onClick={() => famQ.refetch()} aria-label="Refresh" className="pv-press flex h-10 w-10 flex-none items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.92)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink-2)' }}>
+              {famQ.isFetching ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
+            </button>
           </div>
-          <button onClick={() => famQ.refetch()} aria-label="Refresh" className="pv-press flex h-10 w-10 flex-none items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.92)', boxShadow: 'var(--pv-shadow-sm)', color: 'var(--pv-ink-2)' }}>
-            {famQ.isFetching ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
-          </button>
         </div>
       </div>
 
-      {/* BOTTOM: info panel — children (All) or a person's history (on tap). */}
-      <div className="absolute inset-x-0 bottom-0 z-30 px-3 pb-3">
-        <div
-          className="pv-rise pv-no-scrollbar overflow-y-auto rounded-[var(--pv-r-2xl)] p-4"
-          style={{ maxHeight: '46vh', background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)', border: '1px solid var(--pv-line)' }}
-        >
-          <div className="mx-auto mb-3 h-1.5 w-10 rounded-full" style={{ background: 'var(--pv-line-strong)' }} />
+      {/* PANEL below the map — children (All) or a person's history (on tap).
+          Always visible; scrolls internally. A normal flex row, so it never
+          overlaps the map and the map never covers it. */}
+      <div
+        className="pv-no-scrollbar min-h-0 overflow-y-auto px-4 pt-3.5 pb-[max(14px,env(safe-area-inset-bottom))]"
+        style={{ flex: '2 1 0', background: 'var(--pv-surface)', borderTop: '1px solid var(--pv-line)', boxShadow: '0 -12px 30px -22px rgba(11,12,15,0.4)' }}
+      >
+        <div className="mx-auto w-full max-w-xl">
           {selected ? <JourneyPanel person={selected} trail={selTrail} /> : <LivePanel people={people} located={located.length} onPick={setFilter} />}
         </div>
       </div>

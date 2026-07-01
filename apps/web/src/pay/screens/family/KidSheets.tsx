@@ -3,12 +3,13 @@
  * Reuses lib/card (deterministic PAN + persisted controls) and lib/maps.
  */
 import { useState } from 'react'
-import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, MapPin, type LucideIcon } from 'lucide-react'
+import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, MapPin, Palette, Check, type LucideIcon } from 'lucide-react'
 import { useCardSettings, cardNumber, cardExpiry, cardCvv, cardLast4, maskedNumber } from '../../../lib/card'
 import { aud } from '../../../lib/format'
 import { staticMapUrl, embedMapUrl } from '../../../lib/maps'
 import { Button, Card } from '../../components/primitives'
 import { BottomSheet } from '../../components/BottomSheet'
+import { cardSkin, CARD_SKINS } from '../../lib/cardSkins'
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -22,21 +23,46 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
 export function KidCardSheet({ accountId, name, onClose }: { accountId: string; name: string; onClose: () => void }) {
   const [settings, update] = useCardSettings(accountId)
   const [revealed, setRevealed] = useState(false)
+  const [customizing, setCustomizing] = useState(false)
+  const [nameInput, setNameInput] = useState<string | null>(null)
+  const skin = cardSkin(settings.design)
+  const displayName = (settings.label || name).toUpperCase()
 
   return (
     <Sheet title={`${name}'s card`} onClose={onClose}>
-      {/* Card face — lime, like the reference debit card */}
-      <div className="mt-4 overflow-hidden rounded-[var(--pv-r-lg)] p-5" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-md)', aspectRatio: '1.586', position: 'relative' }}>
-        <div className="flex items-start justify-between">
+      {/* Card face — renders the holder's chosen skin (artwork or gradient). */}
+      <div className="pv-sheen relative mt-4 overflow-hidden rounded-[var(--pv-r-lg)] p-5" style={{ backgroundImage: skin.gradient, color: skin.fg, boxShadow: 'var(--pv-shadow-md)', aspectRatio: '1.586', textShadow: skin.image ? '0 1px 8px rgba(0,0,0,0.55)' : undefined }}>
+        {skin.image ? (
+          <>
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: `url(${skin.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+            <span aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(8,9,12,0.44) 0%, rgba(8,9,12,0.05) 30%, rgba(8,9,12,0.10) 56%, rgba(8,9,12,0.68) 100%)' }} />
+          </>
+        ) : (
+          <span aria-hidden className="pointer-events-none absolute -bottom-6 -right-3 select-none" style={{ fontSize: 128, lineHeight: 1, opacity: 0.16 }}>{skin.mascot}</span>
+        )}
+
+        <div className="relative flex items-start justify-between">
           <span className="text-sm font-extrabold tracking-tight">BrainPal</span>
-          <span className="text-xs font-bold uppercase tracking-widest opacity-70">{settings.frozen ? 'Frozen' : 'Debit'}</span>
+          <span className="text-xs font-bold uppercase tracking-widest" style={{ opacity: 0.7 }}>{settings.frozen ? 'Frozen' : 'Debit'}</span>
         </div>
-        <div className="mt-7 h-7 w-10 rounded-md" style={{ background: 'rgba(11,12,15,0.18)' }} />
-        <div className="pv-amount mt-3 text-lg tracking-[0.12em]">{revealed ? cardNumber(accountId) : maskedNumber(cardLast4(accountId))}</div>
-        <div className="mt-3 flex items-end justify-between text-xs font-bold">
-          <span className="truncate">{name.toUpperCase()}</span>
-          <span>{revealed ? cardExpiry(accountId) : '••/••'}</span>
-          <span>CVV {revealed ? cardCvv(accountId) : '•••'}</span>
+
+        <div className="relative mt-4 flex items-center gap-3">
+          <span className="h-8 w-11 rounded-md" style={{ background: skin.chip === 'gold' ? 'linear-gradient(135deg,#f7e08a,#b8860b)' : 'linear-gradient(135deg,#eef2f7,#9aa3af)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.18)' }} />
+          <Nfc size={20} style={{ opacity: 0.85, transform: 'rotate(90deg)' }} />
+          {skin.hero && !skin.image && <span className="ml-auto text-2xl leading-none">{skin.mascot}</span>}
+        </div>
+
+        <div className="pv-amount relative mt-3 text-lg tracking-[0.16em]">{revealed ? cardNumber(accountId) : maskedNumber(cardLast4(accountId))}</div>
+
+        <div className="relative mt-3 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold tracking-wide">{displayName}</div>
+            <div className="mt-0.5 flex gap-3 text-[11px] font-bold" style={{ opacity: 0.9 }}>
+              <span>{revealed ? cardExpiry(accountId) : '••/••'}</span>
+              <span>CVV {revealed ? cardCvv(accountId) : '•••'}</span>
+            </div>
+          </div>
+          <span className="text-2xl font-black italic leading-none tracking-tight" style={{ color: skin.visa }}>VISA</span>
         </div>
       </div>
 
@@ -44,6 +70,42 @@ export function KidCardSheet({ accountId, name, onClose }: { accountId: string; 
         <Button variant="soft" full leadingIcon={revealed ? EyeOff : Eye} onClick={() => setRevealed((v) => !v)}>{revealed ? 'Hide details' : 'Show number'}</Button>
         <Button variant={settings.frozen ? 'accent' : 'soft'} full leadingIcon={Snowflake} onClick={() => update({ frozen: !settings.frozen })}>{settings.frozen ? 'Unfreeze' : 'Freeze'}</Button>
       </div>
+
+      {/* Customize — pick a skin + the name printed on the card. */}
+      <button onClick={() => setCustomizing((v) => !v)} className="pv-press mt-4 flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
+        <Palette size={16} /> {customizing ? 'Done customizing' : 'Customize card'}
+      </button>
+      {customizing && (
+        <Card flat className="pv-rise mt-3 p-4">
+          <p className="pv-label mb-2">Design</p>
+          <div className="grid grid-cols-4 gap-2">
+            {CARD_SKINS.map((s) => {
+              const on = (settings.design || 'ink') === s.id
+              return (
+                <button key={s.id} onClick={() => update({ design: s.id })} className="pv-press relative flex aspect-[1.586] items-end overflow-hidden rounded-xl p-1.5" style={{ backgroundImage: s.image ? `url(${s.image})` : s.gradient, backgroundSize: 'cover', backgroundPosition: 'center', color: s.fg, outline: on ? '2.5px solid var(--pv-accent)' : 'none', outlineOffset: 2 }}>
+                  {s.image ? (
+                    <span aria-hidden className="absolute inset-0" style={{ background: 'linear-gradient(180deg, transparent 38%, rgba(8,9,12,0.66) 100%)' }} />
+                  ) : (
+                    <span className="absolute right-1 top-1 text-sm">{s.mascot}</span>
+                  )}
+                  <span className="relative text-[9px] font-extrabold" style={{ textShadow: s.image ? '0 1px 3px rgba(0,0,0,0.7)' : undefined }}>{s.name}</span>
+                  {on && <span className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full" style={{ background: 'var(--pv-accent)', color: 'var(--pv-on-accent)' }}><Check size={10} strokeWidth={3.4} /></span>}
+                </button>
+              )
+            })}
+          </div>
+          <p className="pv-label mb-2 mt-4">Name on card</p>
+          <input
+            value={nameInput ?? settings.label}
+            onChange={(e) => setNameInput(e.target.value.slice(0, 22))}
+            onBlur={() => { const v = (nameInput ?? '').trim(); if (nameInput !== null && v !== settings.label) update({ label: v }) }}
+            placeholder={name}
+            maxLength={22}
+            className="w-full rounded-2xl px-4 py-3 text-sm font-bold outline-none"
+            style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}
+          />
+        </Card>
+      )}
 
       <Card flat className="mt-4 flex items-center gap-3 p-4">
         <span className="h-2.5 w-2.5 rounded-full" style={{ background: settings.frozen ? 'var(--pv-neg)' : 'var(--pv-pos)' }} />

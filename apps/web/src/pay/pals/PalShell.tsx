@@ -123,10 +123,10 @@ export function PalShell() {
         <MobileBottomNav items={items} active={section} onSelect={select} />
       </div>
 
-      {/* Mobile drawer (sidebar content) */}
+      {/* Mobile drawer — account + history only (bottom bar owns section switching) */}
       <div className="lg:hidden">
         <SwipeDrawer open={drawerOpen} onOpenChange={setDrawerOpen} ariaLabel="BrainPal menu">
-          <SidebarBody items={items} active={section} onSelect={select} role={role} onNewChat={onNewChat} onOpenHistory={onOpenHistory} onProfile={onProfile} onClose={() => setDrawerOpen(false)} />
+          <SidebarBody items={items} active={section} onSelect={select} role={role} onNewChat={onNewChat} onOpenHistory={onOpenHistory} onProfile={onProfile} onClose={() => setDrawerOpen(false)} showNav={false} />
         </SwipeDrawer>
       </div>
 
@@ -151,5 +151,5 @@ function SectionView({ section }: { section: Section }) {
             : section === 'chores' ? <KidChores />
               : <AIPal />
 
-  return <div className="mx-auto flex h-full w-full max-w-3xl flex-col">{inner}</div>
+  return <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">{inner}</div>
 }

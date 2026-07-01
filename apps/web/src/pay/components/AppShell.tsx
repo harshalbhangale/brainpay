@@ -20,7 +20,7 @@ const SESSION_ICON: Record<SessionKind, LucideIcon> = { text: MessageSquareText,
 
 /* ─────────────────────────────────────────────────────────── Sidebar body */
 export function SidebarBody({
-  items, active, onSelect, role, onNewChat, onOpenHistory, onProfile, onClose,
+  items, active, onSelect, role, onNewChat, onOpenHistory, onProfile, onClose, showNav = true,
 }: {
   items: NavItem[]
   active: Section
@@ -30,6 +30,8 @@ export function SidebarBody({
   onOpenHistory: (sessionId?: string) => void
   onProfile: () => void
   onClose?: () => void
+  /** Show the primary section nav. False in the mobile drawer (the bottom bar owns switching there). */
+  showNav?: boolean
 }) {
   const rawSessions = useSessionStore((s) => s.sessions)
   const sessions = sortedSessions(rawSessions)
@@ -55,23 +57,25 @@ export function SidebarBody({
       </div>
 
       {/* Primary nav */}
-      <nav className="flex flex-col gap-1">
-        {items.map((it) => {
-          const on = it.key === active
-          return (
-            <button
-              key={it.key}
-              onClick={() => onSelect(it.key)}
-              aria-current={on ? 'page' : undefined}
-              className="pv-press flex items-center gap-3 rounded-2xl px-2.5 py-2.5 text-left"
-              style={on ? { background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-sm)' } : { color: 'var(--pv-ink-2)' }}
-            >
-              <it.Icon size={20} strokeWidth={on ? 2.6 : 2.2} />
-              <span className="text-[0.95rem] font-bold tracking-tight">{it.label}</span>
-            </button>
-          )
-        })}
-      </nav>
+      {showNav && (
+        <nav className="flex flex-col gap-1">
+          {items.map((it) => {
+            const on = it.key === active
+            return (
+              <button
+                key={it.key}
+                onClick={() => onSelect(it.key)}
+                aria-current={on ? 'page' : undefined}
+                className="pv-press flex items-center gap-3 rounded-2xl px-2.5 py-2.5 text-left"
+                style={on ? { background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-sm)' } : { color: 'var(--pv-ink-2)' }}
+              >
+                <it.Icon size={20} strokeWidth={on ? 2.6 : 2.2} />
+                <span className="text-[0.95rem] font-bold tracking-tight">{it.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+      )}
 
       {/* Context card */}
       <div className="pt-3">

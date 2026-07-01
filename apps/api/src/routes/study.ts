@@ -65,6 +65,72 @@ async function getOrCreateFamilyId(accountId: string): Promise<string> {
 // TOPICS
 // ═══════════════════════════════════════════════════════════════════════
 
+const INTAKE_SYSTEM = `You are StudyPal's onboarding. From a kid's short, natural reply, infer just enough to set them up — WITHOUT a form.
+
+GOAL: return { reply, grade, board, school, subjects[] } as JSON.
+
+RULES:
+- Infer "grade" like "Grade 8" (normalise "8th"/"class 8"/"year 8" -> "Grade 8").
+- Infer "board" from the school name when possible, else from any board the kid mentions:
+  - "Delhi Public School"/"DPS"/"Kendriya Vidyalaya"/"KV"/"DAV" -> "CBSE"
+  - names containing "ICSE" or "Convent" -> "ICSE"
+  - "International"/"IB World School" -> "IB"
+  - else leave board "" (empty).
+- "school": the school name if stated, else "".
+- "subjects": GENERATE the standard subject list for that grade + board (Indian curriculum). Examples:
+  Grade 8 CBSE -> ["Maths","Science","English","Social Studies","Hindi","Computer Science"]
+  Grade 10 CBSE -> ["Maths","Physics","Chemistry","Biology","English","Social Studies","Hindi","Computer Science"]
+  Grade 11/12 -> science/commerce core. If unsure, use ["Maths","Science","English","Social Studies","Computer Science"].
+- "reply": ONE short, warm line confirming what you understood and asking which subject is bugging them most. No baby talk. <= 22 words.
+- If grade is unclear, set grade "" and make "reply" a single short question asking their grade.
+Return ONLY valid JSON.`
+
+// ─── POST /study/intake ───────────────────────────────────────────────
+// Conversational setup: "Grade 8 at DPS" -> infer grade/board/school + subjects.
+// Persists grade/board/school to the account persona (no form).
+study.post('/study/intake', async (c) => {
+  const accountId = authedAccountId(c)
+  const body = await c.req.json().catch(() => ({}))
+  const parsed = z.object({ text: z.string().min(1).max(300).trim() }).safeParse(body)
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+
+  const [acct] = await db.select({ persona: accounts.persona }).from(accounts).where(eq(accounts.id, accountId)).limit(1)
+  const persona = ((acct?.persona as Record<string, unknown>) ?? {})
+
+  try {
+    const resp = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.3,
+      max_tokens: 300,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: INTAKE_SYSTEM },
+        { role: 'user', content: parsed.data.text },
+      ],
+    })
+    const raw = JSON.parse(resp.choices[0]?.message?.content ?? '{}') as {
+      reply?: string; grade?: string; board?: string; school?: string; subjects?: unknown
+    }
+    const grade = (raw.grade || '').toString().trim()
+    const board = (raw.board || '').toString().trim()
+    const school = (raw.school || '').toString().trim()
+    const subjects = Array.isArray(raw.subjects)
+      ? raw.subjects.filter((s): s is string => typeof s === 'string').slice(0, 10)
+      : []
+
+    if (grade || board || school) {
+      const nextPersona = { ...persona, ...(grade ? { grade } : {}), ...(board ? { board } : {}), ...(school ? { school } : {}) }
+      await db.update(accounts).set({ persona: nextPersona }).where(eq(accounts.id, accountId))
+    }
+
+    logger.info({ accountId, grade, board, subjectCount: subjects.length }, 'study.intake')
+    return c.json({ reply: raw.reply || 'Got it!', profile: { grade, board, school, subjects }, chips: subjects })
+  } catch (err) {
+    logger.warn({ err: String(err).slice(0, 120) }, 'study.intake_failed')
+    return c.json({ reply: "Tell me your grade and school and I'll set you up.", profile: { grade: '', board: '', school: '', subjects: [] }, chips: [] })
+  }
+})
+
 study.post('/study/topics', async (c) => {
   const accountId = authedAccountId(c)
   const familyId = await getOrCreateFamilyId(accountId)

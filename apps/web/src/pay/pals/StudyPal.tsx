@@ -56,6 +56,7 @@ export function StudyPal() {
   const [selectedLesson, setSelectedLesson] = useState<string | null>(null) // chapter name, null = whole subject
   const [selectedCard, setSelectedCard] = useState<ConceptCard | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [setupMode, setSetupMode] = useState<'chat' | 'form'>('chat')
 
   useEffect(() => {
     if (!isLoading && topicsData && topicsData.topics.length === 0) setView('setup')
@@ -66,7 +67,9 @@ export function StudyPal() {
       {isLoading ? (
         <Centered><Spinner label="Loading StudyPal…" /></Centered>
       ) : view === 'setup' ? (
-        <GradeSetup onDone={() => setView('home')} canCancel={hasTopics} onCancel={() => setView('home')} />
+        setupMode === 'form'
+          ? <GradeSetup onDone={() => { setSetupMode('chat'); setView('home') }} canCancel={hasTopics} onCancel={() => setView('home')} />
+          : <StudyIntake onDone={() => setView('home')} canCancel={hasTopics} onCancel={() => setView('home')} onManual={() => setSetupMode('form')} />
       ) : view === 'subject' && selectedTopic ? (
         <SubjectHub topicId={selectedTopic} onBack={() => setView('home')} onConcepts={() => { setSelectedLesson(null); setView('concepts') }} onQuiz={() => setView('quiz')} onInterview={() => { setSelectedLesson(null); setView('interview') }} onChat={() => setView('chat')} onSaved={() => setView('saved')} onHistory={() => { setSelectedLesson(null); setView('history') }} onLesson={(ch) => { setSelectedLesson(ch); setView('lesson') }} />
       ) : view === 'lesson' && selectedTopic && selectedLesson ? (
@@ -129,6 +132,142 @@ function Header({ title, onBack, right }: { title: string; onBack?: () => void; 
 // ═══════════════════════════════════════════════════════════════════════
 // GRADE SETUP
 // ═══════════════════════════════════════════════════════════════════════
+
+function StudyIntake({ onDone, canCancel, onCancel, onManual }: { onDone: () => void; canCancel: boolean; onCancel: () => void; onManual: () => void }) {
+  const qc = useQueryClient()
+  const [stage, setStage] = useState<'ask' | 'subjects' | 'creating'>('ask')
+  const [text, setText] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [reply, setReply] = useState('')
+  const [profile, setProfile] = useState<{ grade: string; board: string; school: string; subjects: string[] }>({ grade: '', board: '', school: '', subjects: [] })
+  const [selected, setSelected] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  async function submitText() {
+    const t = text.trim()
+    if (!t || loading) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api<{ reply: string; profile: typeof profile; chips: string[] }>('/study/intake', { method: 'POST', body: JSON.stringify({ text: t }) })
+      setReply(res.reply)
+      setProfile(res.profile)
+      const subs = res.chips?.length ? res.chips : res.profile.subjects ?? []
+      setSelected(subs)
+      setText('')
+      // Need the grade before we can build decks — keep asking conversationally.
+      if (res.profile.grade) setStage('subjects')
+    } catch {
+      setError("Couldn't reach StudyPal just now — try again, or pick from a list.")
+    }
+    setLoading(false)
+  }
+
+  const toggle = (s: string) => setSelected((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]))
+
+  async function generate() {
+    if (selected.length === 0) return
+    setStage('creating')
+    setError(null)
+    try {
+      for (const subject of selected) {
+        const { topic } = await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title: subject, emoji: subjectEmoji(subject) }) })
+        const content = `Generate key concepts, important definitions, formulas and study material for:\nSubject: ${subject}\nGrade: ${profile.grade}${profile.board ? `\nBoard / exam: ${profile.board}` : ''}\n\nCreate comprehensive study material covering the most important topics for this grade level.`
+        await api(`/study/topics/${topic.id}/documents`, { method: 'POST', body: JSON.stringify({ title: `${subject} concepts`, fileUrl: 'text://inline', fileType: 'text', content }) })
+      }
+      qc.invalidateQueries({ queryKey: ['study-topics'] })
+      qc.invalidateQueries({ queryKey: ['study-stats'] })
+      onDone()
+    } catch {
+      setError("We couldn't build your decks just now. Try again.")
+      setStage('subjects')
+    }
+  }
+
+  if (stage === 'creating') {
+    return (
+      <Centered>
+        <div className="pv-pop flex flex-col items-center gap-6 text-center">
+          <div className="relative flex h-24 w-24 items-center justify-center">
+            <div className="absolute inset-0 animate-spin rounded-full" style={{ border: '3px solid transparent', borderTopColor: 'var(--pv-accent)' }} />
+            <Sparkles size={30} style={{ color: 'var(--pv-accent)' }} />
+          </div>
+          <div>
+            <p className="pv-h2 pv-text-accent">Building your study deck…</p>
+            <p className="pv-body mt-1.5" style={{ color: 'var(--pv-ink-2)' }}>Generating concepts for {selected.length} subject{selected.length > 1 ? 's' : ''}.<br />This takes a few seconds.</p>
+          </div>
+        </div>
+      </Centered>
+    )
+  }
+
+  return (
+    <>
+      <Header title="Set up StudyPal" onBack={canCancel ? onCancel : undefined} />
+      <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="pv-rise mb-6 flex flex-col items-center text-center">
+          <div className="animate-float mb-4 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+            <GraduationCap size={28} />
+          </div>
+          <h1 className="pv-h1 pv-tight">Let’s get you set up</h1>
+          <p className="pv-body mt-1.5" style={{ color: 'var(--pv-ink-2)' }}>Just tell me in your own words — no forms.</p>
+        </div>
+
+        {/* Assistant line */}
+        <div className="pv-glass mb-3 max-w-[90%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>
+          {reply || 'Which school and grade are you in?'}
+        </div>
+
+        {stage === 'ask' ? (
+          <form onSubmit={(e) => { e.preventDefault(); submitText() }} className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="e.g. Grade 8 at Delhi Public School"
+              className="pv-glass h-12 flex-1 rounded-full px-4 text-[0.95rem] font-semibold outline-none"
+              style={{ color: 'var(--pv-ink)' }}
+            />
+            <button type="submit" disabled={!text.trim() || loading} aria-label="Send" className="pv-press-lg pv-sheen flex h-12 w-12 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: text.trim() ? 'var(--pv-shadow-pop)' : undefined }}>
+              <SendIcon size={18} />
+            </button>
+          </form>
+        ) : (
+          <>
+            <div className="mb-4 flex items-center gap-2">
+              {profile.grade && <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}>{profile.grade}</span>}
+              {profile.board && <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>{profile.board}</span>}
+            </div>
+            <p className="pv-label mb-2.5">Your subjects · tap to adjust</p>
+            <div className="mb-5 flex flex-wrap gap-2">
+              {selected.length === 0 && profile.subjects.length === 0 && (
+                <p className="text-sm" style={{ color: 'var(--pv-ink-3)' }}>Add a subject below to get started.</p>
+              )}
+              {Array.from(new Set([...selected, ...profile.subjects])).map((s) => {
+                const on = selected.includes(s)
+                return (
+                  <button key={s} onClick={() => toggle(s)} className="pv-press inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-bold"
+                    style={on ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
+                    <span>{subjectEmoji(s)}</span> {s} {on && <Check size={13} strokeWidth={3} />}
+                  </button>
+                )
+              })}
+            </div>
+            <Button variant="accent" size="lg" full leadingIcon={Sparkles} onClick={generate} disabled={selected.length === 0}>
+              Build my decks{selected.length > 0 ? ` · ${selected.length}` : ''}
+            </Button>
+          </>
+        )}
+
+        {error && <p className="mt-3 text-center text-sm font-semibold" style={{ color: 'var(--pv-neg)' }}>{error}</p>}
+
+        <button onClick={onManual} className="pv-press mx-auto mt-5 block text-sm font-bold" style={{ color: 'var(--pv-ink-3)' }}>
+          Pick from a list instead
+        </button>
+      </div>
+    </>
+  )
+}
 
 function GradeSetup({ onDone, canCancel, onCancel }: { onDone: () => void; canCancel: boolean; onCancel: () => void }) {
   const qc = useQueryClient()

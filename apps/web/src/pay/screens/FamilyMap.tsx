@@ -124,7 +124,7 @@ export function FamilyMap() {
       <div className="absolute inset-x-0 bottom-0 z-20 px-3 pb-3">
         <div
           className="pv-rise pv-no-scrollbar overflow-y-auto rounded-[var(--pv-r-2xl)] p-4"
-          style={{ maxHeight: '46%', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', boxShadow: 'var(--pv-shadow-lg)', border: '1px solid rgba(255,255,255,0.6)' }}
+          style={{ maxHeight: '46vh', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', boxShadow: 'var(--pv-shadow-lg)', border: '1px solid rgba(255,255,255,0.6)' }}
         >
           <div className="mx-auto mb-3 h-1.5 w-10 rounded-full" style={{ background: 'var(--pv-line-strong)' }} />
           {selected ? <JourneyPanel person={selected} trail={selTrail} /> : <LivePanel people={people} located={located.length} onPick={setFilter} />}

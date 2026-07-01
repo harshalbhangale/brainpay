@@ -31,13 +31,13 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
 
   // Resolve the focused subject.
   const activeKid = !isKid && childId ? kids.find((k) => k.id === childId) ?? null : null
-  const subjectName = isKid ? myName : activeKid ? activeKid.name : 'Whole family'
+  const subjectName = isKid ? myName : activeKid ? activeKid.name : 'You'
   const subjectBalance = isKid ? wallet.balance : activeKid ? activeKid.balance : wallet.balance
   const balanceLabel = isKid ? 'Your money' : activeKid ? `${activeKid.name}'s balance` : 'Family wallet'
 
-  // Masked card of the current subject (kid when one's focused, else your own).
+  // Your own card — always shown in the sidebar, masked.
   const myId = account?.id ?? 'preview'
-  const cardId = activeKid ? activeKid.id : myId
+  const cardId = myId
   const [cardSettings] = useCardSettings(cardId)
   const cardDesign = cardSkin(cardSettings.design)
   const maskedPan = maskedNumber(cardLast4(cardId))
@@ -55,24 +55,10 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
       {/* Identity / subject row */}
       <div className="relative flex items-center gap-3">
         <button onClick={onProfile} aria-label="Profile and settings" className="pv-press shrink-0 rounded-full">
-          {isKid || activeKid ? (
-            <Avatar name={subjectName} src={isKid ? myPhoto : activeKid?.avatar} tile={activeKid?.tile} size={46} />
-          ) : kids.length > 0 ? (
-            // Whole family → a little stack of the kids, so the card shows *who*.
-            <span className="flex items-center">
-              {kids.slice(0, 3).map((k, i) => (
-                <span key={k.id} className="rounded-full" style={{ marginLeft: i === 0 ? 0 : -12, boxShadow: '0 0 0 2.5px #0b0c0f', zIndex: 3 - i }}>
-                  <Avatar name={k.name} src={k.avatar} initials={k.initials} tile={k.tile} size={40} />
-                </span>
-              ))}
-              {kids.length > 3 && (
-                <span className="flex h-10 w-10 items-center justify-center rounded-full text-xs font-extrabold" style={{ marginLeft: -12, background: 'rgba(255,255,255,0.22)', color: 'var(--pv-on-dark)', boxShadow: '0 0 0 2.5px #0b0c0f' }}>+{kids.length - 3}</span>
-              )}
-            </span>
+          {activeKid ? (
+            <Avatar name={activeKid.name} src={activeKid.avatar} tile={activeKid.tile} size={46} />
           ) : (
-            <span className="flex h-[46px] w-[46px] items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.16)', color: 'var(--pv-on-dark)' }}>
-              <Users size={22} strokeWidth={2.2} />
-            </span>
+            <Avatar name={myName} src={myPhoto} size={46} />
           )}
         </button>
         <div className="min-w-0 flex-1">
@@ -89,7 +75,7 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
       {!isKid && (
         <>
           <div className="pv-no-scrollbar relative -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1">
-            <SelectorChip label="Whole family" active={!childId} onClick={() => pick(null)} />
+            <SelectorChip label="You" active={!childId} onClick={() => pick(null)} />
             {kids.map((k) => (
               <SelectorChip key={k.id} label={k.name} active={childId === k.id} onClick={() => pick(k.id)} />
             ))}
@@ -106,12 +92,12 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
         </>
       )}
 
-      {/* Card — masked; tap to open, freeze & customize */}
+      {/* Your card — masked; tap to open, freeze & customize */}
       <button
         onClick={() => { openCanvas('card'); onAfterSwitch?.() }}
-        aria-label="Open card"
+        aria-label="Open your card"
         className="pv-press pv-hairline relative mt-3 block w-full overflow-hidden rounded-2xl p-3.5 text-left"
-        style={{ backgroundImage: cardDesign.gradient, color: cardDesign.fg, textShadow: cardDesign.image ? '0 1px 6px rgba(0,0,0,0.55)' : undefined }}
+        style={{ backgroundImage: cardDesign.gradient, color: cardDesign.fg, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.14)', textShadow: cardDesign.image ? '0 1px 6px rgba(0,0,0,0.55)' : undefined }}
       >
         {cardDesign.image && (
           <>
@@ -120,10 +106,10 @@ export function ContextCard({ onProfile, onAfterSwitch }: { onProfile: () => voi
           </>
         )}
         <span className="relative flex items-center justify-between">
-          <span className="text-[11px] font-extrabold tracking-tight">BrainPal</span>
+          <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ opacity: 0.85 }}>Your card</span>
           <span className="text-[11px] font-black italic leading-none tracking-tight" style={{ color: cardDesign.visa }}>VISA</span>
         </span>
-        <span className="pv-amount relative mt-2 block text-[15px] tracking-[0.16em]">{maskedPan}</span>
+        <span className="pv-amount relative mt-1.5 block text-[15px] tracking-[0.16em]">{maskedPan}</span>
       </button>
     </div>
   )

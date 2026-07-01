@@ -248,6 +248,9 @@ export function VrmCompanion({
         VRMUtils.deepDispose(vrm.scene)
       }
       renderer.dispose()
+      // Free the WebGL context now (see GlbCompanion) so switching avatars or
+      // opening the camera never leaks contexts until the browser blanks one.
+      try { renderer.forceContextLoss() } catch { /* not all browsers */ }
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
     }
   }, [src])

@@ -15,7 +15,7 @@
  * the same slot-fill, so wiring voice extraction in doesn't redo the UI.
  */
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { Wallet, Sparkles, Mic, Camera, Send as SendIcon, Check, ChevronDown, ChevronRight, Minus, Plus, ListChecks, PiggyBank, CreditCard, Target, ArrowRight } from 'lucide-react'
 import { Companion } from '../../components/Companion'
 import { ErrorBoundary } from '../components/ErrorBoundary'
@@ -94,6 +94,13 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   const name = ((account?.persona?.name as string) || '').trim().split(' ')[0] || ''
   const { kids } = useFamilyKids()
   const ch = usePalCharacter('moneypal')
+
+  // Live chores so MoneyPal can show what's on the go (both roles).
+  const choresQ = useQuery({ queryKey: ['chores'], queryFn: () => api<{ chores: Chore[] }>('/chores'), enabled: !!account, staleTime: 10_000 })
+  const allChores = choresQ.data?.chores ?? []
+  const myChores = (isKid ? allChores.filter((c) => c.assignedTo === account?.id) : allChores)
+    .filter((c) => c.status !== 'paid' && c.status !== 'parent_rejected')
+  const reviewCount = isKid ? 0 : myChores.filter((c) => ['submitted', 'ai_approved', 'ai_rejected', 'ai_uncertain'].includes(c.status)).length
 
   const [messages, setMessages] = useState<CMsg[]>([])
   const [flow, setFlow] = useState<Flow | null>(null)
@@ -226,16 +233,25 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
     ]
   }
 
-  async function showPending() {
-    me('Pending jobs')
+  async function showJobs() {
+    me(isKid ? 'My jobs' : 'Pending jobs')
     setSending(true)
     try {
       const res = await api<{ chores: Chore[] }>('/chores')
-      const pending = (res.chores ?? []).filter((c) => c.status !== 'paid' && c.status !== 'parent_rejected')
-      if (pending.length === 0) { say('No jobs on the go right now. Want to create one?', [{ label: 'Create a job', kind: 'chore' }]); return }
+      qc.setQueryData(['chores'], res)
+      let list = res.chores ?? []
+      if (isKid) list = list.filter((c) => c.assignedTo === account?.id)
+      const active = list.filter((c) => c.status !== 'paid' && c.status !== 'parent_rejected')
+      if (active.length === 0) {
+        say(isKid ? 'No jobs right now — nice, you’re all caught up! 🎉' : 'No jobs on the go right now. Want to create one?', isKid ? undefined : [{ label: 'Create a job', kind: 'chore' }])
+        return
+      }
       const kidName = (id: string) => kids.find((k) => k.id === id)?.name ?? 'Kid'
-      const lines = pending.slice(0, 8).map((c) => `• ${c.title} — ${kidName(c.assignedTo)} · ${aud(c.rewardBrains)} · ${c.status.replace(/_/g, ' ')}`).join('\n')
-      say(`${pending.length} job${pending.length > 1 ? 's' : ''} on the go:\n${lines}`, [{ label: 'Create a job', kind: 'chore' }])
+      const lines = active.slice(0, 8).map((c) => isKid
+        ? `• ${c.title} — ${aud(c.rewardBrains)} · ${c.status.replace(/_/g, ' ')}`
+        : `• ${c.title} — ${kidName(c.assignedTo)} · ${aud(c.rewardBrains)} · ${c.status.replace(/_/g, ' ')}`,
+      ).join('\n')
+      say(`${active.length} job${active.length > 1 ? 's' : ''} on the go:\n${lines}`, isKid ? undefined : [{ label: 'Create a job', kind: 'chore' }])
     } catch {
       say('I couldn’t load the jobs just now — try again?')
     } finally {
@@ -244,7 +260,7 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   }
 
   function runAction(a: Action) {
-    if (a.kind === 'pending') { void showPending(); return }
+    if (a.kind === 'pending') { void showJobs(); return }
     startFlow(a.kind)
   }
 
@@ -302,7 +318,7 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
         {/* Mika — in the BACKGROUND. */}
         <div className="pointer-events-none absolute inset-0 z-0 flex items-start justify-center pt-10" aria-hidden>
           <div className="absolute left-1/2 top-[34%] h-2/3 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]" style={{ background: ch.gradient, opacity: 0.24 }} />
-          <Companion avatar={ch.avatar} mood="happy" className="h-full w-full max-w-sm" />
+          {!live && <Companion avatar={ch.avatar} mood="happy" className="h-full w-full max-w-sm" />}
         </div>
         <div className="pointer-events-none absolute inset-0 z-0" style={{ background: 'linear-gradient(180deg, transparent 0%, transparent 34%, color-mix(in srgb, var(--pv-bg) 62%, transparent) 60%, var(--pv-bg) 88%)' }} aria-hidden />
 
@@ -318,6 +334,26 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
               </span>
             </button>
           </div>
+
+          {/* Live jobs banner — MoneyPal always shows what's on the go. */}
+          {!flow && myChores.length > 0 && (
+            <div className="flex-none px-4 pt-1.5">
+              <button onClick={() => void showJobs()} className="pv-press pv-glass pv-hairline mx-auto flex w-full max-w-xl items-center gap-3 rounded-2xl px-3.5 py-2.5">
+                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}><ListChecks size={16} /></span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block text-sm font-bold" style={{ color: 'var(--pv-ink)' }}>
+                    {isKid
+                      ? `${myChores.length} job${myChores.length !== 1 ? 's' : ''} to do`
+                      : reviewCount
+                        ? `${reviewCount} job${reviewCount !== 1 ? 's' : ''} to review`
+                        : `${myChores.length} job${myChores.length !== 1 ? 's' : ''} on the go`}
+                  </span>
+                  <span className="block text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{isKid ? 'Finish them to earn Brains' : 'Tap to see every job and its status'}</span>
+                </span>
+                <span className="pv-text-accent flex-none text-sm font-extrabold">View →</span>
+              </button>
+            </div>
+          )}
 
           {/* Flow progress — advances per answered slot. */}
           {flow && (

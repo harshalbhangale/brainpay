@@ -17,6 +17,7 @@ import { useAuthStore } from '../../stores/auth'
 import { registerAiHandler } from './aiBus'
 import { usePalCharacter } from './palCharacters'
 import { usePalSelection } from './usePalSelection'
+import { useNav } from '../lib/useNav'
 import { AttachButton, AttachTray } from '../components/AttachControls'
 import { useAttachments, visionImages, chatDocuments, attachmentSummary } from '../lib/attachments'
 
@@ -39,6 +40,7 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   const name = ((account?.persona?.name as string) || '').trim().split(' ')[0] || ''
   const ch = usePalCharacter('ai')
   const setPal = usePalSelection((s) => s.setPal)
+  const setSection = useNav((s) => s.setSection)
 
   const [messages, setMessages] = useState<CMsg[]>([])
   const [input, setInput] = useState('')
@@ -88,7 +90,7 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
 
   function runAction(a: Action) {
     if (a.kind === 'money') { me('Take me to MoneyPal'); setPal('moneypal'); return }
-    if (a.kind === 'study') { me('Take me to StudyPal'); setPal('studypal'); return }
+    if (a.kind === 'study') { me('Take me to StudyPal'); setSection('study'); return }
     if (a.text) void send(a.text)
   }
 
@@ -132,9 +134,11 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
   return (
     <>
       {live && (
-        <Suspense fallback={<div className="fixed inset-0 z-50 bg-black" />}>
-          <LiveSession withCamera={live.camera} avatar={ch.avatar} speaker={ch.characterName} onClose={() => setLive(null)} />
-        </Suspense>
+        <ErrorBoundary resetKey={live.camera ? 'cam' : 'voice'} label="the live session">
+          <Suspense fallback={<LiveLoading />}>
+            <LiveSession withCamera={live.camera} avatar={ch.avatar} speaker={ch.characterName} onClose={() => setLive(null)} />
+          </Suspense>
+        </ErrorBoundary>
       )}
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="pv-mesh" aria-hidden />
@@ -142,7 +146,7 @@ export function BrainChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
         {/* Companion — in the BACKGROUND. */}
         <div className="pointer-events-none absolute inset-0 z-0 flex items-start justify-center pt-10" aria-hidden>
           <div className="absolute left-1/2 top-[34%] h-2/3 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]" style={{ background: ch.gradient, opacity: 0.24 }} />
-          <Companion avatar={ch.avatar} mood="happy" className="h-full w-full max-w-sm" />
+          {!live && <Companion avatar={ch.avatar} mood="happy" className="h-full w-full max-w-sm" />}
         </div>
         <div className="pointer-events-none absolute inset-0 z-0" style={{ background: 'linear-gradient(180deg, transparent 0%, transparent 34%, color-mix(in srgb, var(--pv-bg) 62%, transparent) 60%, var(--pv-bg) 88%)' }} aria-hidden />
 

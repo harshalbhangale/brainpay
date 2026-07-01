@@ -15,6 +15,7 @@ import { Avatar } from '../components/primitives'
 import { SwipeDrawer } from '../components/SwipeDrawer'
 import { SidebarBody, type NavItem } from '../components/AppShell'
 import { SheetHost } from '../components/Canvas'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Profile } from '../screens/Profile'
 import { SessionHistory } from '../screens/SessionHistory'
 import { sendAiCommand } from './aiBus'
@@ -126,7 +127,9 @@ export function PalShell() {
 
         {/* Section content */}
         <main key={section} className="pv-pal-enter flex min-h-0 flex-1 flex-col">
-          <SectionView section={section} />
+          <ErrorBoundary resetKey={section}>
+            <SectionView section={section} />
+          </ErrorBoundary>
         </main>
       </div>
 
@@ -137,7 +140,7 @@ export function PalShell() {
         </SwipeDrawer>
       </div>
 
-      <SheetHost />
+      <ErrorBoundary resetKey={`sheet-${section}`}><SheetHost /></ErrorBoundary>
       {historyOpen && <SessionHistory onContinue={continueSession} />}
       {profileOpen && <Profile onClose={() => setProfileOpen(false)} />}
     </div>

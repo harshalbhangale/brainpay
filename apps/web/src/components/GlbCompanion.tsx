@@ -330,6 +330,11 @@ export function GlbCompanion({
         })
       }
       renderer.dispose()
+      // Release the WebGL context immediately. Without this, disposed renderers
+      // keep their context alive until GC, so rapid mount/unmount (pal switches,
+      // opening/closing the camera, StrictMode double-mount) leaks contexts until
+      // the browser hits its ~16-context cap and blanks the oldest canvas black.
+      try { renderer.forceContextLoss() } catch { /* not all browsers */ }
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
     }
   }, [src])

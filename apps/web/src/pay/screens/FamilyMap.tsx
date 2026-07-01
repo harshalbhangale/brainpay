@@ -161,12 +161,13 @@ export function FamilyMap() {
       </div>
 
       {/* PANEL below the map — children (All) or a person's history (on tap).
-          Always visible; scrolls internally. A normal flex row, so it never
-          overlaps the map and the map never covers it. */}
+          40% of the height, a rounded sheet that curves up over the map edge.
+          A normal flex row, so it never overlaps the map and vice-versa. */}
       <div
-        className="pv-no-scrollbar min-h-0 overflow-y-auto px-4 pt-3.5 pb-[max(14px,env(safe-area-inset-bottom))]"
-        style={{ flex: '2 1 0', background: 'var(--pv-surface)', borderTop: '1px solid var(--pv-line)', boxShadow: '0 -12px 30px -22px rgba(11,12,15,0.4)' }}
+        className="pv-no-scrollbar relative z-10 -mt-5 min-h-0 overflow-y-auto rounded-t-[var(--pv-r-2xl)] px-4 pt-2.5 pb-[max(14px,env(safe-area-inset-bottom))]"
+        style={{ flex: '2 1 0', background: 'var(--pv-surface)', border: '1px solid var(--pv-line)', boxShadow: '0 -14px 34px -20px rgba(11,12,15,0.42)' }}
       >
+        <div className="mx-auto mb-3 h-1.5 w-11 rounded-full" style={{ background: 'var(--pv-line-strong)' }} />
         <div className="mx-auto w-full max-w-xl">
           {selected ? <JourneyPanel person={selected} trail={selTrail} /> : <LivePanel people={people} located={located.length} onPick={setFilter} />}
         </div>

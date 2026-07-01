@@ -71,7 +71,7 @@ const useStudyChatStore = create<StudyChatState>((set) => ({
   reset: () => set({ messages: [], pending: null, activeTopicId: null, activeTopicTitle: null }),
 }))
 
-export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDemo, demoBusy, onSetup, onSavedAll }: {
+export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDemo, demoBusy, onSetup, onSavedAll, onTodayReview }: {
   onSwitchPal?: () => void
   onOpenCards: (topicId: string, chapter?: string) => void
   onQuiz: (topicId: string) => void
@@ -80,6 +80,7 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   demoBusy: boolean
   onSetup: () => void
   onSavedAll?: () => void
+  onTodayReview?: () => void
 }) {
   const qc = useQueryClient()
   const account = useAuthStore((s) => s.account)
@@ -92,6 +93,11 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   const { data: savedData } = useQuery({ queryKey: ['study-saved-count'], queryFn: () => api<{ cards: unknown[]; dueCount: number }>('/study/cards/saved') })
   const savedCount = savedData?.cards?.length ?? 0
   const savedDue = savedData?.dueCount ?? 0
+  // Cross-subject due count (Today's review) + recurring trouble spots.
+  const { data: statsData } = useQuery({ queryKey: ['study-stats'], queryFn: () => api<{ cardsDue: number }>('/study/stats') })
+  const dueToday = statsData?.cardsDue ?? 0
+  const { data: weakData } = useQuery({ queryKey: ['study-weak-spots'], queryFn: () => api<{ spots: { concept: string; count: number }[] }>('/study/weak-spots') })
+  const weakSpots = weakData?.spots ?? []
 
   const store = useStudyChatStore()
   const messages = store.messages
@@ -278,6 +284,34 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     void build()
   }
 
+  // Build (or top up) a "Trouble spots" deck from the concepts the student
+  // keeps missing (quizzes + interviews), then offer to start studying it.
+  async function practiseTroubleSpots() {
+    if (sending || building || weakSpots.length === 0) return
+    setSending(true)
+    me('Practise my trouble spots')
+    try {
+      const topics = topicsData?.topics ?? []
+      let topicId = topics.find((t) => t.title.toLowerCase() === 'trouble spots')?.id
+      if (!topicId) {
+        const { topic } = await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title: 'Trouble spots', emoji: '🎯' }) })
+        topicId = topic.id
+      }
+      const list = weakSpots.slice(0, 10).map((s) => s.concept).join(', ')
+      const content = `Generate clear, exam-style flashcards to help a student master the SPECIFIC concepts they keep getting wrong: ${list}. For each, write a focused question (front) and a concise, accurate answer (back). Use Australian curriculum terminology and spelling.`
+      await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: 'Trouble spots', fileUrl: 'text://inline', fileType: 'text', content, chapter: 'Trouble spots' }) })
+      qc.invalidateQueries({ queryKey: ['study-topics'] })
+      qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
+      say(`Built a deck from the ${weakSpots.length} thing${weakSpots.length !== 1 ? 's' : ''} you keep missing. Let's nail them.`, [
+        { label: 'Practise trouble spots', emoji: '🎯', kind: 'cards', topicId, title: 'Trouble spots', chapter: 'Trouble spots' },
+      ])
+    } catch {
+      say('Couldn’t build that just now — try again in a moment.')
+    } finally {
+      setSending(false)
+    }
+  }
+
   // Free text → BUILD A DECK (real pipeline) and start a guided study flow.
   // Strips leading filler/intent ("ok, I want to study …") so a real topic is
   // never mistaken for a greeting, and frames it as studying — not "see cards".
@@ -411,6 +445,34 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
                   <span className="block text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>A quick review earns Brains and keeps your streak</span>
                 </span>
                 <span className="pv-text-accent flex-none text-sm font-extrabold">Review →</span>
+              </button>
+            </div>
+          )}
+
+          {/* Today's review — one cross-subject queue of what's due right now. */}
+          {onTodayReview && dueToday > 0 && !ask && !building && (
+            <div className="flex-none px-4 pt-1.5">
+              <button onClick={onTodayReview} className="pv-press pv-glass pv-hairline mx-auto flex w-full max-w-xl items-center gap-3 rounded-2xl px-3.5 py-2.5">
+                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}><Sparkles size={16} /></span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block text-sm font-bold" style={{ color: 'var(--pv-ink)' }}>Today’s review · {dueToday} card{dueToday !== 1 ? 's' : ''} due</span>
+                  <span className="block text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>One quick mixed session across all your subjects</span>
+                </span>
+                <span className="pv-text-accent flex-none text-sm font-extrabold">Start →</span>
+              </button>
+            </div>
+          )}
+
+          {/* Trouble spots — practise what you keep missing. */}
+          {weakSpots.length > 0 && !ask && !building && (
+            <div className="flex-none px-4 pt-1.5">
+              <button onClick={() => void practiseTroubleSpots()} className="pv-press pv-glass pv-hairline mx-auto flex w-full max-w-xl items-center gap-3 rounded-2xl px-3.5 py-2.5">
+                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>🎯</span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block text-sm font-bold" style={{ color: 'var(--pv-ink)' }}>Practise your trouble spots</span>
+                  <span className="block text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{weakSpots.length} thing{weakSpots.length !== 1 ? 's' : ''} you keep missing — turn them into a deck</span>
+                </span>
+                <span className="pv-text-accent flex-none text-sm font-extrabold">Build →</span>
               </button>
             </div>
           )}

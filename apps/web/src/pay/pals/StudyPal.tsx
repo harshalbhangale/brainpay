@@ -39,7 +39,7 @@ type InterviewRow = {
   completedAt: string | null; createdAt: string; topicTitle?: string | null; topicEmoji?: string | null
   analysis?: InterviewAnalysis | null
 }
-type View = 'setup' | 'home' | 'subject' | 'concepts' | 'quiz' | 'interview' | 'chat' | 'saved' | 'savedAll' | 'history' | 'interviewDetail' | 'lesson' | 'cheatsheet'
+type View = 'setup' | 'home' | 'subject' | 'concepts' | 'quiz' | 'interview' | 'chat' | 'saved' | 'savedAll' | 'todayReview' | 'history' | 'interviewDetail' | 'lesson' | 'cheatsheet'
 
 // Seed material for the one-tap demo. Written so the study pipeline generates a
 // solid WWI flashcard deck for an Australian Year 8 History student (ANZAC lens).
@@ -128,6 +128,8 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
         <SavedView topicId={selectedTopic} onBack={() => setView('subject')} />
       ) : view === 'savedAll' ? (
         <AllSavedView onBack={() => setView('home')} />
+      ) : view === 'todayReview' ? (
+        <TodayReviewView onBack={() => setView('home')} />
       ) : view === 'history' && selectedTopic ? (
         <HistoryView topicId={selectedTopic} chapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onOpen={(id) => { setSelectedInterview(id); setView('interviewDetail') }} />
       ) : view === 'interviewDetail' && selectedInterview ? (
@@ -142,6 +144,7 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
           demoBusy={demoBusy}
           onSetup={() => setView('setup')}
           onSavedAll={() => setView('savedAll')}
+          onTodayReview={() => setView('todayReview')}
         />
       )}
       {helpOpen && <RewardsHelp onClose={() => setHelpOpen(false)} />}
@@ -1215,6 +1218,7 @@ function ConceptCheatSheet({ card, onBack, onQuiz, onChat }: { card: ConceptCard
               {s.body}
             </Card>
           ))}
+          <ExplainDifferently cardId={card.id} />
         </div>
       </div>
       <div className="absolute inset-x-0 bottom-0 flex gap-2.5 px-5 pb-5 pt-3" style={{ background: 'var(--pv-surface)', boxShadow: '0 -10px 28px -16px rgba(11,12,15,0.25)' }}>
@@ -1222,6 +1226,48 @@ function ConceptCheatSheet({ card, onBack, onQuiz, onChat }: { card: ConceptCard
         <Button variant="accent" full leadingIcon={Sparkles} onClick={onQuiz}>Quiz me</Button>
       </div>
     </>
+  )
+}
+
+// Explain-it-differently — quick taps that ask Matilda to reframe ONE concept.
+function ExplainDifferently({ cardId }: { cardId: string }) {
+  type Style = 'simpler' | 'example' | 'mnemonic'
+  const [style, setStyle] = useState<Style | null>(null)
+  const [text, setText] = useState('')
+  const [loading, setLoading] = useState(false)
+  const opts: { k: Style; label: string; emoji: string }[] = [
+    { k: 'simpler', label: 'Explain simpler', emoji: '🧒' },
+    { k: 'example', label: 'Give an example', emoji: '🧩' },
+    { k: 'mnemonic', label: 'Memory trick', emoji: '🧠' },
+  ]
+  const ask = (s: Style) => {
+    setStyle(s); setText(''); setLoading(true)
+    api<{ text: string }>(`/study/cards/${cardId}/explain`, { method: 'POST', body: JSON.stringify({ style: s }) })
+      .then((r) => setText(r.text))
+      .catch(() => setText("Couldn't fetch that just now — try again."))
+      .finally(() => setLoading(false))
+  }
+  return (
+    <Card className="pv-rise p-4" style={{ ['--i' as string]: 6 }}>
+      <div className="mb-2.5 flex items-center gap-2.5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-2xl text-lg" style={{ background: 'rgba(139,124,255,0.14)' }}>💡</span>
+        <p className="pv-title text-sm">Explain it differently</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {opts.map((o) => (
+          <button key={o.k} onClick={() => ask(o.k)} className="pv-press inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-bold" style={style === o.k ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
+            <span>{o.emoji}</span> {o.label}
+          </button>
+        ))}
+      </div>
+      {(loading || text) && (
+        <div className="mt-3 rounded-2xl px-3.5 py-3" style={{ background: 'var(--pv-surface-2)' }}>
+          {loading
+            ? <span className="text-sm font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Matilda’s thinking…</span>
+            : <p className="text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{text}</p>}
+        </div>
+      )}
+    </Card>
   )
 }
 
@@ -1606,6 +1652,113 @@ function AllSavedView({ onBack }: { onBack: () => void }) {
               <div className="flex flex-1 items-center justify-center">
                 <span className="pv-title" style={{ color: 'var(--pv-ink-3)' }}>Tap to reveal the answer</span>
               </div>
+            )}
+          </div>
+        </button>
+      </div>
+      <div className="flex-none px-6 pb-6 pt-1">
+        {flipped ? (
+          <>
+            <p className="mb-2.5 text-center text-xs font-semibold" style={{ color: 'var(--pv-ink-2)' }}>How well did you know it?</p>
+            <div className="flex gap-2.5">
+              <button onClick={() => rate(2)} className="pv-press flex-1 rounded-2xl py-3.5 text-sm font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>Forgot</button>
+              <button onClick={() => rate(4)} className="pv-press pv-sheen flex-[1.4] rounded-2xl py-3.5 text-sm font-extrabold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>Got it</button>
+              <button onClick={() => rate(5)} className="pv-press flex-1 rounded-2xl py-3.5 text-sm font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>Easy</button>
+            </div>
+          </>
+        ) : (
+          <button onClick={() => setFlipped(true)} className="pv-press-lg pv-sheen w-full rounded-2xl py-3.5 text-sm font-extrabold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>Reveal answer</button>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TODAY'S REVIEW — one cross-subject spaced-repetition session of what's due.
+// ═══════════════════════════════════════════════════════════════════════
+
+function TodayReviewView({ onBack }: { onBack: () => void }) {
+  const qc = useQueryClient()
+  type DueCard = { id: string; front: string; back: string; status: string; chapter: string | null; nextReviewAt: string | null; topicId: string; topicTitle: string; topicEmoji: string }
+  const { data, isLoading } = useQuery({
+    queryKey: ['study-due-today'],
+    queryFn: () => api<{ cards: DueCard[]; count: number }>('/study/cards/due?limit=12'),
+  })
+  const cards = data?.cards ?? []
+
+  const [i, setI] = useState(0)
+  const [flipped, setFlipped] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const reviewMut = useMutation({
+    mutationFn: (v: { cardId: string; quality: number }) => api(`/study/cards/${v.cardId}/review`, { method: 'POST', body: JSON.stringify({ quality: v.quality }) }),
+  })
+
+  const card = cards[i]
+  const rate = (quality: number) => {
+    if (!card) return
+    reviewMut.mutate({ cardId: card.id, quality })
+    setFlipped(false)
+    if (i < cards.length - 1) setI((n) => n + 1)
+    else { setDone(true); qc.invalidateQueries({ queryKey: ['study-stats'] }); qc.invalidateQueries({ queryKey: ['study-topics'] }) }
+  }
+
+  if (isLoading) return (<><Header title="Today’s review" onBack={onBack} /><Centered><Spinner /></Centered></>)
+
+  if (cards.length === 0) {
+    return (
+      <>
+        <Header title="Today’s review" onBack={onBack} />
+        <div className="flex flex-col items-center px-6 pt-16 text-center">
+          <div className="animate-float mb-3 flex h-16 w-16 items-center justify-center rounded-2xl" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}><Check size={28} strokeWidth={3} /></div>
+          <p className="pv-title">You’re all caught up 🎉</p>
+          <p className="pv-body mt-1 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>Nothing’s due across your subjects right now. Study a new topic or come back tomorrow — I’ll resurface cards right before you’d forget them.</p>
+          <div className="mt-5"><Button variant="accent" size="lg" onClick={onBack}>Back</Button></div>
+        </div>
+      </>
+    )
+  }
+
+  if (done) {
+    return (
+      <div className="relative flex h-full flex-col overflow-hidden">
+        <Confetti />
+        <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
+          <div className="animate-trophy mb-6 flex h-24 w-24 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}><Trophy size={40} /></div>
+          <h2 className="pv-h1 pv-text-accent">Nice work!</h2>
+          <p className="pv-body mt-2" style={{ color: 'var(--pv-ink-2)' }}>You cleared {cards.length} due card{cards.length !== 1 ? 's' : ''} across your subjects. That’s exactly how memories stick.</p>
+          <div className="mt-5 flex items-center gap-2 rounded-full px-5 py-2.5" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+            <BrainCoin size={18} /><span className="text-sm font-bold">Daily reviews earn Brains &amp; keep your streak</span>
+          </div>
+        </div>
+        <div className="flex-none px-6 pb-6"><Button variant="accent" size="lg" full onClick={onBack}>Done</Button></div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <Header title="Today’s review" onBack={onBack} />
+      <div className="flex-none px-6 pt-2">
+        <ProgressBar value={i} max={cards.length} />
+        <p className="mt-2 text-center text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>{i + 1} of {cards.length} due</p>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-4">
+        <button onClick={() => setFlipped((f) => !f)} className="relative w-full text-left" style={{ height: 'min(54vh, 420px)' }}>
+          <div className="absolute inset-0 flex flex-col overflow-hidden rounded-[28px] p-6" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}>
+            <div className="mb-2.5 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-extrabold" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}><span>{card.topicEmoji}</span>{card.chapter || card.topicTitle}</span>
+            </div>
+            <p className="text-xl font-bold leading-snug">{card.front}</p>
+            {flipped ? (
+              <>
+                <div className="my-4 h-px" style={{ background: 'var(--pv-line)' }} />
+                <span className="pv-label mb-2">Answer</span>
+                <p className="pv-no-scrollbar flex-1 overflow-y-auto text-base leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{card.back}</p>
+              </>
+            ) : (
+              <div className="flex flex-1 items-center justify-center"><span className="pv-title" style={{ color: 'var(--pv-ink-3)' }}>Tap to reveal the answer</span></div>
             )}
           </div>
         </button>

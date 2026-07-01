@@ -565,18 +565,108 @@ Return ONLY JSON:
   }
 })
 
-// GET /study/cards/due — all due cards across topics
+// GET /study/cards/due — all due cards across topics (joined with their topic
+// so a cross-subject "Today's review" can label each card). ?limit (default 20).
 study.get('/study/cards/due', async (c) => {
   const accountId = authedAccountId(c)
+  const limit = Math.min(Number(c.req.query('limit')) || 20, 50)
 
   const cards = await db
-    .select()
+    .select({
+      id: studyCards.id,
+      front: studyCards.front,
+      back: studyCards.back,
+      status: studyCards.status,
+      chapter: studyCards.chapter,
+      nextReviewAt: studyCards.nextReviewAt,
+      topicId: studyCards.topicId,
+      topicTitle: studyTopics.title,
+      topicEmoji: studyTopics.emoji,
+    })
     .from(studyCards)
+    .innerJoin(studyTopics, eq(studyTopics.id, studyCards.topicId))
     .where(and(eq(studyCards.accountId, accountId), lte(studyCards.nextReviewAt, new Date())))
     .orderBy(studyCards.nextReviewAt)
-    .limit(50)
+    .limit(limit)
 
   return c.json({ cards, count: cards.length })
+})
+
+// POST /study/cards/:id/explain — explain ONE concept a different way on demand
+// (simpler / example / mnemonic). Grounded in the card + topic + grade.
+study.post('/study/cards/:id/explain', async (c) => {
+  const accountId = authedAccountId(c)
+  const cardId = c.req.param('id')
+
+  const body = await c.req.json().catch(() => ({}))
+  const parsed = z.object({ style: z.enum(['simpler', 'example', 'mnemonic']) }).safeParse(body)
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+
+  const [card] = await db
+    .select({ front: studyCards.front, back: studyCards.back, topicId: studyCards.topicId, chapter: studyCards.chapter })
+    .from(studyCards)
+    .where(and(eq(studyCards.id, cardId), eq(studyCards.accountId, accountId)))
+    .limit(1)
+  if (!card) return c.json({ error: 'not_found' }, 404)
+
+  const [topic] = await db.select({ title: studyTopics.title }).from(studyTopics).where(eq(studyTopics.id, card.topicId)).limit(1)
+  const persona = await db.select({ persona: accounts.persona }).from(accounts).where(eq(accounts.id, accountId)).limit(1).then((r) => (r[0]?.persona ?? {}) as Record<string, unknown>)
+  const grade = typeof persona.grade === 'string' ? persona.grade : null
+
+  const ask: Record<string, string> = {
+    simpler: 'Explain this concept in the simplest possible way — like to a younger kid — in 2-3 short sentences. No jargon.',
+    example: 'Give ONE fresh, concrete, real-world example that makes this concept click. 2-3 sentences.',
+    mnemonic: 'Give a catchy mnemonic or memory trick to remember this, then one short line on how to use it.',
+  }
+
+  try {
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 240,
+      temperature: 0.6,
+      messages: [
+        { role: 'system', content: `You are a warm, sharp study tutor for a student${grade ? ` in ${grade}` : ''}. Be accurate, vivid and age-appropriate. Plain text only — no markdown headings or lists unless natural.` },
+        { role: 'user', content: `Topic: ${topic?.title ?? 'this subject'}${card.chapter ? ` — lesson: ${card.chapter}` : ''}\nConcept: ${card.front}\nReference explanation: ${card.back}\n\n${ask[parsed.data.style]}` },
+      ],
+    })
+    const text = res.choices[0]?.message?.content?.trim() || card.back
+    return c.json({ text })
+  } catch (err) {
+    logger.warn({ err: String(err).slice(0, 120), cardId }, 'study.explain_failed')
+    return c.json({ text: card.back })
+  }
+})
+
+// GET /study/weak-spots — the concepts a student keeps missing, aggregated from
+// recent quizzes (weakConcepts) and interviews (analysis.weakPoints). Powers the
+// "Practise your trouble spots" deck.
+study.get('/study/weak-spots', async (c) => {
+  const accountId = authedAccountId(c)
+
+  const quizzes = await db
+    .select({ weakConcepts: studyQuizzes.weakConcepts })
+    .from(studyQuizzes)
+    .where(and(eq(studyQuizzes.accountId, accountId), eq(studyQuizzes.status, 'completed')))
+    .orderBy(desc(studyQuizzes.completedAt))
+    .limit(25)
+
+  const interviews = await db
+    .select({ analysis: studyInterviews.analysis })
+    .from(studyInterviews)
+    .where(and(eq(studyInterviews.accountId, accountId), eq(studyInterviews.status, 'completed')))
+    .orderBy(desc(studyInterviews.completedAt))
+    .limit(25)
+
+  const freq = new Map<string, number>()
+  const bump = (s: unknown) => { if (typeof s === 'string' && s.trim()) { const k = s.trim(); freq.set(k, (freq.get(k) ?? 0) + 1) } }
+  for (const q of quizzes) for (const w of (q.weakConcepts as string[] | null) ?? []) bump(w)
+  for (const iv of interviews) {
+    const wp = (iv.analysis as { weakPoints?: unknown } | null)?.weakPoints
+    if (Array.isArray(wp)) for (const w of wp) bump(w)
+  }
+
+  const spots = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([concept, count]) => ({ concept, count }))
+  return c.json({ spots, total: spots.length })
 })
 
 // POST /study/cards/:id/review — submit review result (SM-2)

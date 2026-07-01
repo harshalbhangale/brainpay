@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { and, desc, eq, lte, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { randomUUID } from 'node:crypto'
 import OpenAI from 'openai'
 import { db } from '../db'
 import { accounts, families, ledger, memberships } from '../db/schema'
@@ -1067,6 +1068,85 @@ async function kidInFamily(familyId: string, kidId: string): Promise<boolean> {
     .limit(1)
   return !!m
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// STUDY ASSIGNMENTS — a parent asks a kid to study a topic (persona-stored).
+// ═══════════════════════════════════════════════════════════════════════
+
+type Assignment = { id: string; title: string; note?: string; dueDate?: string; createdAt: string; createdBy: string; done?: boolean; doneAt?: string }
+
+async function readAssignments(accountId: string): Promise<{ persona: Record<string, unknown>; assignments: Assignment[] }> {
+  const [a] = await db.select({ persona: accounts.persona }).from(accounts).where(eq(accounts.id, accountId)).limit(1)
+  const persona = (a?.persona ?? {}) as Record<string, unknown>
+  const assignments = Array.isArray(persona.studyAssignments) ? (persona.studyAssignments as Assignment[]) : []
+  return { persona, assignments }
+}
+async function writeAssignments(accountId: string, persona: Record<string, unknown>, assignments: Assignment[]) {
+  await db.update(accounts).set({ persona: { ...persona, studyAssignments: assignments } }).where(eq(accounts.id, accountId))
+}
+
+// GET /study/children/:kidId/assignments — a parent lists a kid's assignments.
+study.get('/study/children/:kidId/assignments', async (c) => {
+  const accountId = authedAccountId(c)
+  const kidId = c.req.param('kidId')
+  const familyId = await parentFamilyId(accountId)
+  if (!familyId) return c.json({ error: 'not_a_parent' }, 403)
+  if (!(await kidInFamily(familyId, kidId))) return c.json({ error: 'forbidden' }, 403)
+  const { assignments } = await readAssignments(kidId)
+  return c.json({ assignments })
+})
+
+// POST /study/children/:kidId/assignments — a parent assigns a topic.
+study.post('/study/children/:kidId/assignments', async (c) => {
+  const accountId = authedAccountId(c)
+  const kidId = c.req.param('kidId')
+  const familyId = await parentFamilyId(accountId)
+  if (!familyId) return c.json({ error: 'not_a_parent' }, 403)
+  if (!(await kidInFamily(familyId, kidId))) return c.json({ error: 'forbidden' }, 403)
+
+  const parsed = z.object({
+    title: z.string().min(1).max(120).trim(),
+    note: z.string().max(300).trim().optional(),
+    dueDate: z.string().max(40).optional(),
+  }).safeParse(await c.req.json().catch(() => ({})))
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+
+  const { persona, assignments } = await readAssignments(kidId)
+  const assignment: Assignment = { id: randomUUID(), title: parsed.data.title, note: parsed.data.note, dueDate: parsed.data.dueDate, createdAt: new Date().toISOString(), createdBy: accountId }
+  const next = [assignment, ...assignments].slice(0, 40)
+  await writeAssignments(kidId, persona, next)
+  return c.json({ ok: true, assignment }, 201)
+})
+
+// DELETE /study/children/:kidId/assignments/:id — a parent removes an assignment.
+study.delete('/study/children/:kidId/assignments/:id', async (c) => {
+  const accountId = authedAccountId(c)
+  const kidId = c.req.param('kidId')
+  const id = c.req.param('id')
+  const familyId = await parentFamilyId(accountId)
+  if (!familyId) return c.json({ error: 'not_a_parent' }, 403)
+  if (!(await kidInFamily(familyId, kidId))) return c.json({ error: 'forbidden' }, 403)
+  const { persona, assignments } = await readAssignments(kidId)
+  await writeAssignments(kidId, persona, assignments.filter((a) => a.id !== id))
+  return c.json({ ok: true })
+})
+
+// GET /study/assignments — the signed-in kid's own assignments.
+study.get('/study/assignments', async (c) => {
+  const accountId = authedAccountId(c)
+  const { assignments } = await readAssignments(accountId)
+  return c.json({ assignments })
+})
+
+// POST /study/assignments/:id/done — the kid marks an assignment complete.
+study.post('/study/assignments/:id/done', async (c) => {
+  const accountId = authedAccountId(c)
+  const id = c.req.param('id')
+  const { persona, assignments } = await readAssignments(accountId)
+  const next = assignments.map((a) => (a.id === id ? { ...a, done: true, doneAt: new Date().toISOString() } : a))
+  await writeAssignments(accountId, persona, next)
+  return c.json({ ok: true })
+})
 
 // GET /study/rewards-config — the family's study-to-earn settings (parent only).
 study.get('/study/rewards-config', async (c) => {

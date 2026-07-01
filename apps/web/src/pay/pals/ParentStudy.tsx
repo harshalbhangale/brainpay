@@ -12,7 +12,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronLeft, ChevronRight, Flame, BookOpen, History, Clock, Eye, Trophy, GraduationCap, ShieldCheck, Target, CalendarDays, Sparkles,
+  ChevronLeft, ChevronRight, Flame, BookOpen, History, Clock, Eye, Trophy, GraduationCap, ShieldCheck, Target, CalendarDays, Sparkles, Plus, X,
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Card, ProgressBar } from '../components/primitives'
@@ -199,6 +199,9 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
           {/* Study-to-earn — parent-tunable rewards that pay Brains to the wallet. */}
           <StudyRewardsCard />
 
+          {/* Assignments — ask this kid to study a topic. */}
+          <AssignmentsCard kidId={kid.accountId} kidName={kid.name} />
+
           {/* Subjects */}
           <p className="pv-label mb-3">Subjects</p>
           {subjects.length === 0 ? (
@@ -271,6 +274,73 @@ function KidOverview({ kid, onOpenInterview }: { kid: Child; onOpenInterview: (i
         </>
       )}
     </div>
+  )
+}
+
+/** Assignments — a parent asks the kid to study a topic (optionally by a date). */
+function AssignmentsCard({ kidId, kidName }: { kidId: string; kidName: string }) {
+  const qc = useQueryClient()
+  type A = { id: string; title: string; note?: string; dueDate?: string; done?: boolean; createdAt: string }
+  const { data } = useQuery({ queryKey: ['study-assignments', kidId], queryFn: () => api<{ assignments: A[] }>(`/study/children/${kidId}/assignments`) })
+  const assignments = data?.assignments ?? []
+  const [title, setTitle] = useState('')
+  const [due, setDue] = useState('')
+  const [adding, setAdding] = useState(false)
+
+  const create = useMutation({
+    mutationFn: () => api(`/study/children/${kidId}/assignments`, { method: 'POST', body: JSON.stringify({ title: title.trim(), dueDate: due || undefined }) }),
+    onSuccess: () => { setTitle(''); setDue(''); setAdding(false); qc.invalidateQueries({ queryKey: ['study-assignments', kidId] }) },
+  })
+  const del = useMutation({
+    mutationFn: (id: string) => api(`/study/children/${kidId}/assignments/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['study-assignments', kidId] }),
+  })
+
+  const dueLabel = (d?: string) => {
+    if (!d) return null
+    const t = new Date(d).getTime()
+    if (Number.isNaN(t)) return d
+    return new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  }
+
+  return (
+    <Card className="pv-rise pv-hairline mb-5 p-4">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}><Target size={16} /></span>
+        <p className="pv-title text-sm">Assignments</p>
+        {!adding && <button onClick={() => setAdding(true)} className="pv-press ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}><Plus size={12} strokeWidth={3} /> Assign</button>}
+      </div>
+
+      {assignments.length === 0 && !adding && (
+        <p className="text-sm font-medium" style={{ color: 'var(--pv-ink-3)' }}>Nothing assigned. Ask {kidName} to study a topic — it shows up in their StudyPal.</p>
+      )}
+
+      {assignments.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {assignments.map((a) => (
+            <div key={a.id} className="flex items-center gap-2.5 rounded-2xl px-3.5 py-2.5" style={{ background: 'var(--pv-surface-2)' }}>
+              <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-sm" style={{ background: a.done ? 'var(--pv-pos-soft)' : 'var(--pv-surface)', color: a.done ? 'var(--pv-pos)' : 'var(--pv-ink-3)' }}>{a.done ? '✓' : '📘'}</span>
+              <div className="min-w-0 flex-1">
+                <p className={`truncate text-sm font-bold ${a.done ? 'line-through' : ''}`} style={{ color: a.done ? 'var(--pv-ink-3)' : 'var(--pv-ink)' }}>{a.title}</p>
+                <p className="text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{a.done ? 'Done' : dueLabel(a.dueDate) ? `Due ${dueLabel(a.dueDate)}` : 'Assigned'}</p>
+              </div>
+              <button onClick={() => del.mutate(a.id)} aria-label="Remove" className="pv-press flex h-7 w-7 flex-none items-center justify-center rounded-full" style={{ color: 'var(--pv-ink-3)' }}><X size={15} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {adding && (
+        <div className="mt-2.5 flex flex-col gap-2">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Topic — e.g. Photosynthesis" className="h-11 w-full rounded-2xl px-4 text-sm font-semibold outline-none" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }} />
+          <div className="flex items-center gap-2">
+            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="h-11 flex-1 rounded-2xl px-4 text-sm font-semibold outline-none" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }} />
+            <button onClick={() => setAdding(false)} className="pv-press h-11 rounded-2xl px-4 text-sm font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>Cancel</button>
+            <button onClick={() => title.trim() && create.mutate()} disabled={!title.trim() || create.isPending} className="pv-press-lg pv-sheen h-11 rounded-2xl px-5 text-sm font-extrabold disabled:opacity-50" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>{create.isPending ? '…' : 'Assign'}</button>
+          </div>
+        </div>
+      )}
+    </Card>
   )
 }
 

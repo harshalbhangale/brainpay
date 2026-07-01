@@ -98,6 +98,9 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   const dueToday = statsData?.cardsDue ?? 0
   const { data: weakData } = useQuery({ queryKey: ['study-weak-spots'], queryFn: () => api<{ spots: { concept: string; count: number }[] }>('/study/weak-spots') })
   const weakSpots = weakData?.spots ?? []
+  // Topics a parent has asked this kid to study.
+  const { data: assignData } = useQuery({ queryKey: ['study-assignments-mine'], queryFn: () => api<{ assignments: { id: string; title: string; dueDate?: string; done?: boolean }[] }>('/study/assignments') })
+  const pendingAssignments = (assignData?.assignments ?? []).filter((a) => !a.done)
 
   const store = useStudyChatStore()
   const messages = store.messages
@@ -312,6 +315,28 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     }
   }
 
+  // Start a parent-assigned topic: build its deck, mark it done, offer Start.
+  async function startAssignment(a: { id: string; title: string }) {
+    if (sending || building) return
+    setSending(true)
+    me(`Study “${a.title}” (assigned)`)
+    try {
+      const { topic } = await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title: a.title.slice(0, 40), emoji: subjectEmoji(a.title) }) })
+      const content = `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) for a student studying: ${a.title}. Cover the key ideas, definitions, dates/formulas and common exam questions. Use Australian curriculum terminology and spelling.`
+      await api(`/study/topics/${topic.id}/documents`, { method: 'POST', body: JSON.stringify({ title: a.title, fileUrl: 'text://inline', fileType: 'text', content, chapter: a.title.slice(0, 64) }) })
+      await api(`/study/assignments/${a.id}/done`, { method: 'POST' }).catch(() => {})
+      qc.invalidateQueries({ queryKey: ['study-topics'] })
+      qc.invalidateQueries({ queryKey: ['study-assignments-mine'] })
+      say(`Your parent asked you to study “${a.title}” — building your deck now. Let's smash it! 💪`, [
+        { label: 'Start studying', emoji: '📖', kind: 'cards', topicId: topic.id, title: a.title, chapter: a.title.slice(0, 64) },
+      ])
+    } catch {
+      say('Couldn’t start that just now — try again in a moment.')
+    } finally {
+      setSending(false)
+    }
+  }
+
   // Free text → BUILD A DECK (real pipeline) and start a guided study flow.
   // Strips leading filler/intent ("ok, I want to study …") so a real topic is
   // never mistaken for a greeting, and frames it as studying — not "see cards".
@@ -459,6 +484,20 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
                   <span className="block text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>A quick review earns Brains and keeps your streak</span>
                 </span>
                 <span className="pv-text-accent flex-none text-sm font-extrabold">Review →</span>
+              </button>
+            </div>
+          )}
+
+          {/* Parent assignment — a topic your parent asked you to study. */}
+          {pendingAssignments.length > 0 && !ask && !building && (
+            <div className="flex-none px-4 pt-1.5">
+              <button onClick={() => void startAssignment(pendingAssignments[0])} className="pv-press pv-glass pv-hairline mx-auto flex w-full max-w-xl items-center gap-3 rounded-2xl px-3.5 py-2.5">
+                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-base" style={{ background: 'var(--pv-lilac)', color: 'var(--pv-lilac-ink)' }}>📘</span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate text-sm font-bold" style={{ color: 'var(--pv-ink)' }}>Study “{pendingAssignments[0].title}”</span>
+                  <span className="block text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Your parent asked you to study this{pendingAssignments.length > 1 ? ` · +${pendingAssignments.length - 1} more` : ''}</span>
+                </span>
+                <span className="pv-text-accent flex-none text-sm font-extrabold">Start →</span>
               </button>
             </div>
           )}

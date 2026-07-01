@@ -384,6 +384,20 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
             </div>
           )}
 
+          {/* Cards-due nudge — a gentle prompt when saved reviews are waiting. */}
+          {onSavedAll && savedDue > 0 && !ask && !building && (
+            <div className="flex-none px-4 pt-1.5">
+              <button onClick={onSavedAll} className="pv-press pv-glass pv-hairline mx-auto flex w-full max-w-xl items-center gap-3 rounded-2xl px-3.5 py-2.5">
+                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' }}><Bookmark size={16} fill="currentColor" /></span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block text-sm font-bold" style={{ color: 'var(--pv-ink)' }}>{savedDue} saved card{savedDue !== 1 ? 's' : ''} due for review</span>
+                  <span className="block text-[11px] font-semibold" style={{ color: 'var(--pv-ink-3)' }}>A quick review earns Brains and keeps your streak</span>
+                </span>
+                <span className="pv-text-accent flex-none text-sm font-extrabold">Review →</span>
+              </button>
+            </div>
+          )}
+
           {/* Conversation — pinned to the bottom so Matilda shows through up top. */}
           <div ref={scrollRef} className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-3">
             <div className="mx-auto flex min-h-full w-full max-w-xl flex-col justify-end gap-3">

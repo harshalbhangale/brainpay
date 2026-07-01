@@ -1541,6 +1541,9 @@ function AllSavedView({ onBack }: { onBack: () => void }) {
           <div className="animate-trophy mb-6 flex h-24 w-24 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}><Trophy size={40} /></div>
           <h2 className="pv-h1 pv-text-accent">Review complete!</h2>
           <p className="pv-body mt-2" style={{ color: 'var(--pv-ink-2)' }}>You reviewed {cards.length} saved card{cards.length !== 1 ? 's' : ''}. I'll resurface each one right before you'd forget it.</p>
+          <div className="mt-5 flex items-center gap-2 rounded-full px-5 py-2.5" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>
+            <BrainCoin size={18} /><span className="text-sm font-bold">Daily reviews earn Brains &amp; keep your streak</span>
+          </div>
         </div>
         <div className="flex-none px-6 pb-6"><Button variant="accent" size="lg" full onClick={onBack}>Done</Button></div>
       </div>

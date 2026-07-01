@@ -29,6 +29,9 @@ export type CardSettings = {
   contactless: boolean
   dailyLimit: number
   blocks: string[]
+  /** Visual skin id (see web cardSkins) + custom name printed on the card. */
+  design: string
+  label: string
 }
 
 const DEFAULTS: CardSettings = {
@@ -39,6 +42,8 @@ const DEFAULTS: CardSettings = {
   contactless: true,
   dailyLimit: 100,
   blocks: [],
+  design: 'ink',
+  label: '',
 }
 
 const patchSchema = z.object({
@@ -49,6 +54,8 @@ const patchSchema = z.object({
   contactless: z.boolean().optional(),
   dailyLimit: z.coerce.number().int().min(0).max(100000).optional(),
   blocks: z.array(z.string().max(40)).max(20).optional(),
+  design: z.string().max(40).optional(),
+  label: z.string().max(40).optional(),
 })
 
 /** Actor may touch :accountId if it's their own, or they're a parent in the

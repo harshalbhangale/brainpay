@@ -52,6 +52,9 @@ export type CardSettings = {
   contactless: boolean
   dailyLimit: number
   blocks: string[]
+  /** Visual skin id (see cardSkins) + custom name printed on the card. */
+  design: string
+  label: string
 }
 
 const DEFAULTS: CardSettings = {
@@ -62,6 +65,8 @@ const DEFAULTS: CardSettings = {
   contactless: true,
   dailyLimit: 100,
   blocks: [],
+  design: 'ink',
+  label: '',
 }
 
 /** Human label for a block category. */

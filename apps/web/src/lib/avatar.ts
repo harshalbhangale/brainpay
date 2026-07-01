@@ -32,7 +32,7 @@ export const AVATARS: AvatarDef[] = [
   { id: 'matilda', name: 'Matilda', src: '/avatars/matilda.glb', kind: 'glb', blurb: 'Kind & quick-witted', accent: '#f472b6' },
   { id: 'kirra', name: 'Kirra', src: '/avatars/kirra.glb', kind: 'glb', blurb: 'Sunny & free-spirited', accent: '#22c3a6' },
   { id: 'banjo', name: 'Banjo', src: '/avatars/banjo.glb', kind: 'glb', blurb: 'Cheeky & full of fun', accent: '#ff8a5b' },
-  { id: 'mika', name: 'Mika', src: '/mika.vrm', kind: 'vrm', blurb: 'Friendly & bright', accent: '#34d399' },
+  { id: 'mika', name: 'Mika', src: '/avatars/moneypal.glb', kind: 'glb', blurb: 'Friendly & bright', accent: '#34d399' },
   { id: 'shizuka', name: 'Shizuka', src: '/shizuka.vrm', kind: 'vrm', blurb: 'Gentle & wise', accent: '#a78bfa' },
 ]
 

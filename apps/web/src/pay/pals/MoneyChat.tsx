@@ -267,8 +267,9 @@ export function MoneyChat({ onSwitchPal }: { onSwitchPal?: () => void }) {
     me(text)
     setSending(true)
     try {
-      const res = await api<{ reply: string }>('/chat', { method: 'POST', body: JSON.stringify({ message: text, pals: ['moneypal'] }) })
-      say(res.reply || 'Got it.')
+      const res = await api<{ reply?: string; pals?: { palId: string; line: string }[] }>('/chat', { method: 'POST', body: JSON.stringify({ message: text, pals: ['moneypal'] }) })
+      const parts = [res.reply, ...(res.pals?.map((p) => p.line) ?? [])].map((s) => (s ?? '').trim()).filter(Boolean)
+      say(parts.join('\n\n') || "I couldn't think of an answer — try rephrasing?")
     } catch {
       say("I couldn't think just now — try again, or tap one of the options.")
     } finally {

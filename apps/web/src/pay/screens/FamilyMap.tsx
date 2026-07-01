@@ -17,7 +17,6 @@ import { payApi } from '../api'
 import { useAuthStore } from '../../stores/auth'
 import { isKid as isKidMember } from '../../components/family/types'
 
-const PARENT_ROLES = ['primary_parent', 'co_parent', 'guardian']
 const ACCENTS = ['#0ea5e9', '#8b5cf6', '#f59e0b', '#ec4899', '#10b981', '#ef4444']
 
 type Loc = { lat: number; lng: number; at?: string; place?: string | null; trail?: TrailStop[] }
@@ -42,12 +41,15 @@ export function FamilyMap() {
   const members = famQ.data?.members ?? []
   const people: Person[] = members
     .filter((m) => m.accountId !== meId)
-    .filter((m) => (meIsKid ? PARENT_ROLES.includes(m.role) : isKidMember(m)))
+    // Parent sees their kids; a kid sees every non-kid member (parents /
+    // guardians / co-parents) — matched by kind, not an exact role string, so
+    // an invited co-parent or guardian always shows up.
+    .filter((m) => (meIsKid ? !isKidMember(m) : isKidMember(m)))
     .map((m, i) => ({
       id: m.accountId,
       name: m.persona?.name?.trim() || (isKidMember(m) ? 'Kid' : 'Parent'),
       avatar: typeof (m.persona as { avatar?: unknown })?.avatar === 'string' ? ((m.persona as { avatar?: string }).avatar as string) : undefined,
-      roleLabel: PARENT_ROLES.includes(m.role) ? 'Parent' : 'Kid',
+      roleLabel: isKidMember(m) ? 'Kid' : 'Parent',
       accent: ACCENTS[i % ACCENTS.length],
       location: (m.lastLocation ?? null) as Loc | null,
     }))

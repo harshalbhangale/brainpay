@@ -84,6 +84,9 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
 
   const ch = palCharacter('studypal')
   const { data: topicsData, isLoading } = useQuery({ queryKey: ['study-topics'], queryFn: () => api<{ topics: Topic[] }>('/study/topics') })
+  const { data: savedData } = useQuery({ queryKey: ['study-saved-count'], queryFn: () => api<{ cards: unknown[]; dueCount: number }>('/study/cards/saved') })
+  const savedCount = savedData?.cards?.length ?? 0
+  const savedDue = savedData?.dueCount ?? 0
 
   const store = useStudyChatStore()
   const messages = store.messages
@@ -355,8 +358,13 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
               <Plus size={18} strokeWidth={2.6} style={{ color: 'var(--pv-ink-2)' }} />
             </button>
             {onSavedAll && (
-              <button onClick={onSavedAll} aria-label="Saved cards to review" className="pv-press pv-glass flex h-10 w-10 flex-none items-center justify-center rounded-full">
-                <Bookmark size={18} strokeWidth={2.4} style={{ color: 'var(--pv-ink-2)' }} />
+              <button onClick={onSavedAll} aria-label={`Saved cards to review${savedCount ? ` (${savedCount})` : ''}`} className="pv-press pv-glass relative flex h-10 w-10 flex-none items-center justify-center rounded-full">
+                <Bookmark size={18} strokeWidth={2.4} style={{ color: savedCount ? 'var(--pv-accent)' : 'var(--pv-ink-2)' }} fill={savedCount ? 'currentColor' : 'none'} />
+                {savedCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-extrabold" style={savedDue > 0 ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>
+                    {savedCount}
+                  </span>
+                )}
               </button>
             )}
           </div>

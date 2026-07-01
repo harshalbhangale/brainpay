@@ -1477,68 +1477,148 @@ function SavedView({ topicId, onBack }: { topicId: string; onBack: () => void })
 
 function AllSavedView({ onBack }: { onBack: () => void }) {
   const qc = useQueryClient()
-  type SavedCard = { id: string; front: string; back: string; chapter: string | null; topicId: string; topicTitle: string; topicEmoji: string }
+  type SavedCard = { id: string; front: string; back: string; status: string; chapter: string | null; nextReviewAt: string | null; topicId: string; topicTitle: string; topicEmoji: string }
   const { data, isLoading } = useQuery({
     queryKey: ['study-saved-all'],
-    queryFn: () => api<{ cards: SavedCard[] }>('/study/cards/saved'),
+    queryFn: () => api<{ cards: SavedCard[]; dueCount: number }>('/study/cards/saved'),
   })
   const cards = data?.cards ?? []
+  const dueCount = data?.dueCount ?? 0
+
+  const [mode, setMode] = useState<'review' | 'browse'>('review')
+  const [i, setI] = useState(0)
+  const [flipped, setFlipped] = useState(false)
+  const [done, setDone] = useState(false)
   const [open, setOpen] = useState<Record<string, boolean>>({})
 
+  const reviewMut = useMutation({
+    mutationFn: (v: { cardId: string; quality: number }) => api(`/study/cards/${v.cardId}/review`, { method: 'POST', body: JSON.stringify({ quality: v.quality }) }),
+  })
   const unbookmark = useMutation({
     mutationFn: (cardId: string) => api(`/study/cards/${cardId}/bookmark`, { method: 'POST', body: JSON.stringify({ bookmarked: false }) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['study-saved-all'] })
-      qc.invalidateQueries({ queryKey: ['study-cards'] })
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['study-saved-all'] }); qc.invalidateQueries({ queryKey: ['study-cards'] }); qc.invalidateQueries({ queryKey: ['study-saved-count'] }) },
   })
 
-  return (
-    <>
-      <Header title="Saved to review" onBack={onBack} right={cards.length > 0 ? <span className="text-xs font-bold" style={{ color: 'var(--pv-ink-3)' }}>{cards.length}</span> : undefined} />
-      <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {isLoading ? (
-          <Centered><Spinner /></Centered>
-        ) : cards.length === 0 ? (
-          <div className="flex flex-col items-center px-4 pt-16 text-center">
-            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}><Bookmark size={24} style={{ color: 'var(--pv-ink-3)' }} /></div>
-            <p className="pv-title">Nothing saved yet</p>
-            <p className="pv-body mt-1 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>Tap the bookmark on any card while studying — they collect here from every subject so you can review them anytime. Tap a card to flip it.</p>
-          </div>
-        ) : (
+  const card = cards[i]
+  const rate = (quality: number) => {
+    if (!card) return
+    reviewMut.mutate({ cardId: card.id, quality })
+    setFlipped(false)
+    if (i < cards.length - 1) setI((n) => n + 1)
+    else { setDone(true); qc.invalidateQueries({ queryKey: ['study-stats'] }); qc.invalidateQueries({ queryKey: ['study-saved-all'] }) }
+  }
+
+  const headerRight = cards.length > 0 ? (
+    <div className="flex items-center gap-1 rounded-full p-0.5" style={{ background: 'var(--pv-surface-2)' }}>
+      {(['review', 'browse'] as const).map((m) => (
+        <button key={m} onClick={() => setMode(m)} className="pv-press rounded-full px-2.5 py-1 text-[11px] font-bold" style={mode === m ? { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-sm)' } : { color: 'var(--pv-ink-3)' }}>
+          {m === 'review' ? 'Review' : 'All'}
+        </button>
+      ))}
+    </div>
+  ) : undefined
+
+  if (isLoading) return (<><Header title="Saved to review" onBack={onBack} /><Centered><Spinner /></Centered></>)
+
+  if (cards.length === 0) {
+    return (
+      <>
+        <Header title="Saved to review" onBack={onBack} />
+        <div className="flex flex-col items-center px-6 pt-16 text-center">
+          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}><Bookmark size={24} style={{ color: 'var(--pv-ink-3)' }} /></div>
+          <p className="pv-title">Nothing saved yet</p>
+          <p className="pv-body mt-1 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>Tap the bookmark on any card while studying — they collect here from every subject, and I'll bring them back for spaced review.</p>
+        </div>
+      </>
+    )
+  }
+
+  if (done) {
+    return (
+      <div className="relative flex h-full flex-col overflow-hidden">
+        <Confetti />
+        <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
+          <div className="animate-trophy mb-6 flex h-24 w-24 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}><Trophy size={40} /></div>
+          <h2 className="pv-h1 pv-text-accent">Review complete!</h2>
+          <p className="pv-body mt-2" style={{ color: 'var(--pv-ink-2)' }}>You reviewed {cards.length} saved card{cards.length !== 1 ? 's' : ''}. I'll resurface each one right before you'd forget it.</p>
+        </div>
+        <div className="flex-none px-6 pb-6"><Button variant="accent" size="lg" full onClick={onBack}>Done</Button></div>
+      </div>
+    )
+  }
+
+  // BROWSE MODE — the full pile, tap to flip, remove.
+  if (mode === 'browse') {
+    return (
+      <>
+        <Header title="Saved to review" onBack={onBack} right={headerRight} />
+        <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="mx-auto flex w-full max-w-xl flex-col gap-3">
-            {cards.map((c, i) => {
+            {cards.map((c, k) => {
               const shown = open[c.id]
               return (
-                <button key={c.id} onClick={() => setOpen((o) => ({ ...o, [c.id]: !o[c.id] }))} className="pv-press pv-pop text-left" style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}>
+                <button key={c.id} onClick={() => setOpen((o) => ({ ...o, [c.id]: !o[c.id] }))} className="pv-press pv-pop text-left" style={{ animationDelay: `${Math.min(k, 8) * 35}ms` }}>
                   <Card className="p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}>
-                        <span>{c.topicEmoji}</span>{c.chapter || c.topicTitle}
-                      </span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); unbookmark.mutate(c.id) }}
-                        className="pv-press flex h-7 w-7 flex-none items-center justify-center rounded-full"
-                        style={{ color: 'var(--pv-accent)' }}
-                        aria-label="Remove from saved"
-                      >
-                        <Bookmark size={16} fill="currentColor" />
-                      </button>
+                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}><span>{c.topicEmoji}</span>{c.chapter || c.topicTitle}</span>
+                      <button onClick={(e) => { e.stopPropagation(); unbookmark.mutate(c.id) }} className="pv-press flex h-7 w-7 flex-none items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }} aria-label="Remove from saved"><Bookmark size={16} fill="currentColor" /></button>
                     </div>
                     <p className="mt-2 font-bold leading-snug">{c.front}</p>
-                    {shown ? (
-                      <>
-                        <div className="my-3 h-px" style={{ background: 'var(--pv-line)' }} />
-                        <p className="text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{c.back}</p>
-                      </>
-                    ) : (
-                      <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Tap to reveal the answer</p>
-                    )}
+                    {shown ? (<><div className="my-3 h-px" style={{ background: 'var(--pv-line)' }} /><p className="text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{c.back}</p></>) : (<p className="mt-2 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Tap to reveal</p>)}
                   </Card>
                 </button>
               )
             })}
           </div>
+        </div>
+      </>
+    )
+  }
+
+  // REVIEW MODE — spaced-repetition session (due-first), flip + rate.
+  return (
+    <>
+      <Header title="Saved to review" onBack={onBack} right={headerRight} />
+      <div className="flex-none px-6 pt-2">
+        <ProgressBar value={i} max={cards.length} />
+        <p className="mt-2 text-center text-xs font-medium" style={{ color: 'var(--pv-ink-3)' }}>
+          {i + 1} of {cards.length}{dueCount > 0 && i === 0 ? ` · ${dueCount} due` : ''}
+        </p>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-4">
+        <button onClick={() => setFlipped((f) => !f)} className="relative w-full text-left" style={{ height: 'min(54vh, 420px)' }}>
+          <div className="absolute inset-0 flex flex-col overflow-hidden rounded-[28px] p-6" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-lg)' }}>
+            <div className="mb-2.5 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-extrabold" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}><span>{card.topicEmoji}</span>{card.chapter || card.topicTitle}</span>
+              <button onClick={(e) => { e.stopPropagation(); unbookmark.mutate(card.id); if (i >= cards.length - 1) setDone(true) }} className="pv-press flex h-8 w-8 items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }} aria-label="Remove from saved"><Bookmark size={18} fill="currentColor" /></button>
+            </div>
+            <p className="text-xl font-bold leading-snug">{card.front}</p>
+            {flipped ? (
+              <>
+                <div className="my-4 h-px" style={{ background: 'var(--pv-line)' }} />
+                <span className="pv-label mb-2">Answer</span>
+                <p className="pv-no-scrollbar flex-1 overflow-y-auto text-base leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{card.back}</p>
+              </>
+            ) : (
+              <div className="flex flex-1 items-center justify-center">
+                <span className="pv-title" style={{ color: 'var(--pv-ink-3)' }}>Tap to reveal the answer</span>
+              </div>
+            )}
+          </div>
+        </button>
+      </div>
+      <div className="flex-none px-6 pb-6 pt-1">
+        {flipped ? (
+          <>
+            <p className="mb-2.5 text-center text-xs font-semibold" style={{ color: 'var(--pv-ink-2)' }}>How well did you know it?</p>
+            <div className="flex gap-2.5">
+              <button onClick={() => rate(2)} className="pv-press flex-1 rounded-2xl py-3.5 text-sm font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>Forgot</button>
+              <button onClick={() => rate(4)} className="pv-press pv-sheen flex-[1.4] rounded-2xl py-3.5 text-sm font-extrabold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>Got it</button>
+              <button onClick={() => rate(5)} className="pv-press flex-1 rounded-2xl py-3.5 text-sm font-bold" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}>Easy</button>
+            </div>
+          </>
+        ) : (
+          <button onClick={() => setFlipped(true)} className="pv-press-lg pv-sheen w-full rounded-2xl py-3.5 text-sm font-extrabold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>Reveal answer</button>
         )}
       </div>
     </>

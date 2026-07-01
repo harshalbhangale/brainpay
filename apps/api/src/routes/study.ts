@@ -463,7 +463,8 @@ study.post('/study/cards/:id/bookmark', async (c) => {
 })
 
 // GET /study/cards/saved — every bookmarked card across ALL topics, for the
-// cross-topic "Review saved" session. Newest-reviewed first.
+// cross-topic "Review saved" spaced-repetition session. Due (or overdue) cards
+// come first (nextReviewAt ascending) so the review targets what's fading.
 study.get('/study/cards/saved', async (c) => {
   const accountId = authedAccountId(c)
   const rows = await db
@@ -473,6 +474,7 @@ study.get('/study/cards/saved', async (c) => {
       back: studyCards.back,
       status: studyCards.status,
       chapter: studyCards.chapter,
+      nextReviewAt: studyCards.nextReviewAt,
       topicId: studyCards.topicId,
       topicTitle: studyTopics.title,
       topicEmoji: studyTopics.emoji,
@@ -480,8 +482,10 @@ study.get('/study/cards/saved', async (c) => {
     .from(studyCards)
     .innerJoin(studyTopics, eq(studyTopics.id, studyCards.topicId))
     .where(and(eq(studyCards.accountId, accountId), eq(studyCards.bookmarked, true)))
-    .orderBy(desc(studyCards.nextReviewAt))
-  return c.json({ cards: rows })
+    .orderBy(studyCards.nextReviewAt)
+  const now = Date.now()
+  const dueCount = rows.filter((r) => !r.nextReviewAt || new Date(r.nextReviewAt).getTime() <= now).length
+  return c.json({ cards: rows, dueCount })
 })
 
 // POST /study/cards/:id/cheatsheet — expand a single concept into a rich,

@@ -24,7 +24,7 @@ import { GRADES, AU_STATES, subjectsForGrade, subjectEmoji, curriculumForState }
 import { ParentStudyView } from './ParentStudy'
 import { BrainCoin, Brains, BrainsPill, RewardsHelp } from '../components/Brains'
 import { InterviewInsights, type InterviewAnalysis } from './InterviewInsights'
-import { StudyOnboarding, StudyAvatarHome } from './StudyAvatar'
+import { StudyChat } from './StudyChat'
 
 type Topic = { id: string; title: string; emoji: string; cardsDue: number; totalCards: number }
 type Stats = { streak: number; cardsDue: number; cardsMastered: number; topicsActive: number }
@@ -73,9 +73,8 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
   const [setupMode, setSetupMode] = useState<'chat' | 'form'>('chat')
   const [demoBusy, setDemoBusy] = useState(false)
 
-  useEffect(() => {
-    if (!isLoading && topicsData && topicsData.topics.length === 0) setView('setup')
-  }, [isLoading, topicsData])
+  // First-run onboarding now happens in-chat (StudyChat greets + sets up), so we
+  // stay on 'home' rather than jumping to the legacy setup form.
 
   // One-tap demo: seed a WWI (History) chapter through the REAL pipeline, then
   // drop straight into its flashcards. Cards generate in a few seconds (the
@@ -110,21 +109,19 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
       {isLoading ? (
         <Centered><Spinner label="Loading StudyPal…" /></Centered>
       ) : view === 'setup' ? (
-        setupMode === 'form'
-          ? <GradeSetup onDone={() => { setSetupMode('chat'); setView('home') }} canCancel={hasTopics} onCancel={() => setView('home')} />
-          : <StudyOnboarding onDone={() => setView('home')} onManual={() => setSetupMode('form')} onSwitchPal={onSwitchPal} />
+        <GradeSetup onDone={() => { setSetupMode('chat'); setView('home') }} canCancel={hasTopics} onCancel={() => setView('home')} />
       ) : view === 'subject' && selectedTopic ? (
         <SubjectHub topicId={selectedTopic} onBack={() => setView('home')} onConcepts={() => { setSelectedLesson(null); setView('concepts') }} onQuiz={() => setView('quiz')} onInterview={() => { setSelectedLesson(null); setView('interview') }} onChat={() => setView('chat')} onSaved={() => setView('saved')} onHistory={() => { setSelectedLesson(null); setView('history') }} onLesson={(ch) => { setSelectedLesson(ch); setView('lesson') }} />
       ) : view === 'lesson' && selectedTopic && selectedLesson ? (
         <LessonHub topicId={selectedTopic} chapter={selectedLesson} onBack={() => setView('subject')} onStudy={() => setView('concepts')} onInterview={() => setView('interview')} onHistory={() => setView('history')} />
       ) : view === 'concepts' && selectedTopic ? (
-        <ConceptsView topicId={selectedTopic} chapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onQuiz={() => setView('quiz')} onInterview={() => setView('interview')} onCheatsheet={(card) => { setSelectedCard(card); setView('cheatsheet') }} />
+        <ConceptsView topicId={selectedTopic} chapter={selectedLesson ?? undefined} onBack={() => setView('home')} onQuiz={() => setView('quiz')} onInterview={() => setView('interview')} onCheatsheet={(card) => { setSelectedCard(card); setView('cheatsheet') }} />
       ) : view === 'cheatsheet' && selectedCard ? (
         <ConceptCheatSheet card={selectedCard} onBack={() => setView('concepts')} onQuiz={() => setView('quiz')} onChat={() => setView('chat')} />
       ) : view === 'quiz' && selectedTopic ? (
-        <QuizView topicId={selectedTopic} onBack={() => setView('subject')} />
+        <QuizView topicId={selectedTopic} onBack={() => setView('home')} />
       ) : view === 'interview' && selectedTopic ? (
-        <InterviewView topicId={selectedTopic} initialChapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onChat={() => setView('chat')} />
+        <InterviewView topicId={selectedTopic} initialChapter={selectedLesson ?? undefined} onBack={() => setView('home')} onChat={() => setView('chat')} />
       ) : view === 'chat' && selectedTopic ? (
         <ChatView topicId={selectedTopic} onBack={() => setView('subject')} />
       ) : view === 'saved' && selectedTopic ? (
@@ -134,7 +131,15 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
       ) : view === 'interviewDetail' && selectedInterview ? (
         <InterviewDetailView interviewId={selectedInterview} onBack={() => setView('history')} />
       ) : (
-        <StudyAvatarHome onSelect={(id) => { setSelectedTopic(id); setView('subject') }} onSetup={() => setView('setup')} onDemo={startDemo} demoBusy={demoBusy} onSwitchPal={onSwitchPal} />
+        <StudyChat
+          onSwitchPal={onSwitchPal}
+          onOpenCards={(id) => { setSelectedTopic(id); setSelectedLesson(null); setView('concepts') }}
+          onQuiz={(id) => { setSelectedTopic(id); setView('quiz') }}
+          onInterview={(id) => { setSelectedTopic(id); setSelectedLesson(null); setView('interview') }}
+          onDemo={startDemo}
+          demoBusy={demoBusy}
+          onSetup={() => setView('setup')}
+        />
       )}
       {helpOpen && <RewardsHelp onClose={() => setHelpOpen(false)} />}
     </div>

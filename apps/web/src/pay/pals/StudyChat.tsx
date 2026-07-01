@@ -243,7 +243,7 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     if (a.kind === 'pick' && a.topicId) {
       store.setActive(a.topicId, a.title ?? null)
       me(a.title ?? 'this subject')
-      say(`${a.title ?? 'Subject'}. Ready to review the cards?`, [{ label: 'Open the cards', emoji: '📖', kind: 'cards', topicId: a.topicId, title: a.title }])
+      say(`${a.title ?? 'Subject'} it is — let's start with the key cards, then I'll quiz you.`, [{ label: 'Start studying', emoji: '📖', kind: 'cards', topicId: a.topicId, title: a.title }])
       return
     }
     if (!a.topicId) return
@@ -268,36 +268,51 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
     void build()
   }
 
-  // Free text → BUILD A DECK (real pipeline) and offer a button. Never dumps
-  // card text into the chat.
+  // Free text → BUILD A DECK (real pipeline) and start a guided study flow.
+  // Strips leading filler/intent ("ok, I want to study …") so a real topic is
+  // never mistaken for a greeting, and frames it as studying — not "see cards".
   async function send() {
-    const text = input.trim()
-    if (!text || sending || ask || building) return
+    const raw = input.trim()
+    if (!raw || sending || ask || building) return
     setInput('')
-    me(text)
-    if (/^(hi|hey|hello|yo|sup|ok|okay|thanks|thank you|cool|nice|great)\b/i.test(text) || text.length < 4) {
-      say('Tell me a topic — like “World War 1” or “Photosynthesis” — and I’ll build a deck.')
+    me(raw)
+
+    // Peel off conversational filler + study-intent phrases to find the topic.
+    let topic = raw
+    for (let i = 0; i < 4; i++) {
+      topic = topic
+        .replace(/^(ok(ay)?|so|well|umm?|hmm|hey|hi|hello|yeah|yep|yes|sure|alright|right|now|please)[\s,.!:-]+/i, '')
+        .replace(/^(i\s*(?:want|wanna|would like|need|'d like)\s*to\s+|let'?s\s+|can you\s+|could you\s+|help me( with)?\s+|teach me( about)?\s+|tell me about\s+|study\s+|learn( about)?\s+|revise\s+|go over\s+|explain\s+|start( studying)?\s+|about\s+)/i, '')
+        .trim()
+    }
+    topic = topic.replace(/[?!.]+$/, '').trim()
+
+    // Nothing left (pure greeting / too vague) → nudge for a topic.
+    if (topic.length < 3) {
+      say('Tell me a topic — like “World War 1” or “Photosynthesis” — and I’ll build you a deck and start studying.')
       return
     }
+
     setSending(true)
     try {
       let topicId = store.activeTopicId
       let topicTitle = store.activeTopicTitle
-      const chapter = text.length > 64 ? text.slice(0, 64) : text
+      const chapter = topic.length > 64 ? topic.slice(0, 64) : topic
       if (!topicId) {
-        const title = chapter.replace(/^(study|learn|teach me about|teach me|revise|help me with|about)\s+/i, '').slice(0, 40) || 'My topic'
+        const title = chapter.slice(0, 40) || 'My topic'
         const emoji = subjectEmoji(title)
-        const { topic } = await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title, emoji }) })
-        topicId = topic.id; topicTitle = title
+        const { topic: created } = await api<{ topic: { id: string } }>('/study/topics', { method: 'POST', body: JSON.stringify({ title, emoji }) })
+        topicId = created.id; topicTitle = title
         store.setActive(topicId, title)
       }
-      const content = `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) for a student studying: ${text}. Cover the key ideas, definitions, dates/formulas and common exam questions. Use Australian curriculum terminology and spelling.`
+      const content = `Generate clear, exam-style concept flashcards (front: a question or term; back: a concise, accurate answer) for a student studying: ${topic}. Cover the key ideas, definitions, dates/formulas and common exam questions. Use Australian curriculum terminology and spelling.`
       await api(`/study/topics/${topicId}/documents`, { method: 'POST', body: JSON.stringify({ title: chapter, fileUrl: 'text://inline', fileType: 'text', content, chapter }) })
       qc.invalidateQueries({ queryKey: ['study-topics'] })
       qc.invalidateQueries({ queryKey: ['study-topic', topicId] })
       qc.invalidateQueries({ queryKey: ['study-chapters', topicId] })
-      say(`Building a deck on “${chapter}”${topicTitle && topicTitle !== chapter ? ` under ${topicTitle}` : ''}. Tap when it's ready.`, [
-        { label: 'Open the cards', emoji: '📖', kind: 'cards', topicId, title: chapter, chapter },
+      const label = topicTitle && topicTitle.toLowerCase() !== chapter.toLowerCase() ? `${chapter} · ${topicTitle}` : chapter
+      say(`On it — building your “${chapter}” deck now. Here's the plan: learn the key cards, take a quick quiz, then a short interview to lock it in. Tap below when you're ready.`, [
+        { label: `Start studying ${chapter}`, emoji: '📖', kind: 'cards', topicId, title: label, chapter },
       ])
     } catch {
       say('That didn’t build just now — mind trying again?')

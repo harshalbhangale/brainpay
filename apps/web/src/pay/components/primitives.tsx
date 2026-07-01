@@ -289,10 +289,22 @@ export function IconBadge({
 
 /* ────────────────────────────────────────────────────────────────────── Avatar */
 const AVATAR_TILES: Pastel[] = ['sky', 'mint', 'butter', 'lilac', 'peach', 'blush']
-function tileFor(seed: string): Pastel {
+// Vibrant, premium gradient discs + playful characters for image-less avatars.
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg,#60a5fa,#4f46e5)',
+  'linear-gradient(135deg,#34d399,#059669)',
+  'linear-gradient(135deg,#fbbf24,#f97316)',
+  'linear-gradient(135deg,#a78bfa,#7c3aed)',
+  'linear-gradient(135deg,#fb7185,#e11d48)',
+  'linear-gradient(135deg,#22d3ee,#0891b2)',
+  'linear-gradient(135deg,#f472b6,#db2777)',
+  'linear-gradient(135deg,#4ade80,#16a34a)',
+]
+const AVATAR_CHARS = ['🦊', '🐼', '🐵', '🦁', '🐯', '🐨', '🐸', '🐧', '🐙', '🦉', '🐰', '🐻', '🦄', '🐲', '🐳', '🦖']
+function seedIndex(seed: string, mod: number): number {
   let h = 0
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  return AVATAR_TILES[h % AVATAR_TILES.length]
+  return h % mod
 }
 export function Avatar({
   name,
@@ -300,12 +312,15 @@ export function Avatar({
   tile,
   size = 44,
   src,
+  fun,
 }: {
   name?: string
   initials?: string
   tile?: Pastel
   size?: number
   src?: string
+  /** When there's no photo, show a playful character instead of initials. */
+  fun?: boolean
 }) {
   // A real image only when src is a URL/data-URI; otherwise treat src as an
   // emoji/glyph (onboarding stores avatars as emoji) and render it as text.
@@ -315,14 +330,28 @@ export function Avatar({
   }
   const isEmoji = !!src && !isImage
   const seed = name ?? initials ?? '?'
-  const t = PASTELS[tile ?? tileFor(seed)]
-  const text = isEmoji ? (src as string) : (initials ?? (name?.trim()[0] ?? '?')).slice(0, 2).toUpperCase()
+  const gi = tile ? AVATAR_TILES.indexOf(tile) : -1
+  const gradient = AVATAR_GRADIENTS[(gi >= 0 ? gi : seedIndex(seed, AVATAR_GRADIENTS.length)) % AVATAR_GRADIENTS.length]
+  const content = isEmoji
+    ? (src as string)
+    : fun
+      ? AVATAR_CHARS[seedIndex(`${seed}~`, AVATAR_CHARS.length)]
+      : (initials ?? (name?.trim()[0] ?? '?')).slice(0, 2).toUpperCase()
+  const glyph = isEmoji || fun
   return (
     <span
-      className="inline-flex shrink-0 items-center justify-center rounded-full font-extrabold"
-      style={{ width: size, height: size, background: t.bg, color: t.ink, fontSize: isEmoji ? size * 0.5 : size * 0.36 }}
+      className="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-extrabold"
+      style={{
+        width: size,
+        height: size,
+        backgroundImage: gradient,
+        color: '#fff',
+        fontSize: glyph ? size * 0.5 : size * 0.38,
+        letterSpacing: glyph ? 0 : '-0.02em',
+        boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.45), inset 0 -3px 8px rgba(0,0,0,0.14)',
+      }}
     >
-      {text}
+      {content}
     </span>
   )
 }

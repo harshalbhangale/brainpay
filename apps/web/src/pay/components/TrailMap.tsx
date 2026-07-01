@@ -83,11 +83,13 @@ export function TrailMap({ points, accent = '#0ea5e9' }: { points: TrailStop[]; 
     })
 
     fit(map, latlngs)
-    return () => { map.remove() }
+    const ro = new ResizeObserver(() => map.invalidateSize())
+    ro.observe(el)
+    return () => { ro.disconnect(); map.remove() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, accent])
 
-  return <div ref={ref} className="h-full w-full" style={{ background: 'var(--pv-surface-2)' }} />
+  return <div ref={ref} className="h-full w-full" style={{ minHeight: 240, background: 'var(--pv-surface-2)' }} />
 }
 
 /* ───────────────────────────────────────────────────────────── OverviewMap */
@@ -116,9 +118,11 @@ export function OverviewMap({ pins }: { pins: OverviewPin[] }) {
     })
 
     fit(map, latlngs)
-    return () => { map.remove() }
+    const ro = new ResizeObserver(() => map.invalidateSize())
+    ro.observe(el)
+    return () => { ro.disconnect(); map.remove() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig])
 
-  return <div ref={ref} className="h-full w-full" style={{ background: 'var(--pv-surface-2)' }} />
+  return <div ref={ref} className="h-full w-full" style={{ minHeight: 240, background: 'var(--pv-surface-2)' }} />
 }

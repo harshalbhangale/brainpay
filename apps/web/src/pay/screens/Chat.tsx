@@ -5,7 +5,7 @@
  * (Those two overlays are swapped to light versions in later phases.)
  */
 import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from 'react'
-import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, Wallet, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
@@ -14,7 +14,7 @@ import { registerAiHandler } from '../pals/aiBus'
 import { useSessionStore } from '../lib/sessions'
 import { useHistoryView } from '../lib/historyStore'
 import { useActiveChild } from '../lib/activeChild'
-import { useFamilyKids } from '../useMoneyPal'
+import { useFamilyKids, useWallet } from '../useMoneyPal'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../lib/agents'
 import { PalHero } from '../pals/PalHero'
 import { PAL_MAP, type PalKey } from '../pals/config'
@@ -73,7 +73,11 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
   const [pickChore, setPickChore] = useState(false)
   // Which specialist Pals the user has chosen to talk to. Empty = Auto (PAL
   // answers + relevant Pals chime in). 1+ = only those Pals answer, in-voice.
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // On the MoneyPal surface we focus MoneyPal so replies come in its voice.
+  const [selected, setSelected] = useState<Set<string>>(() => (pal === 'moneypal' ? new Set(['moneypal']) : new Set()))
+  // A read-only balance card, shown on the money surface when the user asks
+  // about their balance/wallet. Purely informational (no dead-ends).
+  const [showBalance, setShowBalance] = useState(false)
   const isKid = useAuthStore((s) => s.account?.accountType === 'kid')
   const myId = useAuthStore((s) => s.account?.id)
   const childId = useActiveChild((s) => s.childId)
@@ -150,6 +154,8 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
     if (!message || sending) return
     setInput('')
     setPendingIntent(null)
+    // Money surface: show a read-only balance card when they ask about money.
+    setShowBalance(pal === 'moneypal' && /\b(balance|how much|wallet|pot|pots|my money|his money|her money)\b/i.test(message))
     setMessages((m) => [...m, { id: uid(), kind: 'user', content: trimmed, images: images.length ? images : undefined }])
     setSending(true)
     const sid = ensureTextSession(message)
@@ -262,6 +268,7 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
           {pendingIntent && (pendingIntent.kind === 'verify_chore'
             ? <VerifyChoreCard title={typeof pendingIntent.title === 'string' ? pendingIntent.title : undefined} onShow={() => { setPickChore(true); setPendingIntent(null) }} onCancel={() => setPendingIntent(null)} />
             : <IntentCard intent={pendingIntent} onConfirm={confirmIntent} onCancel={() => setPendingIntent(null)} />)}
+          {showBalance && <BalanceCard />}
           </div>
         </div>
 
@@ -381,6 +388,43 @@ function Conferring() {
 }
 
 function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm: () => void; onCancel: () => void }) {
+  // Card-issue preview — name · limit · blocks → Adjust / Issue.
+  if (intent.kind === 'issue_card') {
+    const kidName = (intent.kidName as string) || 'your kid'
+    const limit = (intent.dailyLimit as number) ?? 20
+    const blocks = Array.isArray(intent.blocks) ? (intent.blocks as string[]) : ['gambling', 'in_app']
+    return (
+      <div className="pv-pop pv-glass pv-hairline rounded-2xl p-4">
+        <div className="pv-label pv-text-accent">New card</div>
+        <div className="mt-1 font-bold">{kidName}’s BrainPal card</div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}>${limit}/day limit</span>
+          {blocks.map((b) => (
+            <span key={b} className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>blocks {b.replace('in_app', 'in-app')}</span>
+          ))}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button onClick={onCancel} className="pv-press pv-glass-soft flex-1 rounded-full py-2.5 text-sm font-bold">Adjust</button>
+          <button onClick={onConfirm} className="pv-press-lg pv-sheen flex-1 rounded-full py-2.5 text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>Issue card</button>
+        </div>
+      </div>
+    )
+  }
+
+  // Money movement — hold-to-send guards against accidental transfers.
+  if (intent.kind === 'topup') {
+    return (
+      <div className="pv-pop pv-glass pv-hairline rounded-2xl p-4">
+        <div className="pv-label pv-text-accent">MoneyPal wants to</div>
+        <div className="mt-1 font-bold">{describeIntent(intent)}</div>
+        <div className="mt-3 flex items-center gap-2">
+          <button onClick={onCancel} className="pv-press pv-glass-soft rounded-full px-5 py-2.5 text-sm font-bold">Cancel</button>
+          <HoldButton onComplete={onConfirm} label="Hold to send" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="pv-pop pv-glass pv-hairline rounded-2xl p-4">
       <div className="pv-label pv-text-accent">PAL wants to</div>
@@ -389,6 +433,76 @@ function IntentCard({ intent, onConfirm, onCancel }: { intent: Intent; onConfirm
         <button onClick={onCancel} className="pv-press pv-glass-soft flex-1 rounded-full py-2.5 text-sm font-bold">Cancel</button>
         <button onClick={onConfirm} className="pv-press-lg pv-sheen flex-1 rounded-full py-2.5 text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>Confirm</button>
       </div>
+    </div>
+  )
+}
+
+// Press-and-hold to confirm a money transfer. Fills a progress bar; releasing
+// early cancels. Fires once when the hold completes.
+function HoldButton({ onComplete, label }: { onComplete: () => void; label: string }) {
+  const [progress, setProgress] = useState(0)
+  const raf = useRef<number | null>(null)
+  const startRef = useRef(0)
+  const doneRef = useRef(false)
+  const HOLD_MS = 750
+
+  const stop = () => { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null }
+  useEffect(() => stop, [])
+
+  function tick(now: number) {
+    const p = Math.min(1, (now - startRef.current) / HOLD_MS)
+    setProgress(p)
+    if (p >= 1) {
+      if (!doneRef.current) { doneRef.current = true; onComplete() }
+      return
+    }
+    raf.current = requestAnimationFrame(tick)
+  }
+  function start() {
+    if (doneRef.current) return
+    startRef.current = performance.now()
+    stop()
+    raf.current = requestAnimationFrame(tick)
+  }
+  function cancel() {
+    stop()
+    if (!doneRef.current) setProgress(0)
+  }
+
+  return (
+    <button
+      onPointerDown={start}
+      onPointerUp={cancel}
+      onPointerLeave={cancel}
+      onPointerCancel={cancel}
+      className="pv-press-lg relative flex-1 overflow-hidden rounded-full py-2.5 text-sm font-bold"
+      style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)', touchAction: 'none' }}
+    >
+      <span className="absolute inset-y-0 left-0" style={{ width: `${progress * 100}%`, background: 'rgba(255,255,255,0.3)' }} aria-hidden />
+      <span className="relative">{progress >= 1 ? 'Sending\u2026' : label}</span>
+    </button>
+  )
+}
+
+// Read-only snapshot of the relevant wallet, shown when the user asks about
+// their balance. Reuses the live wallet/family hooks — no fake numbers.
+function BalanceCard() {
+  const account = useAuthStore((s) => s.account)
+  const isKid = account?.accountType === 'kid'
+  const childId = useActiveChild((s) => s.childId)
+  const { kids } = useFamilyKids()
+  const wallet = useWallet()
+  const kid = !isKid && childId ? kids.find((k) => k.id === childId) ?? null : null
+  const name = isKid ? (((account?.persona?.name as string) || 'You').split(' ')[0]) : (kid?.name ?? 'Family')
+  const balance = isKid ? wallet.balance : (kid ? kid.balance : wallet.balance)
+  return (
+    <div className="pv-pop pv-glass pv-hairline rounded-2xl p-4">
+      <div className="flex items-center justify-between">
+        <div className="pv-label pv-text-accent">{isKid ? 'Your balance' : `${name}\u2019s balance`}</div>
+        <Wallet size={16} style={{ color: 'var(--pv-ink-3)' }} />
+      </div>
+      <div className="pv-amount mt-1 text-3xl">{aud(balance)}</div>
+      <div className="mt-0.5 text-sm font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Available to spend</div>
     </div>
   )
 }

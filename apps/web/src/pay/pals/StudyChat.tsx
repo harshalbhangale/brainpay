@@ -40,6 +40,11 @@ type CMsg = {
 let mid = 1
 const uid = () => `sc${mid++}`
 
+// Minimal Web Speech API typing (not in lib.dom) for mic dictation.
+type SpeechResultList = ArrayLike<ArrayLike<{ transcript: string }>>
+interface SpeechRec { lang: string; interimResults: boolean; continuous: boolean; onresult: ((e: { results: SpeechResultList }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null; start: () => void; stop: () => void }
+type SpeechRecCtor = new () => SpeechRec
+
 type StudyChatState = {
   messages: CMsg[]
   pending: 'cards' | 'quiz' | 'interview' | null
@@ -91,9 +96,36 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [live, setLive] = useState<{ camera: boolean } | null>(null)
+  const [listening, setListening] = useState(false)
+  const recRef = useRef<SpeechRec | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bootRef = useRef(false)
   const postBuildRef = useRef<Topic[] | null>(null)
+
+  useEffect(() => () => { try { recRef.current?.stop() } catch { /* ignore */ } }, [])
+
+  // Mic = dictation (speech → text). Falls back to the live voice session if
+  // the browser has no SpeechRecognition.
+  function toggleDictation() {
+    if (listening) { try { recRef.current?.stop() } catch { /* ignore */ } return }
+    const w = window as unknown as { SpeechRecognition?: SpeechRecCtor; webkitSpeechRecognition?: SpeechRecCtor }
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition
+    if (!Ctor) { setLive({ camera: false }); return }
+    const rec = new Ctor()
+    rec.lang = 'en-AU'
+    rec.interimResults = true
+    rec.continuous = false
+    rec.onresult = (e) => {
+      let t = ''
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript
+      setInput(t)
+    }
+    rec.onend = () => { setListening(false); recRef.current = null }
+    rec.onerror = () => { setListening(false); recRef.current = null }
+    recRef.current = rec
+    setListening(true)
+    try { rec.start() } catch { setListening(false); recRef.current = null }
+  }
 
   const say = (text: string, actions?: Action[], result?: CMsg['result']) => store.push({ id: uid(), who: 'matilda', text, actions, result })
   const me = (text: string) => store.push({ id: uid(), who: 'you', text })
@@ -370,14 +402,18 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
           {!ask && !building && (
             <div className="mx-auto w-full max-w-xl px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
               <form onSubmit={(e) => { e.preventDefault(); void send() }} className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
-                <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Tell Matilda what to study…" className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
-                {input.trim() ? (
+                <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={listening ? 'Listening…' : 'Tell Matilda what to study…'} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" style={{ color: 'var(--pv-ink)' }} />
+                {listening ? (
+                  <button type="button" onClick={toggleDictation} aria-label="Stop dictation" className="pv-press-lg pv-live-pulse flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-neg)', color: '#fff', boxShadow: 'var(--pv-shadow-md)' }}>
+                    <Mic size={18} />
+                  </button>
+                ) : input.trim() ? (
                   <button type="submit" disabled={sending} aria-label="Send" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
                     <SendIcon size={17} />
                   </button>
                 ) : (
                   <>
-                    <button type="button" onClick={() => setLive({ camera: false })} aria-label="Talk to Matilda" className="pv-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
+                    <button type="button" onClick={toggleDictation} aria-label="Dictate — speak to type" className="pv-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
                       <Mic size={18} />
                     </button>
                     <button type="button" onClick={() => setLive({ camera: true })} aria-label="Live camera with Matilda" className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>

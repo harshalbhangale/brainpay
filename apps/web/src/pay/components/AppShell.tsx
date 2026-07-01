@@ -18,6 +18,17 @@ export type NavItem = { key: Section; label: string; Icon: LucideIcon }
 
 const SESSION_ICON: Record<SessionKind, LucideIcon> = { text: MessageSquareText, voice: AudioLines, camera: Camera, avatar: Video }
 
+/** Per-section signature colour for the nav tiles (accent + readable text on it). */
+const NAV_STYLE: Record<Section, { c: string; on: string }> = {
+  chat: { c: '#19c37d', on: '#ffffff' },
+  money: { c: '#c5f441', on: '#0b0c0f' },
+  study: { c: '#8b7cff', on: '#ffffff' },
+  family: { c: '#38bdf8', on: '#ffffff' },
+  activity: { c: '#f59e0b', on: '#ffffff' },
+  map: { c: '#fb923c', on: '#ffffff' },
+  chores: { c: '#22c3a6', on: '#ffffff' },
+}
+
 /* ─────────────────────────────────────────────────────────── Sidebar body */
 export function SidebarBody({
   items, active, onSelect, role, onNewChat, onOpenHistory, onProfile, onClose, showNav = true,
@@ -56,21 +67,37 @@ export function SidebarBody({
         )}
       </div>
 
-      {/* Primary nav */}
+      {/* Primary nav — 2-up grid of accent tiles */}
       {showNav && (
-        <nav className="flex flex-col gap-1">
-          {items.map((it) => {
+        <nav className="grid grid-cols-2 gap-2">
+          {items.map((it, i) => {
             const on = it.key === active
+            const s = NAV_STYLE[it.key] ?? { c: 'var(--pv-primary)', on: '#fff' }
+            // A trailing odd tile spans the full width so the grid always reads clean.
+            const wide = i === items.length - 1 && items.length % 2 === 1
             return (
               <button
                 key={it.key}
                 onClick={() => onSelect(it.key)}
                 aria-current={on ? 'page' : undefined}
-                className="pv-press flex items-center gap-3 rounded-2xl px-2.5 py-2.5 text-left"
-                style={on ? { background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-sm)' } : { color: 'var(--pv-ink-2)' }}
+                className={`pv-press pv-pop relative flex overflow-hidden rounded-[20px] p-3 text-left ${wide ? 'col-span-2 flex-row items-center gap-3' : 'flex-col justify-between'}`}
+                style={{
+                  minHeight: wide ? 60 : 88,
+                  animationDelay: `${i * 45}ms`,
+                  ...(on
+                    ? { background: s.c, color: s.on, boxShadow: `0 10px 24px -10px ${s.c}` }
+                    : { background: 'var(--pv-surface)', color: 'var(--pv-ink)', boxShadow: 'var(--pv-shadow-xs)' }),
+                }}
               >
-                <it.Icon size={20} strokeWidth={on ? 2.6 : 2.2} />
-                <span className="text-[0.95rem] font-bold tracking-tight">{it.label}</span>
+                <span
+                  className="flex h-9 w-9 flex-none items-center justify-center rounded-xl"
+                  style={on
+                    ? { background: 'rgba(255,255,255,0.22)', color: s.on }
+                    : { background: `color-mix(in srgb, ${s.c} 16%, transparent)`, color: s.c }}
+                >
+                  <it.Icon size={19} strokeWidth={2.5} />
+                </span>
+                <span className={`text-[0.95rem] font-bold tracking-tight ${wide ? '' : 'mt-2'}`}>{it.label}</span>
               </button>
             )
           })}
@@ -111,35 +138,6 @@ export function SidebarBody({
           </button>
         )}
       </div>
-    </div>
-  )
-}
-
-/* ───────────────────────────────────────────────────────── Mobile bottom nav */
-export function MobileBottomNav({ items, active, onSelect }: { items: NavItem[]; active: Section; onSelect: (s: Section) => void }) {
-  return (
-    <div className="pointer-events-none sticky bottom-0 z-30 flex justify-center px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-2 lg:hidden">
-      <nav
-        className="pointer-events-auto flex items-center gap-0.5 rounded-full p-1.5"
-        style={{ background: 'rgba(255,255,255,0.84)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', boxShadow: 'var(--pv-shadow-lg)', border: '1px solid rgba(255,255,255,0.6)' }}
-      >
-        {items.map((it) => {
-          const on = it.key === active
-          return (
-            <button
-              key={it.key}
-              onClick={() => onSelect(it.key)}
-              aria-label={it.label}
-              aria-current={on ? 'page' : undefined}
-              className="pv-press flex h-12 min-w-[58px] flex-col items-center justify-center gap-0.5 rounded-full px-2"
-              style={on ? { background: 'var(--pv-primary)', color: 'var(--pv-on-primary)' } : { color: 'var(--pv-ink-3)' }}
-            >
-              <it.Icon size={20} strokeWidth={on ? 2.6 : 2.2} />
-              <span className="text-[0.6rem] font-bold tracking-tight">{it.label}</span>
-            </button>
-          )
-        })}
-      </nav>
     </div>
   )
 }

@@ -13,7 +13,7 @@ import { useLocationReporter } from '../../lib/useLocationReporter'
 import { useAuthStore } from '../../stores/auth'
 import { Avatar } from '../components/primitives'
 import { SwipeDrawer } from '../components/SwipeDrawer'
-import { SidebarBody, MobileBottomNav, type NavItem } from '../components/AppShell'
+import { SidebarBody, type NavItem } from '../components/AppShell'
 import { SheetHost } from '../components/Canvas'
 import { Profile } from '../screens/Profile'
 import { SessionHistory } from '../screens/SessionHistory'
@@ -129,9 +129,6 @@ export function PalShell() {
         <main key={section} className="pv-pal-enter flex min-h-0 flex-1 flex-col">
           <SectionView section={section} />
         </main>
-
-        {/* Mobile bottom nav */}
-        <MobileBottomNav items={items} active={section} onSelect={select} />
       </div>
 
       {/* Mobile drawer — account + history only (bottom bar owns section switching) */}

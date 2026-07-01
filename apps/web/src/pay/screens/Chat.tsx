@@ -5,7 +5,7 @@
  * (Those two overlays are swapped to light versions in later phases.)
  */
 import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from 'react'
-import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, Wallet, AudioLines, CreditCard, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, Wallet, AudioLines, CreditCard, PieChart, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
@@ -27,7 +27,8 @@ type Pal = { palId: string; line: string }
 type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'verify_chore' | 'issue_card' } & Record<string, unknown>
 type SendResponse = { reply: string; pals?: Pal[]; intent?: Intent; requiresConfirmation?: boolean }
 type ExecuteResponse = { ok: boolean; confirmationMessage?: string }
-type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string; images?: string[]; card?: boolean }
+type Cta = { open: 'card' | 'insights'; label: string }
+type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string; images?: string[]; cta?: Cta }
 
 let tmpId = 1
 const uid = () => `m${tmpId++}`
@@ -164,13 +165,20 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
     setMessages((m) => [...m, { id: uid(), kind: 'user', content: trimmed, images: images.length ? images : undefined }])
     const sid = ensureTextSession(message)
     useSessionStore.getState().append(sid, [{ role: 'you', text: images.length ? `${trimmed} [${images.length} image${images.length > 1 ? 's' : ''}]`.trim() : trimmed }])
-    // MoneyPal shortcut: "show me my card" surfaces a tap-to-open card button —
+    // MoneyPal shortcuts: surface a tap-to-open card / insights button —
     // no round-trip, no dead-end. Issue/gift-card requests still go to the model.
+    if (pal === 'moneypal' && /\b(insight|insights|spending|spend|breakdown|where did (my|the) money|how much did (i|we) spend|budget)\b/i.test(message)) {
+      const line = "Here's where your money's going — tap to see the breakdown."
+      setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'moneypal', content: line, cta: { open: 'insights', label: 'See your insights' } }])
+      useSessionStore.getState().append(sid, [{ role: 'pal', text: line }])
+      setShowBalance(false)
+      return
+    }
     if (pal === 'moneypal' && /\bcard\b/i.test(message)
       && /\b(show|see|view|open|my|where|display|pull up|check)\b/i.test(message)
       && !/\b(issue|give|create|new|gift|report|score|credit|add|order)\b/i.test(message)) {
       const line = "Here's your card — tap to open it."
-      setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'moneypal', content: line, card: true }])
+      setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'moneypal', content: line, cta: { open: 'card', label: 'Open your card' } }])
       useSessionStore.getState().append(sid, [{ role: 'pal', text: line }])
       setShowBalance(false)
       return
@@ -287,7 +295,7 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
         <div ref={scrollRef} className="pv-no-scrollbar flex-1 space-y-4 overflow-y-auto px-4 py-4">
           <div className="mx-auto w-full max-w-2xl space-y-4">
           {empty && <EmptyState onPick={sendText} isKid={isKid} childName={activeKidName} pal={pal} />}
-          {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} card={m.card} />))}
+          {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} cta={m.cta} />))}
           {sending && <Conferring />}
           {pendingIntent && (pendingIntent.kind === 'verify_chore'
             ? <VerifyChoreCard title={typeof pendingIntent.title === 'string' ? pendingIntent.title : undefined} onShow={() => { setPickChore(true); setPendingIntent(null) }} onCancel={() => setPendingIntent(null)} />
@@ -370,8 +378,9 @@ function UserBubble({ content, images }: { content: string; images?: string[] })
   )
 }
 
-function AgentBubble({ agent, content, index, card }: { agent: Agent; content: string; index: number; card?: boolean }) {
+function AgentBubble({ agent, content, index, cta }: { agent: Agent; content: string; index: number; cta?: { open: 'card' | 'insights'; label: string } }) {
   const isPal = agent.id === 'pal'
+  const CtaIcon = cta?.open === 'insights' ? PieChart : CreditCard
   return (
     <div className="flex items-end gap-2">
       <AgentOrb agent={agent} size={30} />
@@ -389,13 +398,13 @@ function AgentBubble({ agent, content, index, card }: { agent: Agent; content: s
         >
           {content}
         </div>
-        {card && (
+        {cta && (
           <button
-            onClick={() => useCanvas.getState().open('card')}
+            onClick={() => useCanvas.getState().open(cta.open)}
             className="pv-press-lg pv-sheen pv-pop mt-2 flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold"
             style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}
           >
-            <CreditCard size={16} /> Open your card
+            <CtaIcon size={16} /> {cta.label}
           </button>
         )}
       </div>

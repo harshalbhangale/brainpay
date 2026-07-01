@@ -9,7 +9,7 @@
 import { create } from 'zustand'
 import { useNav, type Section } from './useNav'
 
-export type CanvasKind = 'activity' | 'map' | 'family' | 'topup' | 'card' | 'chore' | 'study' | 'chores'
+export type CanvasKind = 'activity' | 'map' | 'family' | 'topup' | 'card' | 'chore' | 'study' | 'chores' | 'insights'
 
 /** Kinds that are really full sections — routed to the main pane via useNav. */
 const SECTION_OF: Partial<Record<CanvasKind, Section>> = {
@@ -20,7 +20,7 @@ const SECTION_OF: Partial<Record<CanvasKind, Section>> = {
   chores: 'chores',
 }
 
-type SheetKind = 'topup' | 'card' | 'chore'
+type SheetKind = 'topup' | 'card' | 'chore' | 'insights'
 
 type CanvasState = {
   kind: SheetKind | null

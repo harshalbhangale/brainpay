@@ -8,6 +8,7 @@
 import { useCanvas } from '../lib/canvasStore'
 import { CardSheet } from '../screens/Card'
 import { TopUpSheet } from '../screens/TopUpSheet'
+import { InsightsSheet } from '../screens/Insights'
 import { ChorePickerSheet } from '../chores/verify'
 
 export function SheetHost() {
@@ -17,6 +18,7 @@ export function SheetHost() {
 
   if (kind === 'topup') return <TopUpSheet presetKidId={param} onClose={close} />
   if (kind === 'card') return <CardSheet onClose={close} />
+  if (kind === 'insights') return <InsightsSheet onClose={close} />
   if (kind === 'chore') return <ChorePickerSheet onClose={close} />
   return null
 }

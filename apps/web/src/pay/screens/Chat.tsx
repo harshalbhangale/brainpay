@@ -5,7 +5,7 @@
  * (Those two overlays are swapped to light versions in later phases.)
  */
 import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from 'react'
-import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, Wallet, AudioLines, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, SquarePen, History as HistoryIcon, ArrowUp, ListChecks, Plus, Image as ImageIcon, Paperclip, X, Sparkles, ChevronDown, ScanLine, Check, Camera, Wallet, AudioLines, CreditCard, type LucideIcon } from 'lucide-react'
 import { api } from '../../lib/api'
 import { aud } from '../../lib/format'
 import { useAuthStore } from '../../stores/auth'
@@ -13,6 +13,7 @@ import { ChorePickerSheet } from '../chores/verify'
 import { registerAiHandler } from '../pals/aiBus'
 import { useSessionStore } from '../lib/sessions'
 import { useHistoryView } from '../lib/historyStore'
+import { useCanvas } from '../lib/canvasStore'
 import { useActiveChild } from '../lib/activeChild'
 import { useFamilyKids, useWallet } from '../useMoneyPal'
 import { AGENTS, SPECIALISTS, agentFor, type Agent, type AgentId } from '../../lib/agents'
@@ -26,7 +27,7 @@ type Pal = { palId: string; line: string }
 type Intent = { kind: 'add_chore' | 'topup' | 'set_goal' | 'contribute_goal' | 'send_note' | 'create_rule' | 'remember' | 'verify_chore' | 'issue_card' } & Record<string, unknown>
 type SendResponse = { reply: string; pals?: Pal[]; intent?: Intent; requiresConfirmation?: boolean }
 type ExecuteResponse = { ok: boolean; confirmationMessage?: string }
-type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string; images?: string[] }
+type Msg = { id: string; kind: 'user' | 'agent'; agentId?: AgentId; content: string; images?: string[]; card?: boolean }
 
 let tmpId = 1
 const uid = () => `m${tmpId++}`
@@ -161,9 +162,20 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
     // Money surface: show a read-only balance card when they ask about money.
     setShowBalance(pal === 'moneypal' && /\b(balance|how much|wallet|pot|pots|my money|his money|her money)\b/i.test(message))
     setMessages((m) => [...m, { id: uid(), kind: 'user', content: trimmed, images: images.length ? images : undefined }])
-    setSending(true)
     const sid = ensureTextSession(message)
     useSessionStore.getState().append(sid, [{ role: 'you', text: images.length ? `${trimmed} [${images.length} image${images.length > 1 ? 's' : ''}]`.trim() : trimmed }])
+    // MoneyPal shortcut: "show me my card" surfaces a tap-to-open card button —
+    // no round-trip, no dead-end. Issue/gift-card requests still go to the model.
+    if (pal === 'moneypal' && /\bcard\b/i.test(message)
+      && /\b(show|see|view|open|my|where|display|pull up|check)\b/i.test(message)
+      && !/\b(issue|give|create|new|gift|report|score|credit|add|order)\b/i.test(message)) {
+      const line = "Here's your card — tap to open it."
+      setMessages((m) => [...m, { id: uid(), kind: 'agent', agentId: 'moneypal', content: line, card: true }])
+      useSessionStore.getState().append(sid, [{ role: 'pal', text: line }])
+      setShowBalance(false)
+      return
+    }
+    setSending(true)
     try {
       const res = await api<SendResponse>('/chat', { method: 'POST', body: JSON.stringify({ message, pals: Array.from(selected), images, childId: scopedChildId ?? undefined }) })
       const additions: Msg[] = []
@@ -275,7 +287,7 @@ export function Chat({ onClose, pal = 'ai', onSwitchPal }: { onClose?: () => voi
         <div ref={scrollRef} className="pv-no-scrollbar flex-1 space-y-4 overflow-y-auto px-4 py-4">
           <div className="mx-auto w-full max-w-2xl space-y-4">
           {empty && <EmptyState onPick={sendText} isKid={isKid} childName={activeKidName} pal={pal} />}
-          {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} />))}
+          {messages.map((m, i) => (m.kind === 'user' ? <UserBubble key={m.id} content={m.content} images={m.images} /> : <AgentBubble key={m.id} agent={agentFor(m.agentId)} content={m.content} index={i} card={m.card} />))}
           {sending && <Conferring />}
           {pendingIntent && (pendingIntent.kind === 'verify_chore'
             ? <VerifyChoreCard title={typeof pendingIntent.title === 'string' ? pendingIntent.title : undefined} onShow={() => { setPickChore(true); setPendingIntent(null) }} onCancel={() => setPendingIntent(null)} />
@@ -358,7 +370,7 @@ function UserBubble({ content, images }: { content: string; images?: string[] })
   )
 }
 
-function AgentBubble({ agent, content, index }: { agent: Agent; content: string; index: number }) {
+function AgentBubble({ agent, content, index, card }: { agent: Agent; content: string; index: number; card?: boolean }) {
   const isPal = agent.id === 'pal'
   return (
     <div className="flex items-end gap-2">
@@ -377,6 +389,15 @@ function AgentBubble({ agent, content, index }: { agent: Agent; content: string;
         >
           {content}
         </div>
+        {card && (
+          <button
+            onClick={() => useCanvas.getState().open('card')}
+            className="pv-press-lg pv-sheen pv-pop mt-2 flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold"
+            style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}
+          >
+            <CreditCard size={16} /> Open your card
+          </button>
+        )}
       </div>
     </div>
   )

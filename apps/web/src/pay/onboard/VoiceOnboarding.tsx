@@ -1,28 +1,47 @@
 /**
- * VoiceOnboarding (light) — your chosen companion introduces itself by voice
- * (in your chosen voice) and fills the persona via its save_persona tool, while
- * the live character lip-syncs and emotes. Designed in the `.pv` language.
+ * VoiceOnboarding (scripted) — a short, fixed set of concrete questions your
+ * companion asks BY VOICE, one at a time. You answer by speaking (mic) or by
+ * typing in the text box — both always work. No free-form witty chatter: the
+ * questions are fixed and role-specific (parent vs kid), then we build the
+ * persona from the answers and finish.
  *
- * Nothing speaks until you tap "Say hi" (a user gesture — required for audio,
- * and stops it talking on its own). Audio is MP3-only to avoid double playback.
- * If the mic is unavailable, you can finish with just your name (no dead-end).
+ * Full voice: the companion speaks each question (speechSynthesis) and listens
+ * (speechRecognition); the live character lip-syncs while it talks. If speech
+ * isn't available, the text box carries the whole flow — never a dead-end.
  */
 import { useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, Check, Sparkles } from 'lucide-react'
+import { Mic, MicOff, Check, Sparkles, ArrowRight, Volume2 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
-import { connectLiveRt, type LiveRtSocket } from '../../lib/liveRt'
-import { startMicCapture, PcmPlayer, type MicCaptureHandle } from '../../lib/liveAudio'
-import { getVoiceKey } from '../../lib/voicePrefs'
 import { useAvatar, avatarDef } from '../../lib/avatar'
 import { Companion, type CompanionMood } from '../../components/Companion'
 import { OnboardBackdrop } from './OnboardBackdrop'
 
-type Phase = 'ready' | 'connecting' | 'live' | 'saving' | 'done' | 'error'
+type Q = { key: string; prompt: string; placeholder: string; optional?: boolean }
 
-type Line = { id: number; who: 'you' | 'pal'; text: string }
-let tlId = 1
+// Short, concrete, fixed questions — different for a parent and a kid.
+const QUESTIONS: Record<'parent' | 'kid', Q[]> = {
+  kid: [
+    { key: 'age', prompt: 'How old are you?', placeholder: 'e.g. 11' },
+    { key: 'grade', prompt: 'What grade are you in?', placeholder: 'e.g. Grade 6' },
+    { key: 'interests', prompt: 'What do you like most — sport, gaming, art, music or reading?', placeholder: 'e.g. gaming and art' },
+    { key: 'savingGoal', prompt: 'What are you saving up for?', placeholder: 'e.g. a new bike' },
+  ],
+  parent: [
+    { key: 'kidsCount', prompt: 'How many kids do you have?', placeholder: 'e.g. 2' },
+    { key: 'kids', prompt: 'What are their names and ages?', placeholder: 'e.g. Mia 9, Sam 12' },
+    { key: 'goal', prompt: 'Your main goal — saving, chores, or study?', placeholder: 'e.g. saving and chores' },
+    { key: 'familyNotes', prompt: 'Anything else we should know about your family?', placeholder: 'Optional — say “skip”', optional: true },
+  ],
+}
+
+// Minimal Web Speech Recognition typing (not in lib.dom).
+type SpeechResultList = ArrayLike<ArrayLike<{ transcript: string }>>
+interface SpeechRec { lang: string; interimResults: boolean; continuous: boolean; onresult: ((e: { results: SpeechResultList }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null; start: () => void; stop: () => void }
+type SpeechRecCtor = new () => SpeechRec
+
+type Phase = 'ready' | 'asking' | 'saving' | 'done'
 
 export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'; name?: string; onDone: () => void }) {
   const avatar = useAvatar((s) => s.avatar)
@@ -30,244 +49,214 @@ export function VoiceOnboarding({ role, name, onDone }: { role: 'parent' | 'kid'
   const updateAccount = useAuthStore((s) => s.updateAccount)
   const account = useAuthStore((s) => s.account)
 
+  const questions = QUESTIONS[role]
+
   const [phase, setPhase] = useState<Phase>('ready')
-  const [palLine, setPalLine] = useState('')
-  const [userLine, setUserLine] = useState('')
-  const [transcript, setTranscript] = useState<Line[]>([])
-  const [micOn, setMicOn] = useState(true)
+  const [index, setIndex] = useState(0)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [input, setInput] = useState('')
   const [speaking, setSpeaking] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [listening, setListening] = useState(false)
 
-  const sockRef = useRef<LiveRtSocket | null>(null)
-  const micRef = useRef<MicCaptureHandle | null>(null)
-  const playerRef = useRef<PcmPlayer | null>(null)
-  const micOnRef = useRef(true)
-  const replyBufRef = useRef('')
-  const pendingUserRef = useRef('')
+  const recRef = useRef<SpeechRec | null>(null)
   const savedRef = useRef(false)
-  const startedRef = useRef(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const hasSpeech = typeof window !== 'undefined' && !!window.speechSynthesis
+  const hasMic = typeof window !== 'undefined' && !!((window as unknown as { SpeechRecognition?: SpeechRecCtor; webkitSpeechRecognition?: SpeechRecCtor }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: SpeechRecCtor }).webkitSpeechRecognition)
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [transcript, palLine, userLine])
+  const q = questions[index]
+  const isLast = index === questions.length - 1
 
-  function teardown() {
-    try { sockRef.current?.end() } catch { /* ignore */ }
-    try { sockRef.current?.close() } catch { /* ignore */ }
-    micRef.current?.stop()
-    playerRef.current?.close()
-    sockRef.current = null
-    micRef.current = null
-    playerRef.current = null
+  function stopListening() {
+    try { recRef.current?.stop() } catch { /* ignore */ }
+    recRef.current = null
+    setListening(false)
   }
 
-  async function savePersona(persona: Record<string, unknown>) {
+  function teardown() {
+    stopListening()
+    try { window.speechSynthesis?.cancel() } catch { /* ignore */ }
+    setSpeaking(false)
+  }
+  useEffect(() => () => teardown(), [])
+
+  // Speak a question in a warm voice; auto-open the mic when it finishes.
+  function speak(text: string, thenListen: boolean) {
+    if (!hasSpeech) { if (thenListen) startListening(); return }
+    const synth = window.speechSynthesis
+    synth.cancel()
+    const u = new SpeechSynthesisUtterance(text)
+    u.rate = 1
+    u.pitch = 1.06
+    const voices = synth.getVoices()
+    const preferred = voices.find((v) => /en-AU/i.test(v.lang) && /female|zira|karen|samantha|tessa/i.test(v.name))
+      ?? voices.find((v) => /en-(AU|GB)/i.test(v.lang))
+      ?? voices.find((v) => /^en/i.test(v.lang))
+    if (preferred) u.voice = preferred
+    u.onstart = () => setSpeaking(true)
+    u.onend = () => { setSpeaking(false); if (thenListen) startListening() }
+    u.onerror = () => { setSpeaking(false); if (thenListen) startListening() }
+    synth.speak(u)
+  }
+
+  function startListening() {
+    if (!hasMic) return
+    const w = window as unknown as { SpeechRecognition?: SpeechRecCtor; webkitSpeechRecognition?: SpeechRecCtor }
+    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition
+    if (!Ctor) return
+    try { recRef.current?.stop() } catch { /* ignore */ }
+    const rec = new Ctor()
+    rec.lang = 'en-AU'
+    rec.interimResults = true
+    rec.continuous = false
+    rec.onresult = (e) => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; setInput(t) }
+    rec.onend = () => { setListening(false); recRef.current = null }
+    rec.onerror = () => { setListening(false); recRef.current = null }
+    recRef.current = rec
+    setListening(true)
+    try { rec.start() } catch { setListening(false); recRef.current = null }
+  }
+
+  function toggleMic() {
+    if (listening) stopListening()
+    else startListening()
+  }
+
+  function begin() {
+    setPhase('asking')
+    setIndex(0)
+    speak(questions[0].prompt, true)
+  }
+
+  function next() {
+    stopListening()
+    try { window.speechSynthesis?.cancel() } catch { /* ignore */ }
+    const value = input.trim()
+    const nextAnswers = { ...answers, [q.key]: value }
+    setAnswers(nextAnswers)
+    setInput('')
+    if (isLast) { void finish(nextAnswers); return }
+    const ni = index + 1
+    setIndex(ni)
+    speak(questions[ni].prompt, true)
+  }
+
+  function repeat() {
+    speak(q.prompt, true)
+  }
+
+  function buildPersona(a: Record<string, string>): Record<string, unknown> {
+    const clean = (s?: string) => (s && s.trim() ? s.trim() : undefined)
+    const base: Record<string, unknown> = { onboarded: true, onboardAnswers: a }
+    if (name?.trim()) base.name = name.trim()
+    if (role === 'kid') {
+      return { ...base, age: clean(a.age), grade: clean(a.grade), interests: clean(a.interests), savingGoal: clean(a.savingGoal) }
+    }
+    return { ...base, kidsCount: clean(a.kidsCount), kids: clean(a.kids), goal: clean(a.goal), familyNotes: clean(a.familyNotes) }
+  }
+
+  async function finish(a: Record<string, string>) {
     if (savedRef.current) return
     savedRef.current = true
+    teardown()
     setPhase('saving')
     try {
       const res = await api<{ account: Account }>('/me', {
         method: 'PATCH',
-        body: JSON.stringify({ accountType: role, persona: { ...(account?.persona ?? {}), ...persona, ...(name?.trim() ? { name: name.trim() } : {}), onboarded: true } }),
+        body: JSON.stringify({ accountType: role, persona: { ...(account?.persona ?? {}), ...buildPersona(a) } }),
       })
       updateAccount(res.account)
-    } catch {
-      /* still let them in — the gate re-syncs on next load */
-    }
-    // Stop the live session + audio so nothing keeps talking, then let the
-    // user tap Continue when they're ready (the avatar stays for the moment).
-    teardown()
+    } catch { /* still let them in — the gate re-syncs on next load */ }
     setPhase('done')
   }
 
-  // Finish with just the name (mic denied / "I'd rather skip"). No dead-end.
-  function finishWithName() {
-    teardown()
-    void savePersona({})
-  }
-
-  async function start() {
-    if (startedRef.current) return
-    startedRef.current = true
-    setError(null)
-    setPhase('connecting')
-    const token = useAuthStore.getState().token
-    const player = new PcmPlayer()
-    playerRef.current = player
-    await player.resume()
-    try {
-      micRef.current = await startMicCapture((pcm) => {
-        if (micOnRef.current && sockRef.current?.isOpen()) sockRef.current.sendMicPcm(pcm)
-      })
-    } catch {
-      setError(`I need your microphone so ${companion.name} can chat — or you can finish with just your name.`)
-      setPhase('error')
-      return
-    }
-    const mode = role === 'parent' ? 'onboard_parent' : 'onboard_kid'
-    const sock = connectLiveRt(
-      {
-        onOpen: () => {
-          const seed: Record<string, unknown> = { companion: companion.name }
-          if (name?.trim()) seed.name = name.trim()
-          sock.start(role, mode, seed, undefined, getVoiceKey())
-          setPhase('live')
-        },
-        onUserTranscript: (t) => { setUserLine(t); pendingUserRef.current = t },
-        onReplyDelta: (t) => { replyBufRef.current += t; setPalLine(replyBufRef.current); setSpeaking(true) },
-        onTurnComplete: () => {
-          const u = pendingUserRef.current.trim()
-          const p = replyBufRef.current.trim()
-          setTranscript((prev) => [
-            ...prev,
-            ...(u ? [{ id: tlId++, who: 'you' as const, text: u }] : []),
-            ...(p ? [{ id: tlId++, who: 'pal' as const, text: p }] : []),
-          ])
-          pendingUserRef.current = ''
-          replyBufRef.current = ''
-          setUserLine('')
-          setPalLine('')
-          setSpeaking(false)
-        },
-        onInterrupted: () => { playerRef.current?.clear(); setSpeaking(false) },
-        // MP3-only (ElevenLabs path) — avoids double/jarring audio.
-        onPalAudioMp3: (mp3) => void playerRef.current?.enqueueEncoded(mp3),
-        onPersona: (persona) => void savePersona(persona),
-        onError: () => undefined,
-      },
-      token,
-    )
-    sockRef.current = sock
-  }
-
-  useEffect(() => () => teardown(), [])
-
-  function toggleMic() {
-    setMicOn((on) => {
-      const next = !on
-      micOnRef.current = next
-      sockRef.current?.setMic(next)
-      return next
-    })
-  }
-
   const mood: CompanionMood = speaking ? 'happy' : 'neutral'
-  const statusLabel =
-    phase === 'live' ? `Chatting with ${companion.name}`
-      : phase === 'connecting' ? 'Connecting…'
-      : phase === 'saving' ? 'Saving…'
-      : phase === 'done' ? 'All set!'
-      : phase === 'error' ? 'Mic needed'
-      : `Meet ${companion.name}`
+  const canSkip = q?.optional
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <OnboardBackdrop accent={companion.accent} />
 
-      {/* Header */}
-      <div className="relative z-10 flex flex-none items-center justify-center px-5 pt-[max(16px,env(safe-area-inset-top))]">
+      {/* Header + progress */}
+      <div className="relative z-10 flex flex-none flex-col items-center gap-2 px-5 pt-[max(16px,env(safe-area-inset-top))]">
         <span className="pv-glass pv-hairline rounded-full px-3.5 py-1.5 text-xs font-bold" style={{ color: 'var(--pv-ink-2)' }}>
-          {statusLabel}
+          {phase === 'asking' ? `Question ${index + 1} of ${questions.length}` : phase === 'saving' ? 'Setting things up…' : phase === 'done' ? 'All set!' : `Meet ${companion.name}`}
         </span>
+        {phase === 'asking' && (
+          <div className="pv-progress w-full max-w-sm" role="progressbar" aria-valuenow={index + 1} aria-valuemin={0} aria-valuemax={questions.length}>
+            <span style={{ width: `${((index + 1) / questions.length) * 100}%` }} />
+          </div>
+        )}
       </div>
 
-      {/* Companion */}
+      {/* Companion (lip-syncs while speaking) */}
       <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-6">
-        <div className="relative" style={{ width: 'min(80vw, 320px)', height: 'min(54vh, 460px)' }}>
-          <div
-            className="pointer-events-none absolute left-1/2 top-1/2 h-3/5 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[72px]"
-            style={{ background: companion.accent, opacity: speaking ? 0.42 : 0.26 }}
-          />
-          <Companion avatar={avatar} getLevel={() => playerRef.current?.getLevel() ?? 0} mood={mood} className="relative h-full w-full" />
+        <div className="relative" style={{ width: 'min(78vw, 300px)', height: 'min(46vh, 400px)' }}>
+          <div className="pointer-events-none absolute left-1/2 top-1/2 h-3/5 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[72px]" style={{ background: companion.accent, opacity: speaking ? 0.42 : 0.24 }} />
+          <Companion avatar={avatar} getLevel={() => (speaking ? 0.35 + Math.random() * 0.45 : 0)} mood={mood} className="relative h-full w-full" />
           {phase === 'done' && (
-            <motion.div
-              initial={{ scale: 0.7, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 240, damping: 16 }}
-              className="absolute inset-x-0 bottom-2 flex flex-col items-center gap-1.5"
-            >
+            <motion.div initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 240, damping: 16 }} className="absolute inset-x-0 bottom-2 flex flex-col items-center gap-1.5">
               <span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
                 <Check size={24} strokeWidth={3} />
               </span>
-              <span className="pv-title pv-tight">Nice to meet you!</span>
+              <span className="pv-title pv-tight">Nice to meet you{name?.trim() ? `, ${name.trim().split(' ')[0]}` : ''}!</span>
             </motion.div>
           )}
         </div>
       </div>
 
-      {/* Full transcript (scrolls) */}
-      {(phase === 'live' || transcript.length > 0) && (
-        <div ref={scrollRef} className="pv-no-scrollbar relative z-10 flex-none space-y-2 overflow-y-auto px-5 pb-2" style={{ maxHeight: '28vh' }}>
-          {transcript.map((l) => (
-            l.who === 'you' ? (
-              <div key={l.id} className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm font-medium" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>{l.text}</div>
-            ) : (
-              <div key={l.id} className="pv-glass max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{l.text}</div>
-            )
-          ))}
-          {userLine && <div className="ml-auto max-w-[85%] rounded-2xl px-3.5 py-2 text-sm font-medium" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)', opacity: 0.65 }}>{userLine}</div>}
-          {palLine && <div className="pv-glass max-w-[90%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-relaxed" style={{ borderBottomLeftRadius: 6 }}>{palLine}</div>}
-          {phase === 'live' && !palLine && !userLine && transcript.length === 0 && (
-            <div className="text-center text-sm" style={{ color: 'var(--pv-ink-3)' }}>Say hi to {companion.name} 💬</div>
-          )}
+      {/* The current question + answer box */}
+      {phase === 'asking' && q && (
+        <div className="relative z-10 flex-none px-5 pb-2">
+          <div className="mx-auto w-full max-w-sm">
+            <div className="pv-glass pv-hairline mb-3 flex items-start gap-2.5 rounded-2xl px-4 py-3" style={{ borderBottomLeftRadius: 6 }}>
+              <button onClick={repeat} aria-label="Hear again" className="pv-press mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full" style={{ color: 'var(--pv-accent)' }}>
+                <Volume2 size={16} />
+              </button>
+              <p className="text-[15px] font-semibold leading-snug" style={{ color: 'var(--pv-ink)' }}>{q.prompt}</p>
+            </div>
+
+            <div className="pv-composer pv-glass pv-hairline flex items-center gap-2 rounded-full p-1.5 pl-4">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (input.trim() || canSkip)) next() }}
+                placeholder={listening ? 'Listening…' : q.placeholder}
+                className="min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+                style={{ color: 'var(--pv-ink)' }}
+              />
+              {hasMic && (
+                <button onClick={toggleMic} aria-label={listening ? 'Stop' : 'Speak'} className={`pv-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${listening ? 'pv-live-pulse' : ''}`} style={listening ? { background: 'var(--pv-neg)', color: '#fff' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
+                  {listening ? <MicOff size={18} /> : <Mic size={18} />}
+                </button>
+              )}
+              <button onClick={next} disabled={!input.trim() && !canSkip} aria-label={isLast ? 'Finish' : 'Next'} className="pv-press-lg flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-40" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
+                {isLast ? <Check size={18} strokeWidth={2.8} /> : <ArrowRight size={18} strokeWidth={2.8} />}
+              </button>
+            </div>
+            {canSkip && !input.trim() && (
+              <button onClick={next} className="pv-press mx-auto mt-2 block text-xs font-bold" style={{ color: 'var(--pv-ink-3)' }}>Skip</button>
+            )}
+          </div>
         </div>
-      )}
-      {error && (
-        <div className="relative z-10 mx-5 mb-2 flex-none rounded-2xl px-3.5 py-2.5 text-center text-sm" style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}>{error}</div>
       )}
 
       {/* Action area */}
       <div className="relative z-10 flex flex-none items-center justify-center px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-2">
         {phase === 'ready' && (
-          <motion.button
-            onClick={() => void start()}
-            whileTap={{ scale: 0.96 }}
-            className="pv-sheen flex h-14 w-full max-w-sm items-center justify-center gap-2 rounded-full text-base font-bold"
-            style={{ background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-md)' }}
-          >
-            <Sparkles size={18} /> Say hi to {companion.name}
+          <motion.button onClick={begin} whileTap={{ scale: 0.96 }} className="pv-sheen flex h-14 w-full max-w-sm items-center justify-center gap-2 rounded-full text-base font-bold" style={{ background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-md)' }}>
+            <Sparkles size={18} /> Start with {companion.name}
           </motion.button>
         )}
-
-        {phase === 'connecting' && (
+        {phase === 'saving' && (
           <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--pv-ink-3)' }}>
             <span className="h-5 w-5 animate-spin rounded-full" style={{ border: '2px solid var(--pv-surface-3)', borderTopColor: 'var(--pv-accent)' }} />
-            Waking up {companion.name}…
+            Building your BrainPal…
           </div>
         )}
-
-        {phase === 'live' && (
-          <button onClick={toggleMic} className="pv-press-lg flex flex-col items-center gap-1.5" aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'}>
-            <span className="flex h-16 w-16 items-center justify-center rounded-full" style={micOn ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface)', color: 'var(--pv-ink-2)', boxShadow: 'var(--pv-shadow-sm)' }}>
-              {micOn ? <Mic size={26} /> : <MicOff size={26} />}
-            </span>
-            <span className="text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>{micOn ? 'Listening' : 'Muted'}</span>
-          </button>
-        )}
-
         {phase === 'done' && (
-          <motion.button
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            onClick={onDone}
-            whileTap={{ scale: 0.96 }}
-            className="pv-sheen flex h-14 w-full max-w-sm items-center justify-center gap-2 rounded-full text-base font-bold"
-            style={{ background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-md)' }}
-          >
+          <motion.button initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onClick={onDone} whileTap={{ scale: 0.96 }} className="pv-sheen flex h-14 w-full max-w-sm items-center justify-center gap-2 rounded-full text-base font-bold" style={{ background: 'var(--pv-primary)', color: 'var(--pv-on-primary)', boxShadow: 'var(--pv-shadow-md)' }}>
             <Sparkles size={18} /> Continue to BrainPal
           </motion.button>
-        )}
-
-        {phase === 'error' && (
-          <div className="flex w-full max-w-sm flex-col gap-2">
-            <button onClick={() => { startedRef.current = false; void start() }} className="pv-press h-12 w-full rounded-full text-sm font-bold pv-glass pv-hairline" style={{ color: 'var(--pv-ink)' }}>
-              Try again
-            </button>
-            <button onClick={finishWithName} className="pv-press-lg h-12 w-full rounded-full text-sm font-bold" style={{ backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' }}>
-              Finish with just my name
-            </button>
-          </div>
         )}
       </div>
     </div>

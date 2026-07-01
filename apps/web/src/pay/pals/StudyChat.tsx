@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { create } from 'zustand'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BookOpen, Sparkles, Mic, Camera, Send as SendIcon, Check, Plus, GraduationCap, ChevronDown, ArrowRight, Trophy } from 'lucide-react'
+import { BookOpen, Sparkles, Mic, Camera, Send as SendIcon, Check, Plus, GraduationCap, ChevronDown, ArrowRight, Trophy, Bookmark } from 'lucide-react'
 import { Companion } from '../../components/Companion'
 import { api } from '../../lib/api'
 import { useAuthStore, type Account } from '../../stores/auth'
@@ -66,7 +66,7 @@ const useStudyChatStore = create<StudyChatState>((set) => ({
   reset: () => set({ messages: [], pending: null, activeTopicId: null, activeTopicTitle: null }),
 }))
 
-export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDemo, demoBusy, onSetup }: {
+export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDemo, demoBusy, onSetup, onSavedAll }: {
   onSwitchPal?: () => void
   onOpenCards: (topicId: string, chapter?: string) => void
   onQuiz: (topicId: string) => void
@@ -74,6 +74,7 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
   onDemo: () => void
   demoBusy: boolean
   onSetup: () => void
+  onSavedAll?: () => void
 }) {
   const qc = useQueryClient()
   const account = useAuthStore((s) => s.account)
@@ -353,6 +354,11 @@ export function StudyChat({ onSwitchPal, onOpenCards, onQuiz, onInterview, onDem
             <button onClick={onSetup} aria-label="Add subjects" className="pv-press pv-glass flex h-10 w-10 flex-none items-center justify-center rounded-full">
               <Plus size={18} strokeWidth={2.6} style={{ color: 'var(--pv-ink-2)' }} />
             </button>
+            {onSavedAll && (
+              <button onClick={onSavedAll} aria-label="Saved cards to review" className="pv-press pv-glass flex h-10 w-10 flex-none items-center justify-center rounded-full">
+                <Bookmark size={18} strokeWidth={2.4} style={{ color: 'var(--pv-ink-2)' }} />
+              </button>
+            )}
           </div>
 
           {/* Onboarding progress — advances per answered question. */}

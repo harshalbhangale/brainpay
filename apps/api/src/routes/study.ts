@@ -462,6 +462,28 @@ study.post('/study/cards/:id/bookmark', async (c) => {
   return c.json({ ok: true, bookmarked: next })
 })
 
+// GET /study/cards/saved — every bookmarked card across ALL topics, for the
+// cross-topic "Review saved" session. Newest-reviewed first.
+study.get('/study/cards/saved', async (c) => {
+  const accountId = authedAccountId(c)
+  const rows = await db
+    .select({
+      id: studyCards.id,
+      front: studyCards.front,
+      back: studyCards.back,
+      status: studyCards.status,
+      chapter: studyCards.chapter,
+      topicId: studyCards.topicId,
+      topicTitle: studyTopics.title,
+      topicEmoji: studyTopics.emoji,
+    })
+    .from(studyCards)
+    .innerJoin(studyTopics, eq(studyTopics.id, studyCards.topicId))
+    .where(and(eq(studyCards.accountId, accountId), eq(studyCards.bookmarked, true)))
+    .orderBy(desc(studyCards.nextReviewAt))
+  return c.json({ cards: rows })
+})
+
 // POST /study/cards/:id/cheatsheet — expand a single concept into a rich,
 // kid-friendly "cheat sheet" (definition, key points, example, analogy,
 // optional formula, common mistake). Generated on demand from the card +
@@ -1285,7 +1307,7 @@ study.post('/study/topics/:id/quiz', async (c) => {
     messages: [
       {
         role: 'system',
-        content: `Generate a multiple-choice quiz for a student based on their study cards. Return JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":"A","concept":"..."}]}. Generate 5-10 questions. Each question has exactly 4 options labeled by the option text. correctAnswer must be the exact text of the correct option. concept is a short label of what the question tests.`,
+        content: `Generate a multiple-choice quiz for a student based on their study cards. Return JSON: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":"A","concept":"...","explanation":"..."}]}. Generate 5-10 questions. Each question has exactly 4 options labeled by the option text. correctAnswer must be the exact text of the correct option. concept is a short label of what the question tests. explanation is ONE short, clear sentence (kid-friendly, ≤ 25 words) saying WHY the correct answer is right — used to teach after they answer.`,
       },
       { role: 'user', content: cardContent },
     ],
@@ -1293,7 +1315,7 @@ study.post('/study/topics/:id/quiz', async (c) => {
     max_tokens: 3000,
   })
 
-  let questions: { question: string; options: string[]; correctAnswer: string; concept: string }[] = []
+  let questions: { question: string; options: string[]; correctAnswer: string; concept: string; explanation?: string }[] = []
   try {
     const parsed = JSON.parse(res.choices[0]?.message?.content ?? '{}')
     questions = Array.isArray(parsed.questions) ? parsed.questions : []
@@ -1333,7 +1355,7 @@ study.post('/study/quizzes/:id/submit', async (c) => {
   }).safeParse(body)
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
 
-  const questions = quiz.questions as { question: string; options: string[]; correctAnswer: string; concept: string; kidAnswer: string | null; isCorrect: boolean | null }[]
+  const questions = quiz.questions as { question: string; options: string[]; correctAnswer: string; concept: string; explanation?: string; kidAnswer: string | null; isCorrect: boolean | null }[]
   let correctCount = 0
   const weakConcepts: string[] = []
 

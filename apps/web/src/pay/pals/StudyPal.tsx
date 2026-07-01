@@ -39,7 +39,7 @@ type InterviewRow = {
   completedAt: string | null; createdAt: string; topicTitle?: string | null; topicEmoji?: string | null
   analysis?: InterviewAnalysis | null
 }
-type View = 'setup' | 'home' | 'subject' | 'concepts' | 'quiz' | 'interview' | 'chat' | 'saved' | 'history' | 'interviewDetail' | 'lesson' | 'cheatsheet'
+type View = 'setup' | 'home' | 'subject' | 'concepts' | 'quiz' | 'interview' | 'chat' | 'saved' | 'savedAll' | 'history' | 'interviewDetail' | 'lesson' | 'cheatsheet'
 
 // Seed material for the one-tap demo. Written so the study pipeline generates a
 // solid WWI flashcard deck for an Australian Year 8 History student (ANZAC lens).
@@ -126,6 +126,8 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
         <ChatView topicId={selectedTopic} onBack={() => setView('subject')} />
       ) : view === 'saved' && selectedTopic ? (
         <SavedView topicId={selectedTopic} onBack={() => setView('subject')} />
+      ) : view === 'savedAll' ? (
+        <AllSavedView onBack={() => setView('home')} />
       ) : view === 'history' && selectedTopic ? (
         <HistoryView topicId={selectedTopic} chapter={selectedLesson ?? undefined} onBack={() => setView(selectedLesson ? 'lesson' : 'subject')} onOpen={(id) => { setSelectedInterview(id); setView('interviewDetail') }} />
       ) : view === 'interviewDetail' && selectedInterview ? (
@@ -139,6 +141,7 @@ export function StudyPal({ onSwitchPal }: { onSwitchPal?: () => void } = {}) {
           onDemo={startDemo}
           demoBusy={demoBusy}
           onSetup={() => setView('setup')}
+          onSavedAll={() => setView('savedAll')}
         />
       )}
       {helpOpen && <RewardsHelp onClose={() => setHelpOpen(false)} />}
@@ -1226,7 +1229,7 @@ function ConceptCheatSheet({ card, onBack, onQuiz, onChat }: { card: ConceptCard
 // QUIZ
 // ═══════════════════════════════════════════════════════════════════════
 
-type QuizQuestion = { question: string; options: string[]; correctAnswer: string }
+type QuizQuestion = { question: string; options: string[]; correctAnswer: string; explanation?: string; concept?: string }
 type ReviewedQuestion = QuizQuestion & { kidAnswer: string | null; isCorrect: boolean | null; concept?: string }
 type QuizResult = { scorePct: number; brainsEarned: number; questions?: ReviewedQuestion[]; weakConcepts?: string[] }
 
@@ -1294,6 +1297,12 @@ function QuizView({ topicId, onBack }: { topicId: string; onBack: () => void }) 
                       )
                     })}
                   </div>
+                  {q.explanation && (
+                    <div className="mt-2.5 flex items-start gap-2 rounded-xl px-3 py-2.5" style={{ background: 'var(--pv-accent-soft)' }}>
+                      <Sparkles size={14} className="mt-0.5 flex-none" style={{ color: 'var(--pv-accent)' }} />
+                      <span className="text-[13px] leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{q.explanation}</span>
+                    </div>
+                  )}
                 </Card>
               ))}
             </div>
@@ -1465,6 +1474,76 @@ function SavedView({ topicId, onBack }: { topicId: string; onBack: () => void })
 // ═══════════════════════════════════════════════════════════════════════
 // LESSONS
 // ═══════════════════════════════════════════════════════════════════════
+
+function AllSavedView({ onBack }: { onBack: () => void }) {
+  const qc = useQueryClient()
+  type SavedCard = { id: string; front: string; back: string; chapter: string | null; topicId: string; topicTitle: string; topicEmoji: string }
+  const { data, isLoading } = useQuery({
+    queryKey: ['study-saved-all'],
+    queryFn: () => api<{ cards: SavedCard[] }>('/study/cards/saved'),
+  })
+  const cards = data?.cards ?? []
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+
+  const unbookmark = useMutation({
+    mutationFn: (cardId: string) => api(`/study/cards/${cardId}/bookmark`, { method: 'POST', body: JSON.stringify({ bookmarked: false }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['study-saved-all'] })
+      qc.invalidateQueries({ queryKey: ['study-cards'] })
+    },
+  })
+
+  return (
+    <>
+      <Header title="Saved to review" onBack={onBack} right={cards.length > 0 ? <span className="text-xs font-bold" style={{ color: 'var(--pv-ink-3)' }}>{cards.length}</span> : undefined} />
+      <div className="pv-no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {isLoading ? (
+          <Centered><Spinner /></Centered>
+        ) : cards.length === 0 ? (
+          <div className="flex flex-col items-center px-4 pt-16 text-center">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: 'var(--pv-surface)', boxShadow: 'var(--pv-shadow-sm)' }}><Bookmark size={24} style={{ color: 'var(--pv-ink-3)' }} /></div>
+            <p className="pv-title">Nothing saved yet</p>
+            <p className="pv-body mt-1 max-w-xs" style={{ color: 'var(--pv-ink-2)' }}>Tap the bookmark on any card while studying — they collect here from every subject so you can review them anytime. Tap a card to flip it.</p>
+          </div>
+        ) : (
+          <div className="mx-auto flex w-full max-w-xl flex-col gap-3">
+            {cards.map((c, i) => {
+              const shown = open[c.id]
+              return (
+                <button key={c.id} onClick={() => setOpen((o) => ({ ...o, [c.id]: !o[c.id] }))} className="pv-press pv-pop text-left" style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}>
+                  <Card className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold" style={{ background: 'var(--pv-accent-soft)', color: 'var(--pv-accent)' }}>
+                        <span>{c.topicEmoji}</span>{c.chapter || c.topicTitle}
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); unbookmark.mutate(c.id) }}
+                        className="pv-press flex h-7 w-7 flex-none items-center justify-center rounded-full"
+                        style={{ color: 'var(--pv-accent)' }}
+                        aria-label="Remove from saved"
+                      >
+                        <Bookmark size={16} fill="currentColor" />
+                      </button>
+                    </div>
+                    <p className="mt-2 font-bold leading-snug">{c.front}</p>
+                    {shown ? (
+                      <>
+                        <div className="my-3 h-px" style={{ background: 'var(--pv-line)' }} />
+                        <p className="text-sm leading-relaxed" style={{ color: 'var(--pv-ink-2)' }}>{c.back}</p>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--pv-ink-3)' }}>Tap to reveal the answer</p>
+                    )}
+                  </Card>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
 
 function LessonCreator({ topicId, onDone }: { topicId: string; onDone: () => void }) {
   const [name, setName] = useState('')

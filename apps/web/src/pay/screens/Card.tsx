@@ -8,11 +8,11 @@
  * (freeze, online, ATM, contactless, daily limit) is real and persisted.
  */
 import { useState, useEffect } from 'react'
-import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, Ban, Palette, Check, type LucideIcon } from 'lucide-react'
+import { Globe, Banknote, Nfc, Gauge, Snowflake, Eye, EyeOff, ShieldAlert, Ban, Palette, Check, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import { useAuthStore } from '../../stores/auth'
 import { useCardSettings, cardNumber, cardExpiry, cardCvv, cardLast4, maskedNumber, blockLabel } from '../../lib/card'
 import { aud } from '../../lib/format'
-import { Avatar, Button, Card, PressButton } from '../components/primitives'
+import { Avatar, Card, PressButton } from '../components/primitives'
 import { BottomSheet } from '../components/BottomSheet'
 import { cardSkin, CARD_SKINS } from '../lib/cardSkins'
 import { useWallet, useFamilyKids } from '../useMoneyPal'
@@ -40,8 +40,9 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
   const skin = cardSkin(settings.design)
   const [tilt, setTilt] = useState({ x: 0, y: 0 })
   const [customizing, setCustomizing] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [nameInput, setNameInput] = useState<string | null>(null)
-  useEffect(() => { setNameInput(null); setTilt({ x: 0, y: 0 }) }, [holder.id])
+  useEffect(() => { setNameInput(null); setTilt({ x: 0, y: 0 }); setCustomizing(false); setSettingsOpen(false) }, [holder.id])
   const nameValue = nameInput ?? settings.label
   const displayName = (nameValue || holder.name).toUpperCase()
 
@@ -108,7 +109,10 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
           )}
 
           <div className="relative flex items-start justify-between">
-            <span className="text-sm font-extrabold tracking-tight">BrainPal</span>
+            <span className="flex items-center gap-2 text-sm font-extrabold tracking-tight">
+              BrainPal
+              {settings.frozen && <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide" style={{ background: 'rgba(255,255,255,0.22)' }}><Snowflake size={10} strokeWidth={2.6} /> Frozen</span>}
+            </span>
             <span className="pv-amount text-base" style={{ opacity: 0.95 }}>{aud(holder.balance)}</span>
           </div>
 
@@ -135,25 +139,12 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      {/* Quick actions */}
-      <div className="mt-5 flex gap-3">
-        <Button variant="soft" full leadingIcon={revealed ? EyeOff : Eye} onClick={() => setRevealed((v) => !v)}>
-          {revealed ? 'Hide details' : 'Show number'}
-        </Button>
-        <Button
-          variant={settings.frozen ? 'accent' : 'soft'}
-          full
-          leadingIcon={Snowflake}
-          onClick={() => update({ frozen: !settings.frozen })}
-        >
-          {settings.frozen ? 'Unfreeze' : 'Freeze'}
-        </Button>
+      {/* Primary actions — the card shows directly; freeze + controls live in Settings. */}
+      <div className="mt-5 grid grid-cols-3 gap-2.5">
+        <ActionPill Icon={revealed ? EyeOff : Eye} label={revealed ? 'Hide' : 'Show'} onClick={() => setRevealed((v) => !v)} />
+        <ActionPill Icon={Palette} label="Customize" active={customizing} onClick={() => { setCustomizing((v) => !v); setSettingsOpen(false) }} />
+        <ActionPill Icon={SlidersHorizontal} label="Settings" active={settingsOpen} dot={settings.frozen} onClick={() => { setSettingsOpen((v) => !v); setCustomizing(false) }} />
       </div>
-
-      {/* Customize — pick a hero skin + the name printed on the card. */}
-      <button onClick={() => setCustomizing((v) => !v)} className="pv-press mt-4 flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-bold" style={{ background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
-        <Palette size={16} /> {customizing ? 'Done customizing' : 'Customize card'}
-      </button>
       {customizing && (
         <Card flat className="pv-rise mt-3 p-4">
           <p className="pv-label mb-2">Design</p>
@@ -186,60 +177,80 @@ export function CardSheet({ onClose }: { onClose: () => void }) {
         </Card>
       )}
 
-      {/* Status */}
-      <Card flat className="mt-4 flex items-center gap-3 p-4">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: settings.frozen ? 'var(--pv-neg)' : 'var(--pv-pos)' }} />
-        <span className="text-sm font-semibold">{settings.frozen ? `${holder.you ? 'Your' : holder.name + '’s'} card is frozen` : `${holder.you ? 'Your' : holder.name + '’s'} card is active`}</span>
-      </Card>
+      {settingsOpen && (
+        <div className="pv-rise">
+          {/* Freeze */}
+          <button onClick={() => update({ frozen: !settings.frozen })} className="pv-press mt-4 flex w-full items-center justify-between rounded-2xl px-4 py-3.5" style={settings.frozen ? { backgroundImage: 'var(--pv-grad-accent)', color: 'var(--pv-on-accent)', boxShadow: 'var(--pv-shadow-pop)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
+            <span className="flex items-center gap-2.5 text-sm font-bold"><Snowflake size={18} /> {settings.frozen ? 'Card frozen' : 'Freeze card'}</span>
+            <span className="text-xs font-bold" style={{ opacity: 0.75 }}>{settings.frozen ? 'Tap to unfreeze' : 'Tap to freeze'}</span>
+          </button>
 
-      {/* Controls */}
-      <p className="pv-label mt-6">Controls</p>
-      <Card flat className="mt-2 overflow-hidden">
-        <ToggleRow Icon={Globe} label="Online payments" on={settings.online} disabled={settings.frozen} onToggle={() => update({ online: !settings.online })} />
-        <div className="h-px" style={{ background: 'var(--pv-line)' }} />
-        <ToggleRow Icon={Banknote} label="ATM withdrawals" on={settings.atm} disabled={settings.frozen} onToggle={() => update({ atm: !settings.atm })} />
-        <div className="h-px" style={{ background: 'var(--pv-line)' }} />
-        <ToggleRow Icon={Nfc} label="Contactless (tap to pay)" on={settings.contactless} disabled={settings.frozen} onToggle={() => update({ contactless: !settings.contactless })} />
-        <div className="h-px" style={{ background: 'var(--pv-line)' }} />
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Gauge size={20} style={{ color: 'var(--pv-ink-3)' }} />
-            <span className="text-sm font-medium">Daily spend limit</span>
+          {/* Status */}
+          <Card flat className="mt-3 flex items-center gap-3 p-4">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: settings.frozen ? 'var(--pv-neg)' : 'var(--pv-pos)' }} />
+            <span className="text-sm font-semibold">{settings.frozen ? `${holder.you ? 'Your' : holder.name + '’s'} card is frozen` : `${holder.you ? 'Your' : holder.name + '’s'} card is active`}</span>
+          </Card>
+
+          {/* Controls */}
+          <p className="pv-label mt-6">Controls</p>
+          <Card flat className="mt-2 overflow-hidden">
+            <ToggleRow Icon={Globe} label="Online payments" on={settings.online} disabled={settings.frozen} onToggle={() => update({ online: !settings.online })} />
+            <div className="h-px" style={{ background: 'var(--pv-line)' }} />
+            <ToggleRow Icon={Banknote} label="ATM withdrawals" on={settings.atm} disabled={settings.frozen} onToggle={() => update({ atm: !settings.atm })} />
+            <div className="h-px" style={{ background: 'var(--pv-line)' }} />
+            <ToggleRow Icon={Nfc} label="Contactless (tap to pay)" on={settings.contactless} disabled={settings.frozen} onToggle={() => update({ contactless: !settings.contactless })} />
+            <div className="h-px" style={{ background: 'var(--pv-line)' }} />
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-3">
+                <Gauge size={20} style={{ color: 'var(--pv-ink-3)' }} />
+                <span className="text-sm font-medium">Daily spend limit</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => update({ dailyLimit: Math.max(0, settings.dailyLimit - 10) })} className="pv-press h-7 w-7 rounded-full font-bold" style={{ background: 'var(--pv-surface-2)' }}>−</button>
+                <span className="w-16 text-right text-sm font-bold pv-text-accent">{aud(settings.dailyLimit)}</span>
+                <button onClick={() => update({ dailyLimit: settings.dailyLimit + 10 })} className="pv-press h-7 w-7 rounded-full font-bold" style={{ background: 'var(--pv-surface-2)' }}>+</button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Blocked categories — real, persisted spend blocks */}
+          <p className="pv-label mt-6">Blocked categories</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {['gambling', 'in_app', 'crypto', 'alcohol'].map((b) => {
+              const on = settings.blocks.includes(b)
+              return (
+                <button
+                  key={b}
+                  onClick={() => update({ blocks: on ? settings.blocks.filter((x) => x !== b) : [...settings.blocks, b] })}
+                  className="pv-press inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-bold"
+                  style={on ? { background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}
+                >
+                  {on && <Ban size={13} strokeWidth={2.6} />} {blockLabel(b)}
+                </button>
+              )
+            })}
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => update({ dailyLimit: Math.max(0, settings.dailyLimit - 10) })} className="pv-press h-7 w-7 rounded-full font-bold" style={{ background: 'var(--pv-surface-2)' }}>−</button>
-            <span className="w-16 text-right text-sm font-bold pv-text-accent">{aud(settings.dailyLimit)}</span>
-            <button onClick={() => update({ dailyLimit: settings.dailyLimit + 10 })} className="pv-press h-7 w-7 rounded-full font-bold" style={{ background: 'var(--pv-surface-2)' }}>+</button>
-          </div>
+
+          <button
+            onClick={() => update({ frozen: true })}
+            className="pv-press mt-6 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold"
+            style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}
+          >
+            <ShieldAlert size={16} /> Report lost or stolen
+          </button>
         </div>
-      </Card>
-
-      {/* Blocked categories — real, persisted spend blocks */}
-      <p className="pv-label mt-6">Blocked categories</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {['gambling', 'in_app', 'crypto', 'alcohol'].map((b) => {
-          const on = settings.blocks.includes(b)
-          return (
-            <button
-              key={b}
-              onClick={() => update({ blocks: on ? settings.blocks.filter((x) => x !== b) : [...settings.blocks, b] })}
-              className="pv-press inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-bold"
-              style={on ? { background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink-2)' }}
-            >
-              {on && <Ban size={13} strokeWidth={2.6} />} {blockLabel(b)}
-            </button>
-          )
-        })}
-      </div>
-
-      <button
-        onClick={() => update({ frozen: true })}
-        className="pv-press mt-6 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold"
-        style={{ background: 'var(--pv-neg-soft)', color: 'var(--pv-neg)' }}
-      >
-        <ShieldAlert size={16} /> Report lost or stolen
-      </button>
+      )}
     </BottomSheet>
+  )
+}
+
+function ActionPill({ Icon, label, active, dot, onClick }: { Icon: LucideIcon; label: string; active?: boolean; dot?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="pv-press relative flex flex-col items-center justify-center gap-1.5 rounded-2xl py-3" style={active ? { background: 'var(--pv-accent-soft)', color: 'var(--pv-accent-2)' } : { background: 'var(--pv-surface-2)', color: 'var(--pv-ink)' }}>
+      {dot && <span className="absolute right-2 top-2 h-2 w-2 rounded-full" style={{ background: 'var(--pv-neg)' }} aria-hidden />}
+      <Icon size={18} />
+      <span className="text-xs font-bold">{label}</span>
+    </button>
   )
 }
 
